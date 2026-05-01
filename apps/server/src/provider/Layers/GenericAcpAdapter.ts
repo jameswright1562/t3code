@@ -737,7 +737,9 @@ export function makeGenericAcpAdapter(
       listSessions,
       hasSession,
       stopAll,
-      streamEvents: Stream.fromPubSub(runtimeEventPubSub),
+      get streamEvents() {
+        return Stream.fromPubSub(runtimeEventPubSub);
+      },
     } satisfies ProviderAdapterShape<ProviderAdapterError>;
   });
 }

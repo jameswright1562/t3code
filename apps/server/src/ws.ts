@@ -1,28 +1,7 @@
-import { execFile } from "node:child_process";
-import { createWriteStream } from "node:fs";
-import {
-  access,
-  chmod,
-  copyFile,
-  cp,
-  mkdir,
-  mkdtemp,
-  readFile,
-  rm,
-  writeFile,
-} from "node:fs/promises";
-import { arch, homedir, platform, tmpdir } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { pipeline } from "node:stream/promises";
-import { promisify } from "node:util";
-
 import { Cause, Duration, Effect, Layer, Option, Queue, Ref, Schema, Stream } from "effect";
 import {
   type AuthAccessStreamEvent,
   AcpRegistryIndex,
-  type AcpRegistryAgent,
-  type AcpRegistryInstallBinaryResult,
-  type AcpRegistryListResult,
   AuthSessionId,
   CommandId,
   EventId,
@@ -86,8 +65,10 @@ import {
   type SessionCredentialChange,
 } from "./auth/Services/SessionCredentialService.ts";
 import { respondToAuthError } from "./auth/http.ts";
-
-const execFileAsync = promisify(execFile);
+import {
+  installAcpRegistryBinaryAgent,
+  listAcpRegistryAgents,
+} from "./provider/acp/AcpRegistryBinaryInstaller.ts";
 
 function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
   OrchestrationEvent,
@@ -112,313 +93,6 @@ function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
 }
 
 const PROVIDER_STATUS_DEBOUNCE_MS = 200;
-const ACP_BINARY_INSTALLS_DIR = "acp_agents";
-const ACP_BINARY_MANIFEST_FILE = "install.json";
-
-type BinaryDistributionTarget = {
-  readonly archive: string;
-  readonly cmd: string;
-};
-
-type AcpBinaryInstallManifest = {
-  readonly layoutVersion: 2;
-  readonly agentId: string;
-  readonly version: string;
-  readonly platformKey: string;
-  readonly command: string;
-  readonly archiveUrl: string;
-};
-
-function getAcpBinaryPlatformKey(): string {
-  const os = platform();
-  const cpu = arch();
-  const osKey =
-    os === "darwin" ? "darwin" : os === "win32" ? "windows" : os === "linux" ? "linux" : os;
-  const archKey = cpu === "arm64" ? "aarch64" : cpu === "x64" ? "x86_64" : cpu;
-  return `${osKey}-${archKey}`;
-}
-
-function getBinaryTarget(agent: AcpRegistryAgent): BinaryDistributionTarget | null {
-  const binary = agent.distribution.binary;
-  if (!binary || typeof binary !== "object" || globalThis.Array.isArray(binary)) return null;
-  const target = (binary as Record<string, unknown>)[getAcpBinaryPlatformKey()];
-  if (!target || typeof target !== "object" || globalThis.Array.isArray(target)) return null;
-  const record = target as Record<string, unknown>;
-  if (typeof record.archive !== "string" || typeof record.cmd !== "string") return null;
-  return { archive: record.archive, cmd: record.cmd };
-}
-
-async function fileExists(path: string): Promise<boolean> {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function normalizeArchiveCommandPath(command: string): string {
-  const trimmed = command.trim();
-  if (!trimmed) {
-    throw new Error("Registry binary command must not be empty.");
-  }
-  if (isAbsolute(trimmed)) {
-    throw new Error("Registry binary command must be a relative archive path.");
-  }
-  const withoutLeadingDot = trimmed.replace(/^(?:\.[/\\])+/u, "");
-  const parts = withoutLeadingDot
-    .split(/[/\\]+/u)
-    .filter((part) => part.length > 0 && part !== ".");
-  if (parts.length === 0 || parts.some((part) => part === "..")) {
-    throw new Error("Registry binary command resolves outside the archive.");
-  }
-  return join(...parts);
-}
-
-function resolveInstallRootFromBinaryPath(binaryPath: string, commandRelativePath: string): string {
-  const depth = commandRelativePath.split(/[/\\]+/u).filter((part) => part.length > 0).length;
-  let installRoot = binaryPath;
-  for (let index = 0; index < depth; index += 1) {
-    installRoot = dirname(installRoot);
-  }
-  return installRoot;
-}
-
-function resolveAcpBinaryInstallPath(
-  config: { readonly stateDir: string },
-  agent: AcpRegistryAgent,
-) {
-  const commandPath = normalizeArchiveCommandPath(getBinaryTarget(agent)?.cmd ?? agent.id);
-  return join(config.stateDir, ACP_BINARY_INSTALLS_DIR, agent.id, agent.version, commandPath);
-}
-
-function expandUserPath(path: string): string {
-  if (path === "~") return homedir();
-  if (path.startsWith("~/") || path.startsWith("~\\")) return join(homedir(), path.slice(2));
-  return path;
-}
-
-function normalizeAcpBinaryInstallPath(path: string): string {
-  const expanded = expandUserPath(path.trim());
-  return isAbsolute(expanded) ? expanded : resolve(expanded);
-}
-
-function displayPath(path: string): string {
-  const home = homedir();
-  return path === home || path.startsWith(`${home}/`) || path.startsWith(`${home}\\`)
-    ? `~${path.slice(home.length)}`
-    : path;
-}
-
-function isPathInside(parent: string, child: string): boolean {
-  const relativePath = relative(parent, child);
-  return relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath));
-}
-
-function toBinaryInstallPreview(
-  config: { readonly stateDir: string },
-  agent: AcpRegistryAgent,
-  target: BinaryDistributionTarget,
-) {
-  const defaultInstallPath = resolveAcpBinaryInstallPath(config, agent);
-  return {
-    archiveUrl: target.archive,
-    defaultInstallPath: displayPath(defaultInstallPath),
-    platformKey: getAcpBinaryPlatformKey(),
-    command: target.cmd,
-  };
-}
-
-function resolveAcpBinaryManifestPath(
-  config: { readonly stateDir: string },
-  agent: AcpRegistryAgent,
-) {
-  return join(dirname(resolveAcpBinaryInstallPath(config, agent)), ACP_BINARY_MANIFEST_FILE);
-}
-
-async function readAcpBinaryManifest(
-  config: { readonly stateDir: string },
-  agent: AcpRegistryAgent,
-): Promise<AcpBinaryInstallManifest | null> {
-  const manifestPath = resolveAcpBinaryManifestPath(config, agent);
-  try {
-    const raw = await readFile(manifestPath, "utf8");
-    const parsed = JSON.parse(raw) as Partial<AcpBinaryInstallManifest>;
-    if (
-      parsed.layoutVersion === 2 &&
-      parsed.agentId === agent.id &&
-      parsed.version === agent.version &&
-      parsed.platformKey === getAcpBinaryPlatformKey() &&
-      typeof parsed.command === "string" &&
-      (await fileExists(parsed.command))
-    ) {
-      return parsed as AcpBinaryInstallManifest;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-async function downloadFile(url: string, destination: string): Promise<void> {
-  const response = await fetch(url);
-  if (!response.ok || !response.body) {
-    throw new Error(`Download failed with status ${response.status}`);
-  }
-  await pipeline(response.body, createWriteStream(destination));
-}
-
-async function extractArchive(archivePath: string, destinationDir: string): Promise<void> {
-  if (archivePath.endsWith(".tar.gz") || archivePath.endsWith(".tgz")) {
-    await execFileAsync("tar", ["-xzf", archivePath, "-C", destinationDir]);
-    return;
-  }
-  if (archivePath.endsWith(".zip")) {
-    if (platform() === "win32") {
-      await execFileAsync("powershell.exe", [
-        "-NoProfile",
-        "-Command",
-        "Expand-Archive",
-        "-LiteralPath",
-        archivePath,
-        "-DestinationPath",
-        destinationDir,
-        "-Force",
-      ]);
-      return;
-    }
-    await execFileAsync("unzip", ["-q", archivePath, "-d", destinationDir]);
-    return;
-  }
-  throw new Error("Unsupported binary archive format.");
-}
-
-async function installAcpBinaryAgent(input: {
-  readonly config: { readonly stateDir: string };
-  readonly agent: AcpRegistryAgent;
-  readonly installPath?: string | undefined;
-}): Promise<BinaryDistributionTarget & { readonly command: string }> {
-  const target = getBinaryTarget(input.agent);
-  if (!target) {
-    throw new Error(`No binary is available for ${getAcpBinaryPlatformKey()}.`);
-  }
-  const installPath = normalizeAcpBinaryInstallPath(
-    input.installPath?.trim() || resolveAcpBinaryInstallPath(input.config, input.agent),
-  );
-  const commandPath = normalizeArchiveCommandPath(target.cmd);
-  const installRoot = resolveInstallRootFromBinaryPath(installPath, commandPath);
-  if (installRoot === dirname(installRoot)) {
-    throw new Error(`Binary path is too shallow for registry command '${target.cmd}'.`);
-  }
-  const manifestPath = resolveAcpBinaryManifestPath(input.config, input.agent);
-  const tempDir = await mkdtemp(join(tmpdir(), "t3-acp-agent-"));
-  try {
-    const archivePath = join(
-      tempDir,
-      basename(new URL(target.archive).pathname) || "agent.archive",
-    );
-    const extractDir = join(tempDir, "extract");
-    await mkdir(extractDir, { recursive: true });
-    await downloadFile(target.archive, archivePath);
-    await extractArchive(archivePath, extractDir);
-
-    const extractedCommand = resolve(extractDir, commandPath);
-    if (!isPathInside(extractDir, extractedCommand)) {
-      throw new Error(`Registry binary command resolves outside the archive.`);
-    }
-    if (!(await fileExists(extractedCommand))) {
-      throw new Error(`Installed archive did not contain expected command '${target.cmd}'.`);
-    }
-    await mkdir(installRoot, { recursive: true });
-    await cp(extractDir, installRoot, {
-      recursive: true,
-      force: true,
-      errorOnExist: false,
-    });
-    if (!(await fileExists(installPath))) {
-      await mkdir(dirname(installPath), { recursive: true });
-      await copyFile(extractedCommand, installPath);
-    }
-    if (platform() !== "win32") {
-      await chmod(installPath, 0o755);
-    }
-  } finally {
-    await rm(tempDir, { recursive: true, force: true });
-  }
-  const manifest: AcpBinaryInstallManifest = {
-    layoutVersion: 2,
-    agentId: input.agent.id,
-    version: input.agent.version,
-    platformKey: getAcpBinaryPlatformKey(),
-    command: installPath,
-    archiveUrl: target.archive,
-  };
-  await mkdir(dirname(manifestPath), { recursive: true });
-  await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
-  return { ...target, command: installPath };
-}
-
-async function toAcpLaunchSpec(
-  agent: AcpRegistryAgent,
-  config: { readonly stateDir: string },
-): Promise<{
-  readonly supported: boolean;
-  readonly distributionType: "npx" | "uvx" | "binary" | "binaryUnsupported";
-  readonly launch: {
-    readonly command: string;
-    readonly args: readonly string[];
-    readonly env: Record<string, string>;
-  } | null;
-  readonly binaryInstall?: {
-    readonly archiveUrl: string;
-    readonly defaultInstallPath: string;
-    readonly platformKey: string;
-    readonly command: string;
-  };
-}> {
-  if (agent.distribution.npx) {
-    return {
-      supported: true as const,
-      distributionType: "npx" as const,
-      launch: {
-        command: "npx",
-        args: ["-y", agent.distribution.npx.package, ...(agent.distribution.npx.args ?? [])],
-        env: agent.distribution.npx.env ?? {},
-      },
-    };
-  }
-  if (agent.distribution.uvx) {
-    return {
-      supported: true as const,
-      distributionType: "uvx" as const,
-      launch: {
-        command: "uvx",
-        args: [agent.distribution.uvx.package, ...(agent.distribution.uvx.args ?? [])],
-        env: agent.distribution.uvx.env ?? {},
-      },
-    };
-  }
-  const manifest = await readAcpBinaryManifest(config, agent);
-  const target = getBinaryTarget(agent);
-  if (manifest) {
-    return {
-      supported: true as const,
-      distributionType: "binary" as const,
-      launch: {
-        command: manifest.command,
-        args: [],
-        env: {},
-      },
-      ...(target ? { binaryInstall: toBinaryInstallPreview(config, agent, target) } : {}),
-    };
-  }
-  return {
-    supported: false as const,
-    distributionType: "binaryUnsupported" as const,
-    launch: null,
-    ...(target ? { binaryInstall: toBinaryInstallPreview(config, agent, target) } : {}),
-  };
-}
 
 function toAuthAccessStreamEvent(
   change: BootstrapCredentialChange | SessionCredentialChange,
@@ -514,35 +188,14 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
         Effect.flatMap((raw) => Schema.decodeUnknownEffect(AcpRegistryIndex)(raw)),
       );
 
-      const listAcpRegistry = Effect.all({
-        registry: loadAcpRegistryIndex,
-        config: Effect.succeed(config),
-      }).pipe(
-        Effect.flatMap(({ registry, config }) =>
-          Effect.tryPromise({
-            try: async (): Promise<AcpRegistryListResult> => ({
-              registryVersion: registry.version,
-              agents: (
-                await Promise.all(
-                  registry.agents.map(async (agent) => {
-                    const resolved = await toAcpLaunchSpec(agent, config);
-                    return {
-                      agent,
-                      supported: resolved.supported,
-                      distributionType: resolved.distributionType,
-                      launch: resolved.launch,
-                      ...(resolved.binaryInstall ? { binaryInstall: resolved.binaryInstall } : {}),
-                    };
-                  }),
-                )
-              ).toSorted((left, right) => left.agent.name.localeCompare(right.agent.name)),
+      const listAcpRegistry = loadAcpRegistryIndex.pipe(
+        Effect.flatMap((registry) => listAcpRegistryAgents(registry)),
+        Effect.mapError(
+          (cause) =>
+            new AcpRegistryClientError({
+              detail: cause instanceof Error ? cause.message : String(cause),
+              cause,
             }),
-            catch: (cause) =>
-              new AcpRegistryClientError({
-                detail: cause instanceof Error ? cause.message : String(cause),
-                cause,
-              }),
-          }),
         ),
       );
 
@@ -550,51 +203,19 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
         readonly agentId: string;
         readonly installPath?: string | undefined;
       }) =>
-        Effect.all({
-          registry: loadAcpRegistryIndex,
-          config: Effect.succeed(config),
-        }).pipe(
-          Effect.flatMap(({ registry, config }) =>
-            Effect.tryPromise({
-              try: async (): Promise<AcpRegistryInstallBinaryResult> => {
-                const agent = registry.agents.find((entry) => entry.id === input.agentId);
-                if (!agent) {
-                  return {
-                    ok: false,
-                    error: `No ACP registry agent found for '${input.agentId}'.`,
-                  };
-                }
-                const installed = await installAcpBinaryAgent({
-                  config,
-                  agent,
-                  installPath: input.installPath,
-                });
-                return {
-                  ok: true,
-                  agent: {
-                    agent,
-                    supported: true,
-                    distributionType: "binary",
-                    binaryInstall: toBinaryInstallPreview(config, agent, installed),
-                    launch: {
-                      command: installed.command,
-                      args: [],
-                      env: {},
-                    },
-                  },
-                };
-              },
-              catch: (cause): AcpRegistryInstallBinaryResult => ({
-                ok: false,
-                error: cause instanceof Error ? cause.message : String(cause),
-              }),
+        loadAcpRegistryIndex.pipe(
+          Effect.flatMap((registry) =>
+            installAcpRegistryBinaryAgent({
+              registry,
+              agentId: input.agentId,
+              installPath: input.installPath,
             }),
           ),
           Effect.catch((cause: unknown) =>
             Effect.succeed({
               ok: false,
               error: cause instanceof Error ? cause.message : String(cause),
-            } satisfies AcpRegistryInstallBinaryResult),
+            }),
           ),
         );
 
