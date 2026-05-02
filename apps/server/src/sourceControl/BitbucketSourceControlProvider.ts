@@ -2,6 +2,7 @@ import { Effect, Layer, Option } from "effect";
 import { SourceControlProviderError, type ChangeRequest } from "@t3tools/contracts";
 
 import { BitbucketCli, type BitbucketCliError } from "./BitbucketCli.ts";
+import { parseOwnerBranch } from "./parseOwnerBranch.ts";
 import { SourceControlProvider, type SourceControlRefSelector } from "./SourceControlProvider.ts";
 import type { NormalizedBitbucketPullRequestRecord } from "./bitbucketPullRequests.ts";
 
@@ -44,10 +45,8 @@ function sourceFromInput(input: {
     return input.source;
   }
 
-  const match = /^([^:/\s]+):(.+)$/u.exec(input.headSelector.trim());
-  const owner = match?.[1]?.trim();
-  const refName = match?.[2]?.trim();
-  return owner && refName ? { owner, refName } : undefined;
+  const parsed = parseOwnerBranch(input.headSelector);
+  return parsed ? { owner: parsed.owner, refName: parsed.refName } : undefined;
 }
 
 export const make = Effect.fn("makeBitbucketSourceControlProvider")(function* () {

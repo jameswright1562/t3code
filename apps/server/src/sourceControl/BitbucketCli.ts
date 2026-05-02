@@ -8,6 +8,7 @@ import {
   formatBitbucketJsonDecodeError,
   type NormalizedBitbucketPullRequestRecord,
 } from "./bitbucketPullRequests.ts";
+import { parseOwnerBranch } from "./parseOwnerBranch.ts";
 import type { SourceControlRefSelector } from "./SourceControlProvider.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -146,9 +147,7 @@ function normalizeChangeRequestId(reference: string): string {
 }
 
 function normalizeSourceBranch(headSelector: string): string {
-  const trimmed = headSelector.trim();
-  const ownerSelector = /^([^:/\s]+):(.+)$/u.exec(trimmed);
-  return ownerSelector?.[2]?.trim() ?? trimmed;
+  return parseOwnerBranch(headSelector)?.refName ?? headSelector.trim();
 }
 
 function sourceBranch(input: {

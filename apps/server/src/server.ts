@@ -166,7 +166,7 @@ const GitManagerLayerLive = GitManager.layer.pipe(
   Layer.provideMerge(
     SourceControlProviderRegistry.layer.pipe(
       Layer.provide(GitHubCli.layer),
-      Layer.provideMerge(BitbucketCli.layer),
+      Layer.provide(BitbucketCli.layer),
       Layer.provideMerge(VcsDriverRegistryLayerLive),
     ),
   ),
