@@ -94,7 +94,7 @@ const SOURCE_CONTROL_PROVIDER_PROBES: ReadonlyArray<ProviderProbe> = [
     versionArgs: ["--version"],
     authArgs: ["account", "show", "--query", "user.name", "-o", "tsv"],
     parseAuth: parseAzureAuth,
-    implemented: false,
+    implemented: true,
     installHint:
       "Install Azure CLI with `brew install azure-cli`, then add Azure DevOps support with `az extension add --name azure-devops`.",
   },
