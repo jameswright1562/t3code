@@ -2,6 +2,7 @@ import { Context, Effect, Layer, Result, Schema, SchemaIssue } from "effect";
 import { TrimmedNonEmptyString, type VcsError } from "@t3tools/contracts";
 
 import { VcsProcess, type VcsProcessOutput } from "../vcs/VcsProcess.ts";
+import { errorText } from "./errorText.ts";
 import {
   decodeBitbucketPullRequestJson,
   decodeBitbucketPullRequestListJson,
@@ -80,17 +81,6 @@ export interface BitbucketCliShape {
 export class BitbucketCli extends Context.Service<BitbucketCli, BitbucketCliShape>()(
   "t3/source-control/BitbucketCli",
 ) {}
-
-function errorText(error: VcsError | unknown): string {
-  if (typeof error === "object" && error !== null) {
-    const tag = "_tag" in error && typeof error._tag === "string" ? error._tag : "";
-    const detail = "detail" in error && typeof error.detail === "string" ? error.detail : "";
-    const message = "message" in error && typeof error.message === "string" ? error.message : "";
-    return [tag, detail, message].filter(Boolean).join("\n");
-  }
-
-  return String(error);
-}
 
 function normalizeBitbucketCliError(
   operation: "execute",
