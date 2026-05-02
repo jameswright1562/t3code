@@ -161,13 +161,13 @@ function sourceBranch(input: {
 function toBitbucketState(state: "open" | "closed" | "merged" | "all"): string {
   switch (state) {
     case "open":
-      return "open";
+      return "OPEN";
     case "closed":
-      return "declined";
+      return "DECLINED";
     case "merged":
-      return "merged";
+      return "MERGED";
     case "all":
-      return "all";
+      return "ALL";
   }
 }
 

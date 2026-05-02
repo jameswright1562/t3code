@@ -141,7 +141,7 @@ describe("BitbucketCli.layer", () => {
           "--head",
           "feature/merged",
           "--state",
-          "merged",
+          "MERGED",
           "--limit",
           "10",
           "--json",
