@@ -2,6 +2,7 @@ import { assert, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
+import { AzureDevOpsCli } from "./AzureDevOpsCli.ts";
 import { GitHubCli } from "./GitHubCli.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
@@ -25,7 +26,9 @@ function makeRegistry(input: {
   });
 
   return SourceControlProviderRegistry.make().pipe(
-    Effect.provide(Layer.mergeAll(gitLayer, Layer.mock(GitHubCli)({}))),
+    Effect.provide(
+      Layer.mergeAll(gitLayer, Layer.mock(AzureDevOpsCli)({}), Layer.mock(GitHubCli)({})),
+    ),
   );
 }
 
@@ -62,6 +65,18 @@ it.effect(
 
       assert.strictEqual(error.provider, "gitlab");
     }),
+);
+
+it.effect("routes Azure DevOps remotes to the Azure DevOps provider", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry({
+      originUrl: "https://dev.azure.com/acme/project/_git/repo",
+    });
+
+    const provider = yield* registry.resolve({ cwd: "/repo" });
+
+    assert.strictEqual(provider.kind, "azure-devops");
+  }),
 );
 
 it.effect("falls back to remote verbose output when origin is not configured", () =>

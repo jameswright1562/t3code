@@ -4,6 +4,7 @@ import type { SourceControlProviderKind } from "@t3tools/contracts";
 import { detectSourceControlProviderFromGitRemoteUrl } from "@t3tools/shared/git";
 
 import { SourceControlProvider, type SourceControlProviderShape } from "./SourceControlProvider.ts";
+import * as AzureDevOpsSourceControlProvider from "./AzureDevOpsSourceControlProvider.ts";
 import * as GitHubSourceControlProvider from "./GitHubSourceControlProvider.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 
@@ -68,8 +69,10 @@ function firstRemoteUrlFromVerboseOutput(output: string): string | null {
 
 export const make = Effect.fn("makeSourceControlProviderRegistry")(function* () {
   const github = yield* GitHubSourceControlProvider.make();
+  const azureDevOps = yield* AzureDevOpsSourceControlProvider.make();
   const git = yield* GitVcsDriver.GitVcsDriver;
   const providers: Partial<Record<SourceControlProviderKind, SourceControlProviderShape>> = {
+    "azure-devops": azureDevOps,
     github,
   };
 

@@ -25,6 +25,7 @@ import { ProviderSessionReaperLive } from "./provider/Layers/ProviderSessionReap
 import { OpenCodeRuntimeLive } from "./provider/opencodeRuntime.ts";
 import { CheckpointDiffQueryLive } from "./checkpointing/Layers/CheckpointDiffQuery.ts";
 import { CheckpointStoreLive } from "./checkpointing/Layers/CheckpointStore.ts";
+import * as AzureDevOpsCli from "./sourceControl/AzureDevOpsCli.ts";
 import * as GitHubCli from "./sourceControl/GitHubCli.ts";
 import * as TextGeneration from "./textGeneration/TextGeneration.ts";
 import { ProviderInstanceRegistryHydrationLive } from "./provider/Layers/ProviderInstanceRegistryHydration.ts";
@@ -158,7 +159,11 @@ const PersistenceLayerLive = Layer.empty.pipe(Layer.provideMerge(SqlitePersisten
 const GitManagerLayerLive = GitManager.layer.pipe(
   Layer.provideMerge(ProjectSetupScriptRunnerLive),
   Layer.provideMerge(GitVcsDriver.layer),
-  Layer.provideMerge(SourceControlProviderRegistry.layer.pipe(Layer.provide(GitHubCli.layer))),
+  Layer.provideMerge(
+    SourceControlProviderRegistry.layer.pipe(
+      Layer.provide(Layer.mergeAll(AzureDevOpsCli.layer, GitHubCli.layer)),
+    ),
+  ),
   Layer.provideMerge(TextGeneration.layer),
 );
 
