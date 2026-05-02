@@ -105,7 +105,7 @@ const SOURCE_CONTROL_PROVIDER_PROBES: ReadonlyArray<ProviderProbe> = [
     versionArgs: ["--version"],
     authArgs: ["auth", "status"],
     parseAuth: parseBitbucketAuth,
-    implemented: false,
+    implemented: true,
     installHint: "Install a Bitbucket CLI (`bb`) and authenticate it for your Bitbucket workspace.",
   },
 ];
