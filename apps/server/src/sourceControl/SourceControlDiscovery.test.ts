@@ -69,7 +69,7 @@ it.effect("reports implemented tools separately from locally available CLIs", ()
       [
         { kind: "github", implemented: true, status: "available" },
         { kind: "gitlab", implemented: false, status: "missing" },
-        { kind: "azure-devops", implemented: false, status: "missing" },
+        { kind: "azure-devops", implemented: true, status: "missing" },
         { kind: "bitbucket", implemented: false, status: "missing" },
       ],
     );

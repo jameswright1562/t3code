@@ -76,7 +76,7 @@ const SOURCE_CONTROL_PROVIDER_PROBES: ReadonlyArray<ProviderProbe> = [
     label: "Azure DevOps",
     executable: "az",
     versionArgs: ["--version"],
-    implemented: false,
+    implemented: true,
     installHint:
       "Install Azure CLI with `brew install azure-cli`, then add Azure DevOps support with `az extension add --name azure-devops`.",
   },
