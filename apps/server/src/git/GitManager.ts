@@ -49,7 +49,7 @@ import { ServerSettingsService } from "../serverSettings.ts";
 import type { GitManagerServiceError } from "@t3tools/contracts";
 import { GitVcsDriver, type GitStatusDetails } from "../vcs/GitVcsDriver.ts";
 import { SourceControlProviderRegistry } from "../sourceControl/SourceControlProviderRegistry.ts";
-import type { ChangeRequest } from "@t3tools/contracts";
+import type { ChangeRequest, SourceControlProviderKind } from "@t3tools/contracts";
 
 export interface GitActionProgressReporter {
   readonly publish: (event: GitActionProgressEvent) => Effect.Effect<void, never>;
@@ -145,6 +145,24 @@ interface BranchHeadContext {
   headRepositoryNameWithOwner: string | null;
   headRepositoryOwnerLogin: string | null;
   isCrossRepository: boolean;
+}
+
+interface ChangeRequestTerms {
+  shortLabel: string;
+  singular: string;
+}
+
+function sourceControlChangeRequestTerms(kind: SourceControlProviderKind): ChangeRequestTerms {
+  if (kind === "gitlab") {
+    return {
+      shortLabel: "MR",
+      singular: "merge request",
+    };
+  }
+  return {
+    shortLabel: "PR",
+    singular: "pull request",
+  };
 }
 
 function parseRepositoryNameFromPullRequestUrl(url: string): string | null {
@@ -354,13 +372,14 @@ function withDescription(title: string, description: string | undefined) {
 
 function summarizeGitActionResult(
   result: Pick<GitRunStackedActionResult, "commit" | "push" | "pr">,
+  terms: ChangeRequestTerms,
 ): {
   title: string;
   description?: string;
 } {
   if (result.pr.status === "created" || result.pr.status === "opened_existing") {
     const prNumber = result.pr.number ? ` #${result.pr.number}` : "";
-    const title = `${result.pr.status === "created" ? "Created PR" : "Opened PR"}${prNumber}`;
+    const title = `${result.pr.status === "created" ? "Created" : "Opened"} ${terms.shortLabel}${prNumber}`;
     return withDescription(title, truncateText(result.pr.title));
   }
 
@@ -941,7 +960,11 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     cwd: string,
     result: Pick<GitRunStackedActionResult, "action" | "branch" | "commit" | "push" | "pr">,
   ) {
-    const summary = summarizeGitActionResult(result);
+    const terms = yield* sourceControlProvider(cwd).pipe(
+      Effect.map((provider) => sourceControlChangeRequestTerms(provider.kind)),
+      Effect.catch(() => Effect.succeed(sourceControlChangeRequestTerms("unknown"))),
+    );
+    const summary = summarizeGitActionResult(result, terms);
     let latestOpenPr: PullRequestInfo | null = null;
     let currentBranchIsDefault = false;
     let finalBranchContext: {
@@ -1006,7 +1029,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
               result.pr.status === "opened_existing")
           ? {
               kind: "open_pr" as const,
-              label: "View PR",
+              label: `View ${terms.shortLabel}`,
               url: openPr.url,
             }
           : (result.action === "push" || result.action === "commit_push") &&
@@ -1014,7 +1037,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
               !currentBranchIsDefault
             ? {
                 kind: "run_action" as const,
-                label: "Create PR",
+                label: `Create ${terms.shortLabel}`,
                 action: { kind: "create_pr" as const },
               }
             : {
@@ -1222,6 +1245,8 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     fallbackBranch: string | null,
     emit: GitActionProgressEmitter,
   ) {
+    const provider = yield* sourceControlProvider(cwd);
+    const terms = sourceControlChangeRequestTerms(provider.kind);
     const details = yield* gitCore.statusDetails(cwd);
     const branch = details.branch ?? fallbackBranch;
     if (!branch) {
@@ -1258,7 +1283,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     yield* emit({
       kind: "phase_started",
       phase: "pr",
-      label: "Generating PR content...",
+      label: `Generating ${terms.shortLabel} content...`,
     });
     const rangeContext = yield* gitCore.readRangeContext(cwd, baseBranch);
 
@@ -1283,9 +1308,9 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     yield* emit({
       kind: "phase_started",
       phase: "pr",
-      label: "Creating pull request...",
+      label: `Creating ${terms.singular}...`,
     });
-    yield* (yield* sourceControlProvider(cwd))
+    yield* provider
       .createChangeRequest({
         cwd,
         baseRefName: baseBranch,
@@ -1650,6 +1675,9 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
 
         const currentBranch = branchStep.name ?? initialStatus.branch;
         const commitAction = isCommitAction(input.action) ? input.action : null;
+        const changeRequestTerms = wantsPr
+          ? sourceControlChangeRequestTerms((yield* sourceControlProvider(input.cwd)).kind)
+          : null;
 
         const commit = commitAction
           ? yield* Ref.set(currentPhase, Option.some("commit")).pipe(
@@ -1687,7 +1715,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
               .emit({
                 kind: "phase_started",
                 phase: "pr",
-                label: "Preparing PR...",
+                label: `Preparing ${changeRequestTerms?.shortLabel ?? "PR"}...`,
               })
               .pipe(
                 Effect.tap(() => Ref.set(currentPhase, Option.some("pr"))),
