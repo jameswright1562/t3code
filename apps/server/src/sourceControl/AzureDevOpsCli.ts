@@ -370,6 +370,8 @@ export const make = Effect.fn("makeAzureDevOpsCli")(function* () {
           "repos",
           "pr",
           "checkout",
+          "--detect",
+          "true",
           "--only-show-errors",
           "--id",
           normalizeChangeRequestId(input.reference),
