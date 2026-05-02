@@ -38,6 +38,10 @@ function isAzureDevOpsHost(host: string): boolean {
   return host === "dev.azure.com" || host.endsWith(".visualstudio.com");
 }
 
+function isBitbucketHost(host: string): boolean {
+  return host === "bitbucket.org" || host.includes("bitbucket");
+}
+
 export function detectSourceControlProviderFromRemoteUrl(
   remoteUrl: string,
 ): SourceControlProviderInfo | null {
@@ -66,6 +70,14 @@ export function detectSourceControlProviderFromRemoteUrl(
     return {
       kind: "azure-devops",
       name: "Azure DevOps",
+      baseUrl: toBaseUrl(host),
+    };
+  }
+
+  if (isBitbucketHost(host)) {
+    return {
+      kind: "bitbucket",
+      name: host === "bitbucket.org" ? "Bitbucket" : "Bitbucket Self-Hosted",
       baseUrl: toBaseUrl(host),
     };
   }

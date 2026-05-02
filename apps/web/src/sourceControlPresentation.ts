@@ -1,7 +1,7 @@
 import type { SourceControlProviderInfo } from "@t3tools/contracts";
 
 export interface ChangeRequestPresentation {
-  readonly icon: "github" | "gitlab" | "azure-devops" | "change-request";
+  readonly icon: "github" | "gitlab" | "azure-devops" | "bitbucket" | "change-request";
   readonly providerName: string;
   readonly shortName: string;
   readonly longName: string;
@@ -44,6 +44,17 @@ const AZURE_DEVOPS_CHANGE_REQUEST_PRESENTATION: ChangeRequestPresentation = {
   urlExample: "https://dev.azure.com/org/project/_git/repo/pullrequest/42",
 };
 
+const BITBUCKET_CHANGE_REQUEST_PRESENTATION: ChangeRequestPresentation = {
+  icon: "bitbucket",
+  providerName: "Bitbucket",
+  shortName: "PR",
+  longName: "pull request",
+  pluralLongName: "pull requests",
+  providerLongName: "Bitbucket pull request",
+  checkoutCommandExample: "bb pr checkout 123",
+  urlExample: "https://bitbucket.org/workspace/repo/pull-requests/42",
+};
+
 const GENERIC_CHANGE_REQUEST_PRESENTATION: ChangeRequestPresentation = {
   icon: "change-request",
   providerName: "source control",
@@ -66,6 +77,8 @@ export function resolveChangeRequestPresentation(
       return GITLAB_CHANGE_REQUEST_PRESENTATION;
     case "azure-devops":
       return AZURE_DEVOPS_CHANGE_REQUEST_PRESENTATION;
+    case "bitbucket":
+      return BITBUCKET_CHANGE_REQUEST_PRESENTATION;
     case "unknown":
       return GENERIC_CHANGE_REQUEST_PRESENTATION;
   }
