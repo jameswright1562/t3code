@@ -57,104 +57,121 @@ function resolveHomeDirectory(): string {
   return process.env.HOME ?? process.env.USERPROFILE ?? "";
 }
 
-function normalizeArchiveCommandPath(path: Path.Path, command: string): string {
-  const trimmed = command.trim();
-  if (!trimmed) {
-    throw new Error("Registry binary command must not be empty.");
-  }
-  if (path.isAbsolute(trimmed)) {
-    throw new Error("Registry binary command must be a relative archive path.");
-  }
-  const withoutLeadingDot = trimmed.replace(/^(?:\.[/\\])+/u, "");
-  const parts = withoutLeadingDot
-    .split(/[/\\]+/u)
-    .filter((part) => part.length > 0 && part !== ".");
-  if (parts.length === 0 || parts.some((part) => part === "..")) {
-    throw new Error("Registry binary command resolves outside the archive.");
-  }
-  return path.join(...parts);
-}
+const normalizeArchiveCommandPath = (command: string) =>
+  Effect.gen(function* () {
+    const path = yield* Path.Path;
+    const trimmed = command.trim();
+    if (!trimmed) {
+      return yield* Effect.fail(new Error("Registry binary command must not be empty."));
+    }
+    if (path.isAbsolute(trimmed)) {
+      return yield* Effect.fail(
+        new Error("Registry binary command must be a relative archive path."),
+      );
+    }
+    const withoutLeadingDot = trimmed.replace(/^(?:\.[/\\])+/u, "");
+    const parts = withoutLeadingDot
+      .split(/[/\\]+/u)
+      .filter((part) => part.length > 0 && part !== ".");
+    if (parts.length === 0 || parts.some((part) => part === "..")) {
+      return yield* Effect.fail(new Error("Registry binary command resolves outside the archive."));
+    }
+    return path.join(...parts);
+  });
 
-function resolveInstallRootFromBinaryPath(
-  path: Path.Path,
-  binaryPath: string,
-  commandRelativePath: string,
-): string {
-  const depth = commandRelativePath.split(/[/\\]+/u).filter((part) => part.length > 0).length;
-  let installRoot = binaryPath;
-  for (let index = 0; index < depth; index += 1) {
-    installRoot = path.dirname(installRoot);
-  }
-  return installRoot;
-}
+const resolveInstallRootFromBinaryPath = (binaryPath: string, commandRelativePath: string) =>
+  Effect.gen(function* () {
+    const path = yield* Path.Path;
+    const depth = commandRelativePath.split(/[/\\]+/u).filter((part) => part.length > 0).length;
+    let installRoot = binaryPath;
+    for (let index = 0; index < depth; index += 1) {
+      installRoot = path.dirname(installRoot);
+    }
+    return installRoot;
+  });
 
-function resolveAcpBinaryInstallPath(
-  path: Path.Path,
+const resolveAcpBinaryInstallPath = (
   config: { readonly stateDir: string },
   agent: AcpRegistryAgent,
-) {
-  const commandPath = normalizeArchiveCommandPath(path, getBinaryTarget(agent)?.cmd ?? agent.id);
-  return path.join(config.stateDir, ACP_BINARY_INSTALLS_DIR, agent.id, agent.version, commandPath);
-}
+) =>
+  Effect.gen(function* () {
+    const path = yield* Path.Path;
+    const commandPath = yield* normalizeArchiveCommandPath(getBinaryTarget(agent)?.cmd ?? agent.id);
+    return path.join(
+      config.stateDir,
+      ACP_BINARY_INSTALLS_DIR,
+      agent.id,
+      agent.version,
+      commandPath,
+    );
+  });
 
-function expandUserPath(path: Path.Path, inputPath: string): string {
-  const home = resolveHomeDirectory();
-  if (!home) return inputPath;
-  if (inputPath === "~") return home;
-  if (inputPath.startsWith("~/") || inputPath.startsWith("~\\")) {
-    return path.join(home, inputPath.slice(2));
-  }
-  return inputPath;
-}
+const expandUserPath = (inputPath: string) =>
+  Effect.gen(function* () {
+    const path = yield* Path.Path;
+    const home = resolveHomeDirectory();
+    if (!home) return inputPath;
+    if (inputPath === "~") return home;
+    if (inputPath.startsWith("~/") || inputPath.startsWith("~\\")) {
+      return path.join(home, inputPath.slice(2));
+    }
+    return inputPath;
+  });
 
-function normalizeAcpBinaryInstallPath(path: Path.Path, inputPath: string): string {
-  const expanded = expandUserPath(path, inputPath.trim());
-  return path.isAbsolute(expanded) ? expanded : path.resolve(expanded);
-}
+const normalizeAcpBinaryInstallPath = (inputPath: string) =>
+  Effect.gen(function* () {
+    const path = yield* Path.Path;
+    const expanded = yield* expandUserPath(inputPath.trim());
+    return path.isAbsolute(expanded) ? expanded : path.resolve(expanded);
+  });
 
-function displayPath(path: Path.Path, inputPath: string): string {
-  const home = resolveHomeDirectory();
-  return home && (inputPath === home || inputPath.startsWith(`${home}${path.sep}`))
-    ? `~${inputPath.slice(home.length)}`
-    : inputPath;
-}
+const displayPath = (inputPath: string) =>
+  Effect.gen(function* () {
+    const path = yield* Path.Path;
+    const home = resolveHomeDirectory();
+    return home && (inputPath === home || inputPath.startsWith(`${home}${path.sep}`))
+      ? `~${inputPath.slice(home.length)}`
+      : inputPath;
+  });
 
-function isPathInside(path: Path.Path, parent: string, child: string): boolean {
-  const relativePath = path.relative(parent, child);
-  return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
-}
+const isPathInside = (parent: string, child: string) =>
+  Effect.gen(function* () {
+    const path = yield* Path.Path;
+    const relativePath = path.relative(parent, child);
+    return (
+      relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath))
+    );
+  });
 
-function toBinaryInstallPreview(
-  path: Path.Path,
+const toBinaryInstallPreview = (
   config: { readonly stateDir: string },
   agent: AcpRegistryAgent,
   target: BinaryDistributionTarget,
-) {
-  const defaultInstallPath = resolveAcpBinaryInstallPath(path, config, agent);
-  return {
-    archiveUrl: target.archive,
-    defaultInstallPath: displayPath(path, defaultInstallPath),
-    platformKey: getAcpBinaryPlatformKey(),
-    command: target.cmd,
-  };
-}
+) =>
+  Effect.gen(function* () {
+    const defaultInstallPath = yield* resolveAcpBinaryInstallPath(config, agent);
+    return {
+      archiveUrl: target.archive,
+      defaultInstallPath: yield* displayPath(defaultInstallPath),
+      platformKey: getAcpBinaryPlatformKey(),
+      command: target.cmd,
+    };
+  });
 
-function resolveAcpBinaryManifestPath(
-  path: Path.Path,
+const resolveAcpBinaryManifestPath = (
   config: { readonly stateDir: string },
   agent: AcpRegistryAgent,
-) {
-  return path.join(
-    path.dirname(resolveAcpBinaryInstallPath(path, config, agent)),
-    ACP_BINARY_MANIFEST_FILE,
-  );
-}
+) =>
+  Effect.gen(function* () {
+    const path = yield* Path.Path;
+    const installPath = yield* resolveAcpBinaryInstallPath(config, agent);
+    return path.join(path.dirname(installPath), ACP_BINARY_MANIFEST_FILE);
+  });
 
 const readAcpBinaryManifest = (config: { readonly stateDir: string }, agent: AcpRegistryAgent) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    const manifestPath = resolveAcpBinaryManifestPath(path, config, agent);
+    const manifestPath = yield* resolveAcpBinaryManifestPath(config, agent);
     const raw = yield* fs.readFileString(manifestPath).pipe(Effect.option);
     if (raw._tag === "None") return null;
     const json = yield* Effect.try({
@@ -257,18 +274,18 @@ const installAcpBinaryAgent = (input: {
         new Error(`No binary is available for ${getAcpBinaryPlatformKey()}.`),
       );
     }
-    const installPath = normalizeAcpBinaryInstallPath(
-      path,
-      input.installPath?.trim() || resolveAcpBinaryInstallPath(path, input.config, input.agent),
+    const defaultInstallPath = yield* resolveAcpBinaryInstallPath(input.config, input.agent);
+    const installPath = yield* normalizeAcpBinaryInstallPath(
+      input.installPath?.trim() || defaultInstallPath,
     );
-    const commandPath = normalizeArchiveCommandPath(path, target.cmd);
-    const installRoot = resolveInstallRootFromBinaryPath(path, installPath, commandPath);
+    const commandPath = yield* normalizeArchiveCommandPath(target.cmd);
+    const installRoot = yield* resolveInstallRootFromBinaryPath(installPath, commandPath);
     if (installRoot === path.dirname(installRoot)) {
       return yield* Effect.fail(
         new Error(`Binary path is too shallow for registry command '${target.cmd}'.`),
       );
     }
-    const manifestPath = resolveAcpBinaryManifestPath(path, input.config, input.agent);
+    const manifestPath = yield* resolveAcpBinaryManifestPath(input.config, input.agent);
     const tempDir = yield* fs.makeTempDirectory({ prefix: "t3-acp-agent-" });
     yield* Effect.addFinalizer(() =>
       fs.remove(tempDir, { recursive: true, force: true }).pipe(Effect.ignore),
@@ -284,7 +301,7 @@ const installAcpBinaryAgent = (input: {
     yield* extractArchive(archivePath, extractDir);
 
     const extractedCommand = path.resolve(extractDir, commandPath);
-    if (!isPathInside(path, extractDir, extractedCommand)) {
+    if (!(yield* isPathInside(extractDir, extractedCommand))) {
       return yield* Effect.fail(new Error("Registry binary command resolves outside the archive."));
     }
     if (!(yield* fs.exists(extractedCommand))) {
@@ -317,7 +334,6 @@ const installAcpBinaryAgent = (input: {
 export const toAcpLaunchSpec = (agent: AcpRegistryAgent) =>
   Effect.gen(function* () {
     const config = yield* ServerConfig;
-    const path = yield* Path.Path;
     if (agent.distribution.npx) {
       return {
         supported: true as const,
@@ -351,14 +367,14 @@ export const toAcpLaunchSpec = (agent: AcpRegistryAgent) =>
           args: [],
           env: {},
         },
-        ...(target ? { binaryInstall: toBinaryInstallPreview(path, config, agent, target) } : {}),
+        ...(target ? { binaryInstall: yield* toBinaryInstallPreview(config, agent, target) } : {}),
       };
     }
     return {
       supported: false as const,
       distributionType: "binaryUnsupported" as const,
       launch: null,
-      ...(target ? { binaryInstall: toBinaryInstallPreview(path, config, agent, target) } : {}),
+      ...(target ? { binaryInstall: yield* toBinaryInstallPreview(config, agent, target) } : {}),
     };
   });
 
@@ -395,7 +411,6 @@ export const installAcpRegistryBinaryAgent = (input: {
 }) =>
   Effect.gen(function* () {
     const config = yield* ServerConfig;
-    const path = yield* Path.Path;
     const agent = input.registry.agents.find((entry) => entry.id === input.agentId);
     if (!agent) {
       return {
@@ -414,7 +429,7 @@ export const installAcpRegistryBinaryAgent = (input: {
         agent,
         supported: true,
         distributionType: "binary",
-        binaryInstall: toBinaryInstallPreview(path, config, agent, installed),
+        binaryInstall: yield* toBinaryInstallPreview(config, agent, installed),
         launch: {
           command: installed.command,
           args: [],
