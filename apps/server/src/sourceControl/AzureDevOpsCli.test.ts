@@ -43,6 +43,7 @@ describe("AzureDevOpsCli.layer", () => {
               targetRefName: "refs/heads/main",
               status: "active",
               creationDate: "2026-01-02T00:00:00.000Z",
+              closedDate: null,
               _links: {
                 web: {
                   href: "https://dev.azure.com/acme/project/_git/repo/pullrequest/42",
@@ -199,6 +200,36 @@ describe("AzureDevOpsCli.layer", () => {
           args: expect.arrayContaining(["--description", "Generated body"]),
         }),
       );
+      expect(mockRun.mock.calls[0]?.[0].args).not.toContain("--output");
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("does not force JSON output on checkout side-effect commands", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValueOnce(Effect.succeed(processOutput("")));
+
+      const az = yield* AzureDevOpsCli.AzureDevOpsCli;
+      yield* az.checkoutPullRequest({
+        cwd: "/repo",
+        reference: "42",
+      });
+
+      expect(mockRun).toHaveBeenCalledWith({
+        operation: "AzureDevOpsCli.execute",
+        command: "az",
+        args: [
+          "repos",
+          "pr",
+          "checkout",
+          "--only-show-errors",
+          "--id",
+          "42",
+          "--remote-name",
+          "origin",
+        ],
+        cwd: "/repo",
+        timeoutMs: 30_000,
+      });
     }).pipe(Effect.provide(layer)),
   );
 });

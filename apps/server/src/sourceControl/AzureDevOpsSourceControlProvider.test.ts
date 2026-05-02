@@ -3,21 +3,10 @@ import { Effect, Layer, Option } from "effect";
 
 import { AzureDevOpsCli, type AzureDevOpsCliShape } from "./AzureDevOpsCli.ts";
 import * as AzureDevOpsSourceControlProvider from "./AzureDevOpsSourceControlProvider.ts";
-import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 
-function makeProvider(azure: Partial<AzureDevOpsCliShape>, originUrl?: string | null) {
+function makeProvider(azure: Partial<AzureDevOpsCliShape>) {
   return AzureDevOpsSourceControlProvider.make().pipe(
-    Effect.provide(
-      Layer.mergeAll(
-        Layer.mock(AzureDevOpsCli)(azure),
-        Layer.mock(GitVcsDriver.GitVcsDriver)({
-          readConfigValue: (_cwd, key) =>
-            key === "remote.origin.url"
-              ? Effect.succeed(originUrl ?? "https://dev.azure.com/acme/project/_git/repo")
-              : Effect.succeed(null),
-        }),
-      ),
-    ),
+    Effect.provide(Layer.mock(AzureDevOpsCli)(azure)),
   );
 }
 
@@ -83,12 +72,12 @@ it.effect("creates Azure DevOps PRs through provider-neutral input names", () =>
   }),
 );
 
-it.effect("uses the current Azure DevOps repository for default branch lookup", () =>
+it.effect("uses Azure CLI repository detection for default branch lookup", () =>
   Effect.gen(function* () {
-    let repositoryInput: string | null = null;
+    let cwdInput: string | null = null;
     const provider = yield* makeProvider({
       getDefaultBranch: (input) => {
-        repositoryInput = input.repository;
+        cwdInput = input.cwd;
         return Effect.succeed("main");
       },
     });
@@ -96,6 +85,6 @@ it.effect("uses the current Azure DevOps repository for default branch lookup", 
     const defaultBranch = yield* provider.getDefaultBranch({ cwd: "/repo" });
 
     assert.strictEqual(defaultBranch, "main");
-    assert.strictEqual(repositoryInput, "repo");
+    assert.strictEqual(cwdInput, "/repo");
   }),
 );
