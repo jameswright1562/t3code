@@ -8,6 +8,7 @@ import {
   type SourceControlProviderContext,
   type SourceControlProviderShape,
 } from "./SourceControlProvider.ts";
+import * as AzureDevOpsSourceControlProvider from "./AzureDevOpsSourceControlProvider.ts";
 import * as GitHubSourceControlProvider from "./GitHubSourceControlProvider.ts";
 import { VcsDriverRegistry } from "../vcs/VcsDriverRegistry.ts";
 
@@ -144,10 +145,15 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
 
 export const make = Effect.fn("makeSourceControlProviderRegistry")(function* () {
   const github = yield* GitHubSourceControlProvider.make();
+  const azureDevOps = yield* AzureDevOpsSourceControlProvider.make();
   return yield* makeWithProviders([
     {
       kind: "github",
       provider: github,
+    },
+    {
+      kind: "azure-devops",
+      provider: azureDevOps,
     },
   ]);
 });
