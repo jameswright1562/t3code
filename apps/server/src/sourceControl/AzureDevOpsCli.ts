@@ -1,10 +1,7 @@
-import { readFile } from "node:fs/promises";
+import { Context, Effect, FileSystem, Layer, Result, Schema, SchemaIssue } from "effect";
+import { TrimmedNonEmptyString, type VcsError } from "@t3tools/contracts";
 
-import { Context, Effect, Layer, Result, Schema, SchemaIssue } from "effect";
-import { TrimmedNonEmptyString } from "@t3tools/contracts";
-
-import type { ProcessRunResult } from "../processRunner.ts";
-import { runProcess } from "../processRunner.ts";
+import { VcsProcess, type VcsProcessOutput } from "../vcs/VcsProcess.ts";
 import {
   decodeAzureDevOpsPullRequestJson,
   decodeAzureDevOpsPullRequestListJson,
@@ -38,7 +35,7 @@ export interface AzureDevOpsCliShape {
     readonly cwd: string;
     readonly args: ReadonlyArray<string>;
     readonly timeoutMs?: number;
-  }) => Effect.Effect<ProcessRunResult, AzureDevOpsCliError>;
+  }) => Effect.Effect<VcsProcessOutput, AzureDevOpsCliError>;
 
   readonly listPullRequests: (input: {
     readonly cwd: string;
@@ -80,56 +77,61 @@ export class AzureDevOpsCli extends Context.Service<AzureDevOpsCli, AzureDevOpsC
   "t3/source-control/AzureDevOpsCli",
 ) {}
 
+function errorText(error: VcsError | unknown): string {
+  if (typeof error === "object" && error !== null) {
+    const tag = "_tag" in error && typeof error._tag === "string" ? error._tag : "";
+    const detail = "detail" in error && typeof error.detail === "string" ? error.detail : "";
+    const message = "message" in error && typeof error.message === "string" ? error.message : "";
+    return [tag, detail, message].filter(Boolean).join("\n");
+  }
+
+  return String(error);
+}
+
 function normalizeAzureDevOpsCliError(
   operation: "execute" | "readBodyFile",
-  error: unknown,
+  error: VcsError | unknown,
 ): AzureDevOpsCliError {
-  if (error instanceof Error) {
-    if (error.message.includes("Command not found: az")) {
-      return new AzureDevOpsCliError({
-        operation,
-        detail:
-          "Azure CLI (`az`) with the Azure DevOps extension is required but not available on PATH.",
-        cause: error,
-      });
-    }
+  const text = errorText(error);
+  const lower = text.toLowerCase();
 
-    const lower = error.message.toLowerCase();
-    if (
-      lower.includes("az devops login") ||
-      lower.includes("please run az login") ||
-      lower.includes("not logged in") ||
-      lower.includes("authentication failed") ||
-      lower.includes("unauthorized")
-    ) {
-      return new AzureDevOpsCliError({
-        operation,
-        detail: "Azure DevOps CLI is not authenticated. Run `az devops login` and retry.",
-        cause: error,
-      });
-    }
-
-    if (
-      lower.includes("pull request") &&
-      (lower.includes("not found") || lower.includes("does not exist"))
-    ) {
-      return new AzureDevOpsCliError({
-        operation,
-        detail: "Pull request not found. Check the PR number or URL and try again.",
-        cause: error,
-      });
-    }
-
+  if (lower.includes("command not found: az") || lower.includes("enoent")) {
     return new AzureDevOpsCliError({
       operation,
-      detail: `Azure DevOps CLI command failed: ${error.message}`,
+      detail:
+        "Azure CLI (`az`) with the Azure DevOps extension is required but not available on PATH.",
+      cause: error,
+    });
+  }
+
+  if (
+    lower.includes("az devops login") ||
+    lower.includes("please run az login") ||
+    lower.includes("not logged in") ||
+    lower.includes("authentication failed") ||
+    lower.includes("unauthorized")
+  ) {
+    return new AzureDevOpsCliError({
+      operation,
+      detail: "Azure DevOps CLI is not authenticated. Run `az devops login` and retry.",
+      cause: error,
+    });
+  }
+
+  if (
+    lower.includes("pull request") &&
+    (lower.includes("not found") || lower.includes("does not exist"))
+  ) {
+    return new AzureDevOpsCliError({
+      operation,
+      detail: "Pull request not found. Check the PR number or URL and try again.",
       cause: error,
     });
   }
 
   return new AzureDevOpsCliError({
     operation,
-    detail: "Azure DevOps CLI command failed.",
+    detail: operation === "readBodyFile" ? "Failed to read pull request body file." : text,
     cause: error,
   });
 }
@@ -206,22 +208,25 @@ function decodeAzureDevOpsJson<S extends Schema.Top>(
   );
 }
 
-export const make = Effect.sync(() => {
+export const make = Effect.fn("makeAzureDevOpsCli")(function* () {
+  const process = yield* VcsProcess;
+  const fileSystem = yield* FileSystem.FileSystem;
+
   const execute: AzureDevOpsCliShape["execute"] = (input) =>
-    Effect.tryPromise({
-      try: () =>
-        runProcess("az", [...input.args, "--only-show-errors", "--output", "json"], {
-          cwd: input.cwd,
-          timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-        }),
-      catch: (error) => normalizeAzureDevOpsCliError("execute", error),
-    });
+    process
+      .run({
+        operation: "AzureDevOpsCli.execute",
+        command: "az",
+        args: [...input.args, "--only-show-errors", "--output", "json"],
+        cwd: input.cwd,
+        timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      })
+      .pipe(Effect.mapError((error) => normalizeAzureDevOpsCliError("execute", error)));
 
   const readBodyFile = (path: string) =>
-    Effect.tryPromise({
-      try: () => readFile(path, "utf8"),
-      catch: (error) => normalizeAzureDevOpsCliError("readBodyFile", error),
-    });
+    fileSystem
+      .readFileString(path)
+      .pipe(Effect.mapError((error) => normalizeAzureDevOpsCliError("readBodyFile", error)));
 
   return AzureDevOpsCli.of({
     execute,
@@ -367,4 +372,4 @@ export const make = Effect.sync(() => {
   });
 });
 
-export const layer = Layer.effect(AzureDevOpsCli, make);
+export const layer = Layer.effect(AzureDevOpsCli, make());
