@@ -1,6 +1,7 @@
 import { assert, it } from "@effect/vitest";
 import { DateTime, Effect, Layer, Option } from "effect";
 
+import { BitbucketCli } from "./BitbucketCli.ts";
 import { GitHubCli } from "./GitHubCli.ts";
 import { GitLabCli } from "./GitLabCli.ts";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
@@ -52,7 +53,12 @@ function makeRegistry(input: {
 
   return SourceControlProviderRegistry.make().pipe(
     Effect.provide(
-      Layer.mergeAll(registryLayer, Layer.mock(GitHubCli)({}), Layer.mock(GitLabCli)({})),
+      Layer.mergeAll(
+        registryLayer,
+        Layer.mock(BitbucketCli)({}),
+        Layer.mock(GitHubCli)({}),
+        Layer.mock(GitLabCli)({}),
+      ),
     ),
   );
 }
@@ -90,6 +96,18 @@ it.effect("routes GitLab remotes to the GitLab provider", () =>
     const provider = yield* registry.resolve({ cwd: "/repo" });
 
     assert.strictEqual(provider.kind, "gitlab");
+  }),
+);
+
+it.effect("routes Bitbucket remotes to the Bitbucket provider", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry({
+      remotes: [{ name: "origin", url: "git@bitbucket.org:pingdotgg/t3code.git" }],
+    });
+
+    const provider = yield* registry.resolve({ cwd: "/repo" });
+
+    assert.strictEqual(provider.kind, "bitbucket");
   }),
 );
 
