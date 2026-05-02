@@ -74,7 +74,6 @@ Logged in to github.com account juliusmarminge (keyring)
       [
         { kind: "git", implemented: true, status: "available" },
         { kind: "jj", implemented: false, status: "missing" },
-        { kind: "sapling", implemented: false, status: "missing" },
       ],
     );
     assert.deepStrictEqual(

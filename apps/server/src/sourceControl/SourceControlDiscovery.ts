@@ -63,14 +63,6 @@ const VCS_PROBES: ReadonlyArray<VcsProbe> = [
     implemented: false,
     installHint: "Install Jujutsu with `brew install jj` or from https://github.com/jj-vcs/jj.",
   },
-  {
-    kind: "sapling",
-    label: "Sapling",
-    executable: "sl",
-    versionArgs: ["--version"],
-    implemented: false,
-    installHint: "Install Sapling (`sl`) from https://sapling-scm.com/.",
-  },
 ];
 
 const SOURCE_CONTROL_PROVIDER_PROBES: ReadonlyArray<ProviderProbe> = [

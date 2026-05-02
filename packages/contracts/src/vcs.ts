@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 
-export const VcsDriverKind = Schema.Literals(["git", "jj", "sapling", "unknown"]);
+export const VcsDriverKind = Schema.Literals(["git", "jj", "unknown"]);
 export type VcsDriverKind = typeof VcsDriverKind.Type;
 
 export const VcsFreshnessSource = Schema.Literals([
