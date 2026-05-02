@@ -1,4 +1,4 @@
-import { Context, Effect, FileSystem, Layer, Result, Schema, SchemaIssue } from "effect";
+import { Context, Effect, Layer, Result, Schema, SchemaIssue } from "effect";
 import { TrimmedNonEmptyString, type VcsError } from "@t3tools/contracts";
 
 import { VcsProcess, type VcsProcessOutput } from "../vcs/VcsProcess.ts";
@@ -8,6 +8,7 @@ import {
   formatAzureDevOpsJsonDecodeError,
   type NormalizedAzureDevOpsPullRequestRecord,
 } from "./azureDevOpsPullRequests.ts";
+import type { SourceControlRefSelector } from "./SourceControlProvider.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -40,6 +41,7 @@ export interface AzureDevOpsCliShape {
   readonly listPullRequests: (input: {
     readonly cwd: string;
     readonly headSelector: string;
+    readonly source?: SourceControlRefSelector;
     readonly state: "open" | "closed" | "merged" | "all";
     readonly limit?: number;
   }) => Effect.Effect<ReadonlyArray<NormalizedAzureDevOpsPullRequestRecord>, AzureDevOpsCliError>;
@@ -58,6 +60,8 @@ export interface AzureDevOpsCliShape {
     readonly cwd: string;
     readonly baseBranch: string;
     readonly headSelector: string;
+    readonly source?: SourceControlRefSelector;
+    readonly target?: SourceControlRefSelector;
     readonly title: string;
     readonly bodyFile: string;
   }) => Effect.Effect<void, AzureDevOpsCliError>;
@@ -69,6 +73,7 @@ export interface AzureDevOpsCliShape {
   readonly checkoutPullRequest: (input: {
     readonly cwd: string;
     readonly reference: string;
+    readonly remoteName?: string;
   }) => Effect.Effect<void, AzureDevOpsCliError>;
 }
 
@@ -88,7 +93,7 @@ function errorText(error: VcsError | unknown): string {
 }
 
 function normalizeAzureDevOpsCliError(
-  operation: "execute" | "readBodyFile",
+  operation: "execute",
   error: VcsError | unknown,
 ): AzureDevOpsCliError {
   const text = errorText(error);
@@ -130,7 +135,7 @@ function normalizeAzureDevOpsCliError(
 
   return new AzureDevOpsCliError({
     operation,
-    detail: operation === "readBodyFile" ? "Failed to read pull request body file." : text,
+    detail: text,
     cause: error,
   });
 }
@@ -145,6 +150,13 @@ function normalizeSourceBranch(headSelector: string): string {
   const trimmed = headSelector.trim();
   const ownerSelector = /^([^:/\s]+):(.+)$/u.exec(trimmed);
   return ownerSelector?.[2]?.trim() ?? trimmed;
+}
+
+function sourceBranch(input: {
+  readonly headSelector: string;
+  readonly source?: SourceControlRefSelector;
+}): string {
+  return input.source?.refName ?? normalizeSourceBranch(input.headSelector);
 }
 
 function toAzureStatus(state: "open" | "closed" | "merged" | "all"): string {
@@ -209,7 +221,6 @@ function decodeAzureDevOpsJson<S extends Schema.Top>(
 
 export const make = Effect.fn("makeAzureDevOpsCli")(function* () {
   const process = yield* VcsProcess;
-  const fileSystem = yield* FileSystem.FileSystem;
 
   const execute: AzureDevOpsCliShape["execute"] = (input) =>
     process
@@ -228,11 +239,6 @@ export const make = Effect.fn("makeAzureDevOpsCli")(function* () {
       args: [...input.args, "--only-show-errors", "--output", "json"],
     });
 
-  const readBodyFile = (path: string) =>
-    fileSystem
-      .readFileString(path)
-      .pipe(Effect.mapError((error) => normalizeAzureDevOpsCliError("readBodyFile", error)));
-
   return AzureDevOpsCli.of({
     execute,
     listPullRequests: (input) =>
@@ -245,7 +251,7 @@ export const make = Effect.fn("makeAzureDevOpsCli")(function* () {
           "--detect",
           "true",
           "--source-branch",
-          normalizeSourceBranch(input.headSelector),
+          sourceBranch(input),
           "--status",
           toAzureStatus(input.state),
           "--top",
@@ -322,30 +328,25 @@ export const make = Effect.fn("makeAzureDevOpsCli")(function* () {
         Effect.map(normalizeRepositoryCloneUrls),
       ),
     createPullRequest: (input) =>
-      readBodyFile(input.bodyFile).pipe(
-        Effect.flatMap((description) =>
-          execute({
-            cwd: input.cwd,
-            args: [
-              "repos",
-              "pr",
-              "create",
-              "--only-show-errors",
-              "--detect",
-              "true",
-              "--target-branch",
-              input.baseBranch,
-              "--source-branch",
-              normalizeSourceBranch(input.headSelector),
-              "--title",
-              input.title,
-              "--description",
-              description,
-            ],
-          }),
-        ),
-        Effect.asVoid,
-      ),
+      execute({
+        cwd: input.cwd,
+        args: [
+          "repos",
+          "pr",
+          "create",
+          "--only-show-errors",
+          "--detect",
+          "true",
+          "--target-branch",
+          input.target?.refName ?? input.baseBranch,
+          "--source-branch",
+          sourceBranch(input),
+          "--title",
+          input.title,
+          "--description",
+          `@${input.bodyFile}`,
+        ],
+      }).pipe(Effect.asVoid),
     getDefaultBranch: (input) =>
       executeJson({
         cwd: input.cwd,
@@ -373,7 +374,7 @@ export const make = Effect.fn("makeAzureDevOpsCli")(function* () {
           "--id",
           normalizeChangeRequestId(input.reference),
           "--remote-name",
-          "origin",
+          input.remoteName ?? "origin",
         ],
       }).pipe(Effect.asVoid),
   });
