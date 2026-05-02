@@ -10,7 +10,6 @@ import {
   type SourceControlAuthProbeInput,
   type SourceControlCliDiscoverySpec,
 } from "./SourceControlProviderDiscovery.ts";
-import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 
 function providerError(operation: string, cause: AzureDevOpsCliError): SourceControlProviderError {
   return new SourceControlProviderError({
@@ -78,32 +77,8 @@ function toChangeRequest(summary: {
   };
 }
 
-function parseAzureDevOpsRepositoryNameFromRemoteUrl(url: string | null): string | null {
-  const trimmed = url?.trim() ?? "";
-  if (trimmed.length === 0) {
-    return null;
-  }
-
-  const httpsMatch =
-    /^https:\/\/(?:dev\.azure\.com\/[^/\s]+\/[^/\s]+|[^/\s]+\.visualstudio\.com\/[^/\s]+)\/_git\/([^/\s]+?)(?:\.git)?\/?$/i.exec(
-      trimmed,
-    );
-  const sshMatch = /^git@ssh\.dev\.azure\.com:v3\/[^/\s]+\/[^/\s]+\/([^/\s]+?)(?:\.git)?\/?$/i.exec(
-    trimmed,
-  );
-  const repositoryName = (httpsMatch?.[1] ?? sshMatch?.[1] ?? "").trim();
-  return repositoryName.length > 0 ? decodeURIComponent(repositoryName) : null;
-}
-
 export const make = Effect.fn("makeAzureDevOpsSourceControlProvider")(function* () {
   const azure = yield* AzureDevOpsCli;
-  const git = yield* GitVcsDriver.GitVcsDriver;
-
-  const currentRepositoryName = (cwd: string) =>
-    git.readConfigValue(cwd, "remote.origin.url").pipe(
-      Effect.map(parseAzureDevOpsRepositoryNameFromRemoteUrl),
-      Effect.catch(() => Effect.succeed(null)),
-    );
 
   return SourceControlProvider.of({
     kind: "azure-devops",
@@ -132,14 +107,9 @@ export const make = Effect.fn("makeAzureDevOpsSourceControlProvider")(function* 
         .getRepositoryCloneUrls(input)
         .pipe(Effect.mapError((error) => providerError("getRepositoryCloneUrls", error))),
     getDefaultBranch: (input) =>
-      currentRepositoryName(input.cwd).pipe(
-        Effect.flatMap((repository) =>
-          repository
-            ? azure.getDefaultBranch({ cwd: input.cwd, repository })
-            : Effect.succeed(null),
-        ),
-        Effect.mapError((error) => providerError("getDefaultBranch", error)),
-      ),
+      azure
+        .getDefaultBranch({ cwd: input.cwd })
+        .pipe(Effect.mapError((error) => providerError("getDefaultBranch", error))),
     checkoutChangeRequest: (input) =>
       azure
         .checkoutPullRequest(input)
