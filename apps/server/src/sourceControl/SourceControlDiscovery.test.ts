@@ -139,7 +139,7 @@ Logged in to github.com account juliusmarminge (keyring)
         },
         {
           kind: "azure-devops",
-          implemented: false,
+          implemented: true,
           status: "missing",
           auth: "unknown",
           account: Option.none(),
