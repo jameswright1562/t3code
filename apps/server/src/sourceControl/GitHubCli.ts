@@ -3,6 +3,7 @@ import { Context, Effect, Layer, Result, Schema, SchemaIssue } from "effect";
 import { GitHubCliError, TrimmedNonEmptyString, type VcsError } from "@t3tools/contracts";
 
 import { VcsProcess, type VcsProcessOutput } from "../vcs/VcsProcess.ts";
+import { vcsErrorText } from "../vcs/vcsErrorText.ts";
 import {
   decodeGitHubPullRequestJson,
   decodeGitHubPullRequestListJson,
@@ -75,22 +76,11 @@ export class GitHubCli extends Context.Service<GitHubCli, GitHubCliShape>()(
   "t3/source-control/GitHubCli",
 ) {}
 
-function errorText(error: VcsError | unknown): string {
-  if (typeof error === "object" && error !== null) {
-    const tag = "_tag" in error && typeof error._tag === "string" ? error._tag : "";
-    const detail = "detail" in error && typeof error.detail === "string" ? error.detail : "";
-    const message = "message" in error && typeof error.message === "string" ? error.message : "";
-    return [tag, detail, message].filter(Boolean).join("\n");
-  }
-
-  return String(error);
-}
-
 function normalizeGitHubCliError(
   operation: "execute" | "stdout",
   error: VcsError | unknown,
 ): GitHubCliError {
-  const text = errorText(error);
+  const text = vcsErrorText(error);
   const lower = text.toLowerCase();
 
   if (lower.includes("command not found: gh") || lower.includes("enoent")) {

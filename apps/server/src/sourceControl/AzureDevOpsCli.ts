@@ -2,6 +2,7 @@ import { Context, Effect, FileSystem, Layer, Result, Schema, SchemaIssue } from 
 import { TrimmedNonEmptyString, type VcsError } from "@t3tools/contracts";
 
 import { VcsProcess, type VcsProcessOutput } from "../vcs/VcsProcess.ts";
+import { vcsErrorText } from "../vcs/vcsErrorText.ts";
 import {
   decodeAzureDevOpsPullRequestJson,
   decodeAzureDevOpsPullRequestListJson,
@@ -69,6 +70,7 @@ export interface AzureDevOpsCliShape {
   readonly checkoutPullRequest: (input: {
     readonly cwd: string;
     readonly reference: string;
+    readonly force?: boolean;
   }) => Effect.Effect<void, AzureDevOpsCliError>;
 }
 
@@ -76,22 +78,11 @@ export class AzureDevOpsCli extends Context.Service<AzureDevOpsCli, AzureDevOpsC
   "t3/source-control/AzureDevOpsCli",
 ) {}
 
-function errorText(error: VcsError | unknown): string {
-  if (typeof error === "object" && error !== null) {
-    const tag = "_tag" in error && typeof error._tag === "string" ? error._tag : "";
-    const detail = "detail" in error && typeof error.detail === "string" ? error.detail : "";
-    const message = "message" in error && typeof error.message === "string" ? error.message : "";
-    return [tag, detail, message].filter(Boolean).join("\n");
-  }
-
-  return String(error);
-}
-
 function normalizeAzureDevOpsCliError(
   operation: "execute" | "readBodyFile",
   error: VcsError | unknown,
 ): AzureDevOpsCliError {
-  const text = errorText(error);
+  const text = vcsErrorText(error);
   const lower = text.toLowerCase();
 
   if (lower.includes("command not found: az") || lower.includes("enoent")) {
@@ -363,19 +354,38 @@ export const make = Effect.fn("makeAzureDevOpsCli")(function* () {
         Effect.map((repo) => normalizeDefaultBranch(repo.defaultBranch)),
       ),
     checkoutPullRequest: (input) =>
-      execute({
-        cwd: input.cwd,
-        args: [
-          "repos",
-          "pr",
-          "checkout",
-          "--only-show-errors",
-          "--id",
-          normalizeChangeRequestId(input.reference),
-          "--remote-name",
-          "origin",
-        ],
-      }).pipe(Effect.asVoid),
+      (input.force
+        ? process
+            .run({
+              operation: "AzureDevOpsCli.checkoutPullRequest",
+              command: "git",
+              args: ["checkout", "--force"],
+              cwd: input.cwd,
+              timeoutMs: DEFAULT_TIMEOUT_MS,
+            })
+            .pipe(
+              Effect.mapError((error) => normalizeAzureDevOpsCliError("execute", error)),
+              Effect.asVoid,
+            )
+        : Effect.void
+      ).pipe(
+        Effect.andThen(
+          execute({
+            cwd: input.cwd,
+            args: [
+              "repos",
+              "pr",
+              "checkout",
+              "--only-show-errors",
+              "--id",
+              normalizeChangeRequestId(input.reference),
+              "--remote-name",
+              "origin",
+            ],
+          }),
+        ),
+        Effect.asVoid,
+      ),
   });
 });
 
