@@ -85,7 +85,7 @@ const SOURCE_CONTROL_PROVIDER_PROBES: ReadonlyArray<ProviderProbe> = [
     label: "Bitbucket",
     executable: "bb",
     versionArgs: ["--version"],
-    implemented: false,
+    implemented: true,
     installHint: "Install a Bitbucket CLI (`bb`) and authenticate it for your Bitbucket workspace.",
   },
 ];
