@@ -158,16 +158,16 @@ function sourceBranch(input: {
   return input.source?.refName ?? normalizeSourceBranch(input.headSelector);
 }
 
-function toBitbucketState(state: "open" | "closed" | "merged" | "all"): string {
+function toBitbucketStateArgs(state: "open" | "closed" | "merged" | "all"): readonly string[] {
   switch (state) {
     case "open":
-      return "open";
+      return ["--state", "open"];
     case "closed":
-      return "declined";
+      return ["--state", "declined", "--state", "superseded"];
     case "merged":
-      return "merged";
+      return ["--state", "merged"];
     case "all":
-      return "all";
+      return ["--state", "all"];
   }
 }
 
@@ -254,8 +254,7 @@ export const make = Effect.fn("makeBitbucketCli")(function* () {
           "list",
           "--head",
           sourceBranch(input),
-          "--state",
-          toBitbucketState(input.state),
+          ...toBitbucketStateArgs(input.state),
           "--limit",
           String(input.limit ?? 20),
           "--json",
