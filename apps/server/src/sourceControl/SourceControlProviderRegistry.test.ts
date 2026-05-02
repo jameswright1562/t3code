@@ -1,6 +1,7 @@
 import { assert, it } from "@effect/vitest";
 import { DateTime, Effect, Layer, Option } from "effect";
 
+import { AzureDevOpsCli } from "./AzureDevOpsCli.ts";
 import { GitHubCli } from "./GitHubCli.ts";
 import { GitLabCli } from "./GitLabCli.ts";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
@@ -52,7 +53,12 @@ function makeRegistry(input: {
 
   return SourceControlProviderRegistry.make().pipe(
     Effect.provide(
-      Layer.mergeAll(registryLayer, Layer.mock(GitHubCli)({}), Layer.mock(GitLabCli)({})),
+      Layer.mergeAll(
+        registryLayer,
+        Layer.mock(AzureDevOpsCli)({}),
+        Layer.mock(GitHubCli)({}),
+        Layer.mock(GitLabCli)({}),
+      ),
     ),
   );
 }
@@ -90,6 +96,18 @@ it.effect("routes GitLab remotes to the GitLab provider", () =>
     const provider = yield* registry.resolve({ cwd: "/repo" });
 
     assert.strictEqual(provider.kind, "gitlab");
+  }),
+);
+
+it.effect("routes Azure DevOps remotes to the Azure DevOps provider", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry({
+      remotes: [{ name: "origin", url: "https://dev.azure.com/acme/project/_git/repo" }],
+    });
+
+    const provider = yield* registry.resolve({ cwd: "/repo" });
+
+    assert.strictEqual(provider.kind, "azure-devops");
   }),
 );
 
