@@ -152,16 +152,14 @@ interface ChangeRequestTerms {
 }
 
 function sourceControlChangeRequestTerms(kind: SourceControlProviderKind): ChangeRequestTerms {
-  if (kind === "gitlab") {
-    return {
-      shortLabel: "MR",
-      singular: "merge request",
-    };
+  switch (kind) {
+    case "gitlab":
+      return { shortLabel: "MR", singular: "merge request" };
+    case "unknown":
+      return { shortLabel: "change request", singular: "change request" };
+    default:
+      return { shortLabel: "PR", singular: "pull request" };
   }
-  return {
-    shortLabel: "PR",
-    singular: "pull request",
-  };
 }
 
 function parseRepositoryNameFromPullRequestUrl(url: string): string | null {
