@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { realpathSync } from "node:fs";
 
 import {
   Array as Arr,
@@ -504,14 +503,6 @@ function normalizePullRequestReference(reference: string): string {
   return hashNumber?.[1] ?? trimmed;
 }
 
-function canonicalizeExistingPath(value: string): string {
-  try {
-    return realpathSync.native(value);
-  } catch {
-    return value;
-  }
-}
-
 function toResolvedPullRequest(pr: {
   number: number;
   title: string;
@@ -699,7 +690,9 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
   const path = yield* Path.Path;
 
   const tempDir = process.env.TMPDIR ?? process.env.TEMP ?? process.env.TMP ?? "/tmp";
-  const normalizeStatusCacheKey = (cwd: string) => canonicalizeExistingPath(cwd);
+  const canonicalizeExistingPath = (value: string) =>
+    fileSystem.realPath(value).pipe(Effect.catch(() => Effect.succeed(value)));
+  const normalizeStatusCacheKey = canonicalizeExistingPath;
   const nonRepositoryStatusDetails = {
     isRepo: false,
     hasOriginRemote: false,
@@ -737,7 +730,9 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     timeToLive: (exit) => (Exit.isSuccess(exit) ? STATUS_RESULT_CACHE_TTL : Duration.zero),
   });
   const invalidateLocalStatusResultCache = (cwd: string) =>
-    Cache.invalidate(localStatusResultCache, normalizeStatusCacheKey(cwd));
+    normalizeStatusCacheKey(cwd).pipe(
+      Effect.flatMap((cacheKey) => Cache.invalidate(localStatusResultCache, cacheKey)),
+    );
   const readRemoteStatus = Effect.fn("readRemoteStatus")(function* (cwd: string) {
     const details = yield* gitCore
       .statusDetails(cwd)
@@ -775,7 +770,9 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     timeToLive: (exit) => (Exit.isSuccess(exit) ? STATUS_RESULT_CACHE_TTL : Duration.zero),
   });
   const invalidateRemoteStatusResultCache = (cwd: string) =>
-    Cache.invalidate(remoteStatusResultCache, normalizeStatusCacheKey(cwd));
+    normalizeStatusCacheKey(cwd).pipe(
+      Effect.flatMap((cacheKey) => Cache.invalidate(remoteStatusResultCache, cacheKey)),
+    );
 
   const readConfigValueNullable = (cwd: string, key: string) =>
     gitCore.readConfigValue(cwd, key).pipe(Effect.catch(() => Effect.succeed(null)));
@@ -1341,11 +1338,13 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
   });
 
   const localStatus: GitManagerShape["localStatus"] = Effect.fn("localStatus")(function* (input) {
-    return yield* Cache.get(localStatusResultCache, normalizeStatusCacheKey(input.cwd));
+    const cacheKey = yield* normalizeStatusCacheKey(input.cwd);
+    return yield* Cache.get(localStatusResultCache, cacheKey);
   });
   const remoteStatus: GitManagerShape["remoteStatus"] = Effect.fn("remoteStatus")(
     function* (input) {
-      return yield* Cache.get(remoteStatusResultCache, normalizeStatusCacheKey(input.cwd));
+      const cacheKey = yield* normalizeStatusCacheKey(input.cwd);
+      return yield* Cache.get(remoteStatusResultCache, cacheKey);
     },
   );
   const status: GitManagerShape["status"] = Effect.fn("status")(function* (input) {
@@ -1405,7 +1404,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     };
     return yield* Effect.gen(function* () {
       const normalizedReference = normalizePullRequestReference(input.reference);
-      const rootWorktreePath = canonicalizeExistingPath(input.cwd);
+      const rootWorktreePath = yield* canonicalizeExistingPath(input.cwd);
       const pullRequestSummary = yield* (yield* sourceControlProvider(input.cwd)).getChangeRequest({
         cwd: input.cwd,
         reference: normalizedReference,
@@ -1455,33 +1454,35 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
       const localPullRequestBranch =
         resolvePullRequestWorktreeLocalBranchName(pullRequestWithRemoteInfo);
 
-      const findLocalHeadBranch = (cwd: string) =>
-        gitCore.listRefs({ cwd }).pipe(
-          Effect.map((result) => {
-            const localBranch = result.refs.find(
-              (branch) => !branch.isRemote && branch.name === localPullRequestBranch,
-            );
-            if (localBranch) {
-              return localBranch;
-            }
-            if (localPullRequestBranch === pullRequest.headBranch) {
-              return null;
-            }
-            return (
-              result.refs.find(
-                (branch) =>
-                  !branch.isRemote &&
-                  branch.name === pullRequest.headBranch &&
-                  branch.worktreePath !== null &&
-                  canonicalizeExistingPath(branch.worktreePath) !== rootWorktreePath,
-              ) ?? null
-            );
-          }),
+      const findLocalHeadBranch = Effect.fn("findLocalHeadBranch")(function* (cwd: string) {
+        const result = yield* gitCore.listRefs({ cwd });
+        const localBranch = result.refs.find(
+          (branch) => !branch.isRemote && branch.name === localPullRequestBranch,
         );
+        if (localBranch) {
+          return localBranch;
+        }
+        if (localPullRequestBranch === pullRequest.headBranch) {
+          return null;
+        }
+
+        for (const branch of result.refs) {
+          if (branch.isRemote || branch.name !== pullRequest.headBranch || !branch.worktreePath) {
+            continue;
+          }
+
+          const worktreePath = yield* canonicalizeExistingPath(branch.worktreePath);
+          if (worktreePath !== rootWorktreePath) {
+            return branch;
+          }
+        }
+
+        return null;
+      });
 
       const existingBranchBeforeFetch = yield* findLocalHeadBranch(input.cwd);
       const existingBranchBeforeFetchPath = existingBranchBeforeFetch?.worktreePath
-        ? canonicalizeExistingPath(existingBranchBeforeFetch.worktreePath)
+        ? yield* canonicalizeExistingPath(existingBranchBeforeFetch.worktreePath)
         : null;
       if (
         existingBranchBeforeFetch?.worktreePath &&
@@ -1509,7 +1510,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
 
       const existingBranchAfterFetch = yield* findLocalHeadBranch(input.cwd);
       const existingBranchAfterFetchPath = existingBranchAfterFetch?.worktreePath
-        ? canonicalizeExistingPath(existingBranchAfterFetch.worktreePath)
+        ? yield* canonicalizeExistingPath(existingBranchAfterFetch.worktreePath)
         : null;
       if (
         existingBranchAfterFetch?.worktreePath &&
