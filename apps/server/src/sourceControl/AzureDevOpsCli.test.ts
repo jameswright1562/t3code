@@ -197,7 +197,7 @@ describe("AzureDevOpsCli.layer", () => {
         expect.objectContaining({
           command: "az",
           cwd: "/repo",
-          args: expect.arrayContaining(["--description", "Generated body"]),
+          args: expect.arrayContaining(["--description", `@${bodyFile}`]),
         }),
       );
       expect(mockRun.mock.calls[0]?.[0].args).not.toContain("--output");
