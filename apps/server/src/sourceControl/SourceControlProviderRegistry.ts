@@ -225,6 +225,7 @@ export const make = Effect.fn("makeSourceControlProviderRegistry")(function* () 
   const gitlab = yield* GitLabSourceControlProvider.make();
   const bitbucket = yield* BitbucketSourceControlProvider.make();
   const bitbucketDiscovery = yield* BitbucketSourceControlProvider.makeDiscovery();
+  const azureDevOps = yield* AzureDevOpsSourceControlProvider.make();
   return yield* makeWithProviders([
     {
       kind: "github",
@@ -238,7 +239,7 @@ export const make = Effect.fn("makeSourceControlProviderRegistry")(function* () 
     },
     {
       kind: "azure-devops",
-      provider: unsupportedProvider("azure-devops"),
+      provider: azureDevOps,
       discovery: AzureDevOpsSourceControlProvider.discovery,
     },
     {
