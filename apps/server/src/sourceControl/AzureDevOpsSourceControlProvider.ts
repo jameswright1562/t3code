@@ -2,7 +2,7 @@ import { Effect, Layer } from "effect";
 import { SourceControlProviderError, type ChangeRequest } from "@t3tools/contracts";
 
 import { AzureDevOpsCli, type AzureDevOpsCliError } from "./AzureDevOpsCli.ts";
-import { SourceControlProvider } from "./SourceControlProvider.ts";
+import { SourceControlProvider, type SourceControlRefSelector } from "./SourceControlProvider.ts";
 import {
   combinedAuthOutput,
   firstSafeAuthLine,
@@ -77,31 +77,59 @@ function toChangeRequest(summary: {
   };
 }
 
+function sourceFromInput(input: {
+  readonly headSelector: string;
+  readonly source?: SourceControlRefSelector;
+}): SourceControlRefSelector | undefined {
+  if (input.source) {
+    return input.source;
+  }
+
+  const match = /^([^:/\s]+):(.+)$/u.exec(input.headSelector.trim());
+  const owner = match?.[1]?.trim();
+  const refName = match?.[2]?.trim();
+  return owner && refName ? { owner, refName } : undefined;
+}
+
 export const make = Effect.fn("makeAzureDevOpsSourceControlProvider")(function* () {
   const azure = yield* AzureDevOpsCli;
 
   return SourceControlProvider.of({
     kind: "azure-devops",
-    listChangeRequests: (input) =>
-      azure.listPullRequests(input).pipe(
-        Effect.map((items) => items.map(toChangeRequest)),
-        Effect.mapError((error) => providerError("listChangeRequests", error)),
-      ),
+    listChangeRequests: (input) => {
+      const source = sourceFromInput(input);
+      return azure
+        .listPullRequests({
+          cwd: input.cwd,
+          headSelector: input.headSelector,
+          ...(source ? { source } : {}),
+          state: input.state,
+          ...(input.limit !== undefined ? { limit: input.limit } : {}),
+        })
+        .pipe(
+          Effect.map((items) => items.map(toChangeRequest)),
+          Effect.mapError((error) => providerError("listChangeRequests", error)),
+        );
+    },
     getChangeRequest: (input) =>
       azure.getPullRequest(input).pipe(
         Effect.map(toChangeRequest),
         Effect.mapError((error) => providerError("getChangeRequest", error)),
       ),
-    createChangeRequest: (input) =>
-      azure
+    createChangeRequest: (input) => {
+      const source = sourceFromInput(input);
+      return azure
         .createPullRequest({
           cwd: input.cwd,
           baseBranch: input.baseRefName,
           headSelector: input.headSelector,
+          ...(source ? { source } : {}),
+          ...(input.target ? { target: input.target } : {}),
           title: input.title,
           bodyFile: input.bodyFile,
         })
-        .pipe(Effect.mapError((error) => providerError("createChangeRequest", error))),
+        .pipe(Effect.mapError((error) => providerError("createChangeRequest", error)));
+    },
     getRepositoryCloneUrls: (input) =>
       azure
         .getRepositoryCloneUrls(input)
@@ -112,7 +140,11 @@ export const make = Effect.fn("makeAzureDevOpsSourceControlProvider")(function* 
         .pipe(Effect.mapError((error) => providerError("getDefaultBranch", error))),
     checkoutChangeRequest: (input) =>
       azure
-        .checkoutPullRequest(input)
+        .checkoutPullRequest({
+          cwd: input.cwd,
+          reference: input.reference,
+          ...(input.context ? { remoteName: input.context.remoteName } : {}),
+        })
         .pipe(Effect.mapError((error) => providerError("checkoutChangeRequest", error))),
   });
 });
