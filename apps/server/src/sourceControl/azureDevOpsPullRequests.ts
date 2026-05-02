@@ -62,7 +62,10 @@ function normalizeAzureDevOpsPullRequestRecord(
     baseRefName: normalizeRefName(raw.targetRefName),
     headRefName: normalizeRefName(raw.sourceRefName),
     state: normalizeAzureDevOpsPullRequestState(raw.status),
-    updatedAt: raw.closedDate ?? raw.creationDate ?? Option.none(),
+    updatedAt: Option.orElse(
+      raw.closedDate ?? Option.none(),
+      () => raw.creationDate ?? Option.none(),
+    ),
   };
 }
 
