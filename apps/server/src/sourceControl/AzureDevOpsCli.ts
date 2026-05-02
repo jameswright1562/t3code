@@ -64,7 +64,6 @@ export interface AzureDevOpsCliShape {
 
   readonly getDefaultBranch: (input: {
     readonly cwd: string;
-    readonly repository: string;
   }) => Effect.Effect<string | null, AzureDevOpsCliError>;
 
   readonly checkoutPullRequest: (input: {
@@ -217,11 +216,17 @@ export const make = Effect.fn("makeAzureDevOpsCli")(function* () {
       .run({
         operation: "AzureDevOpsCli.execute",
         command: "az",
-        args: [...input.args, "--only-show-errors", "--output", "json"],
+        args: input.args,
         cwd: input.cwd,
         timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
       })
       .pipe(Effect.mapError((error) => normalizeAzureDevOpsCliError("execute", error)));
+
+  const executeJson = (input: Parameters<AzureDevOpsCliShape["execute"]>[0]) =>
+    execute({
+      ...input,
+      args: [...input.args, "--only-show-errors", "--output", "json"],
+    });
 
   const readBodyFile = (path: string) =>
     fileSystem
@@ -231,7 +236,7 @@ export const make = Effect.fn("makeAzureDevOpsCli")(function* () {
   return AzureDevOpsCli.of({
     execute,
     listPullRequests: (input) =>
-      execute({
+      executeJson({
         cwd: input.cwd,
         args: [
           "repos",
@@ -269,7 +274,7 @@ export const make = Effect.fn("makeAzureDevOpsCli")(function* () {
         ),
       ),
     getPullRequest: (input) =>
-      execute({
+      executeJson({
         cwd: input.cwd,
         args: [
           "repos",
@@ -301,7 +306,7 @@ export const make = Effect.fn("makeAzureDevOpsCli")(function* () {
         ),
       ),
     getRepositoryCloneUrls: (input) =>
-      execute({
+      executeJson({
         cwd: input.cwd,
         args: ["repos", "show", "--detect", "true", "--repository", input.repository],
       }).pipe(
@@ -325,6 +330,7 @@ export const make = Effect.fn("makeAzureDevOpsCli")(function* () {
               "repos",
               "pr",
               "create",
+              "--only-show-errors",
               "--detect",
               "true",
               "--target-branch",
@@ -341,9 +347,9 @@ export const make = Effect.fn("makeAzureDevOpsCli")(function* () {
         Effect.asVoid,
       ),
     getDefaultBranch: (input) =>
-      execute({
+      executeJson({
         cwd: input.cwd,
-        args: ["repos", "show", "--detect", "true", "--repository", input.repository],
+        args: ["repos", "show", "--detect", "true"],
       }).pipe(
         Effect.map((result) => result.stdout.trim()),
         Effect.flatMap((raw) =>
@@ -363,6 +369,7 @@ export const make = Effect.fn("makeAzureDevOpsCli")(function* () {
           "repos",
           "pr",
           "checkout",
+          "--only-show-errors",
           "--id",
           normalizeChangeRequestId(input.reference),
           "--remote-name",
