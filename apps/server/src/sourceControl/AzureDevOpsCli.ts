@@ -371,6 +371,8 @@ export const make = Effect.fn("makeAzureDevOpsCli")(function* () {
           "pr",
           "checkout",
           "--only-show-errors",
+          "--detect",
+          "true",
           "--id",
           normalizeChangeRequestId(input.reference),
           "--remote-name",

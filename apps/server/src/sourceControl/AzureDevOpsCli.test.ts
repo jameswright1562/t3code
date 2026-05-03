@@ -222,6 +222,8 @@ describe("AzureDevOpsCli.layer", () => {
           "pr",
           "checkout",
           "--only-show-errors",
+          "--detect",
+          "true",
           "--id",
           "42",
           "--remote-name",
