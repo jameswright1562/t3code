@@ -521,17 +521,15 @@ export const make = Effect.fn("makeBitbucketApi")(function* () {
       resolveRepository(input).pipe(
         Effect.flatMap((repository) => {
           const states = toBitbucketStates(input.state);
-          const query: Record<string, string> = {
+          const query: Record<string, string | ReadonlyArray<string>> = {
             pagelen: String(Math.max(1, Math.min(input.limit ?? 20, 50))),
             sort: "-updated_on",
             q: bitbucketQueryString([
               `source.branch.name = "${sourceBranch(input).replaceAll('"', '\\"')}"`,
               bitbucketStateFilter(states),
             ]),
+            state: states,
           };
-          if (input.state !== "all" && states.length === 1) {
-            query.state = states[0] ?? "OPEN";
-          }
 
           return executeJson(
             "listPullRequests",

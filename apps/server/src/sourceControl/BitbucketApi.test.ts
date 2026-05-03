@@ -218,6 +218,36 @@ it.effect("lists pull requests with Bitbucket state and source branch query para
   }).pipe(Effect.provide(layer));
 });
 
+it.effect("lists closed pull requests with both closed Bitbucket states", () => {
+  const { execute, layer } = makeLayer({
+    response: () =>
+      Response.json({
+        values: [],
+      }),
+  });
+
+  return Effect.gen(function* () {
+    const bitbucket = yield* BitbucketApi.BitbucketApi;
+    yield* bitbucket.listPullRequests({
+      cwd: "/repo",
+      headSelector: "feature/closed",
+      state: "closed",
+      limit: 10,
+    });
+
+    assert.deepStrictEqual(execute.mock.calls[0]?.[0].urlParams.params, [
+      ["pagelen", "10"],
+      ["sort", "-updated_on"],
+      [
+        "q",
+        'source.branch.name = "feature/closed" AND (state = "DECLINED" OR state = "SUPERSEDED")',
+      ],
+      ["state", "DECLINED"],
+      ["state", "SUPERSEDED"],
+    ]);
+  }).pipe(Effect.provide(layer));
+});
+
 it.effect("expands all-state pull request listing instead of relying on Bitbucket defaults", () => {
   const { execute, layer } = makeLayer({
     response: () =>
@@ -242,6 +272,10 @@ it.effect("expands all-state pull request listing instead of relying on Bitbucke
         "q",
         'source.branch.name = "feature/all" AND (state = "OPEN" OR state = "MERGED" OR state = "DECLINED" OR state = "SUPERSEDED")',
       ],
+      ["state", "OPEN"],
+      ["state", "MERGED"],
+      ["state", "DECLINED"],
+      ["state", "SUPERSEDED"],
     ]);
   }).pipe(Effect.provide(layer));
 });
