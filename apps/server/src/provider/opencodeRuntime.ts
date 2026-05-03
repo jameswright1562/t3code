@@ -30,6 +30,7 @@ import {
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import { isWindowsCommandNotFound } from "../processRunner.ts";
+import { resolveOpenCodeLaunchSpec } from "./openCodeLaunch.ts";
 import { collectStreamAsString } from "./providerSnapshot.ts";
 import { NetService } from "@t3tools/shared/Net";
 
@@ -153,6 +154,11 @@ function parseServerUrlFromOutput(output: string): string | null {
   return null;
 }
 
+function launchCommandLabel(binaryPath: string, args: ReadonlyArray<string>): string {
+  const launch = resolveOpenCodeLaunchSpec(binaryPath);
+  return [launch.executable, ...launch.args, ...args].join(" ");
+}
+
 export function parseOpenCodeModelSlug(
   slug: string | null | undefined,
 ): ParsedOpenCodeModelSlug | null {
@@ -274,8 +280,9 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
 
   const runOpenCodeCommand: OpenCodeRuntimeShape["runOpenCodeCommand"] = (input) =>
     Effect.gen(function* () {
+      const launch = resolveOpenCodeLaunchSpec(input.binaryPath);
       const child = yield* spawner.spawn(
-        ChildProcess.make(input.binaryPath, [...input.args], {
+        ChildProcess.make(launch.executable, [...launch.args, ...input.args], {
           shell: process.platform === "win32",
           env: input.environment ?? process.env,
         }),
@@ -288,7 +295,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       if (isWindowsCommandNotFound(exitCode, stderr)) {
         return yield* new OpenCodeRuntimeError({
           operation: "runOpenCodeCommand",
-          detail: `spawn ${input.binaryPath} ENOENT`,
+          detail: `spawn ${launch.displayBinaryPath} ENOENT`,
         });
       }
       return {
@@ -301,7 +308,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       Effect.mapError((cause) =>
         ensureRuntimeError(
           "runOpenCodeCommand",
-          `Failed to execute '${input.binaryPath} ${input.args.join(" ")}': ${openCodeRuntimeErrorDetail(cause)}`,
+          `Failed to execute '${launchCommandLabel(input.binaryPath, input.args)}': ${openCodeRuntimeErrorDetail(cause)}`,
           cause,
         ),
       ),
@@ -328,17 +335,15 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
           ),
         ));
       const timeoutMs = input.timeoutMs ?? DEFAULT_OPENCODE_SERVER_TIMEOUT_MS;
-      const args = ["serve", `--hostname=${hostname}`, `--port=${port}`];
+      const launch = resolveOpenCodeLaunchSpec(input.binaryPath);
+      const args = [...launch.args, "serve", `--hostname=${hostname}`, `--port=${port}`];
 
       const child = yield* spawner
         .spawn(
-          ChildProcess.make(input.binaryPath, args, {
+          ChildProcess.make(launch.executable, args, {
             detached: process.platform !== "win32",
             shell: process.platform === "win32",
-            env: {
-              ...(input.environment ?? process.env),
-              OPENCODE_CONFIG_CONTENT: JSON.stringify({}),
-            },
+            env: input.environment ?? process.env,
           }),
         )
         .pipe(

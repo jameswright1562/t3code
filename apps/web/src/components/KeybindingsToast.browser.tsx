@@ -123,6 +123,7 @@ function createBaseServerConfig(): ServerConfig {
           binaryPath: "",
           serverUrl: "",
           serverPassword: "",
+          configJsonc: "",
           customModels: [],
         },
       },

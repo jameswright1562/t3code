@@ -271,7 +271,8 @@ export const OpenCodeSettings = makeProviderSettingsSchema(
     binaryPath: makeBinaryPathSetting("opencode").pipe(
       Schema.annotateKey({
         title: "Binary path",
-        description: "Path to the OpenCode binary.",
+        description:
+          "Path to the OpenCode binary, package bin script, or a local OpenCode checkout root.",
         providerSettingsForm: {
           placeholder: "opencode",
           clearWhenEmpty: "omit",
@@ -301,13 +302,27 @@ export const OpenCodeSettings = makeProviderSettingsSchema(
         },
       }),
     ),
+    configJsonc: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "OpenCode config (JSONC)",
+        description:
+          "Injected into OPENCODE_CONFIG_CONTENT when T3 Code launches OpenCode locally. Use this for custom providers, enabled_providers, and OpenAI-compatible baseURL/apiKey settings.",
+        providerSettingsForm: {
+          control: "textarea",
+          placeholder:
+            '{\n  "provider": {\n    "openrouter": {\n      "options": {\n        "baseURL": "https://openrouter.ai/api/v1",\n        "apiKey": "$OPENROUTER_API_KEY"\n      }\n    }\n  },\n  "enabled_providers": ["openrouter"]\n}',
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
     customModels: Schema.Array(Schema.String).pipe(
       Schema.withDecodingDefault(Effect.succeed([])),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
   },
   {
-    order: ["binaryPath", "serverUrl", "serverPassword"],
+    order: ["binaryPath", "serverUrl", "serverPassword", "configJsonc"],
   },
 );
 export type OpenCodeSettings = typeof OpenCodeSettings.Type;
@@ -416,6 +431,7 @@ const OpenCodeSettingsPatch = Schema.Struct({
   binaryPath: Schema.optionalKey(Schema.String),
   serverUrl: Schema.optionalKey(Schema.String),
   serverPassword: Schema.optionalKey(Schema.String),
+  configJsonc: Schema.optionalKey(Schema.String),
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 

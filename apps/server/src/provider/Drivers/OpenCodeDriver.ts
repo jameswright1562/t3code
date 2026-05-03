@@ -24,6 +24,7 @@ import {
   checkOpenCodeProviderStatus,
   makePendingOpenCodeProvider,
 } from "../Layers/OpenCodeProvider.ts";
+import { buildOpenCodeProcessEnvironment } from "../openCodeLaunch.ts";
 import { ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
 import { OpenCodeRuntime } from "../opencodeRuntime.ts";
@@ -75,7 +76,6 @@ export const OpenCodeDriver: ProviderDriver<OpenCodeSettings, OpenCodeDriverEnv>
       const openCodeRuntime = yield* OpenCodeRuntime;
       const serverConfig = yield* ServerConfig;
       const eventLoggers = yield* ProviderEventLoggers;
-      const processEnv = mergeProviderInstanceEnvironment(environment);
       const continuationIdentity = defaultProviderContinuationIdentity({
         driverKind: DRIVER_KIND,
         instanceId,
@@ -87,6 +87,10 @@ export const OpenCodeDriver: ProviderDriver<OpenCodeSettings, OpenCodeDriverEnv>
         continuationGroupKey: continuationIdentity.continuationKey,
       });
       const effectiveConfig = { ...config, enabled } satisfies OpenCodeSettings;
+      const processEnv = buildOpenCodeProcessEnvironment(
+        mergeProviderInstanceEnvironment(environment),
+        effectiveConfig.configJsonc,
+      );
 
       const adapter = yield* makeOpenCodeAdapter(effectiveConfig, {
         instanceId,
