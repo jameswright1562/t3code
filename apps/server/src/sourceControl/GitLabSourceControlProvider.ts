@@ -2,7 +2,7 @@ import { Effect, Layer, Option } from "effect";
 import { SourceControlProviderError, type ChangeRequest } from "@t3tools/contracts";
 
 import { GitLabCli, type GitLabCliError, type GitLabMergeRequestSummary } from "./GitLabCli.ts";
-import { SourceControlProvider, type SourceControlRefSelector } from "./SourceControlProvider.ts";
+import { SourceControlProvider, sourceControlRefFromInput } from "./SourceControlProvider.ts";
 
 function providerError(operation: string, cause: GitLabCliError): SourceControlProviderError {
   return new SourceControlProviderError({
@@ -35,27 +35,13 @@ function toChangeRequest(summary: GitLabMergeRequestSummary): ChangeRequest {
   };
 }
 
-function sourceFromInput(input: {
-  readonly headSelector: string;
-  readonly source?: SourceControlRefSelector;
-}): SourceControlRefSelector | undefined {
-  if (input.source) {
-    return input.source;
-  }
-
-  const match = /^([^:/\s]+):(.+)$/u.exec(input.headSelector.trim());
-  const owner = match?.[1]?.trim();
-  const refName = match?.[2]?.trim();
-  return owner && refName ? { owner, refName } : undefined;
-}
-
 export const make = Effect.fn("makeGitLabSourceControlProvider")(function* () {
   const gitlab = yield* GitLabCli;
 
   return SourceControlProvider.of({
     kind: "gitlab",
     listChangeRequests: (input) => {
-      const source = sourceFromInput(input);
+      const source = sourceControlRefFromInput(input);
       return gitlab
         .listMergeRequests({
           cwd: input.cwd,
@@ -75,7 +61,7 @@ export const make = Effect.fn("makeGitLabSourceControlProvider")(function* () {
         Effect.mapError((error) => providerError("getChangeRequest", error)),
       ),
     createChangeRequest: (input) => {
-      const source = sourceFromInput(input);
+      const source = sourceControlRefFromInput(input);
       return gitlab
         .createMergeRequest({
           cwd: input.cwd,

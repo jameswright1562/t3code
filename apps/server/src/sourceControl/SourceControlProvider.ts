@@ -20,6 +20,22 @@ export interface SourceControlRefSelector {
   readonly repository?: string;
 }
 
+export function parseSourceControlOwnerRef(
+  headSelector: string,
+): SourceControlRefSelector | undefined {
+  const match = /^([^:/\s]+):(.+)$/u.exec(headSelector.trim());
+  const owner = match?.[1]?.trim();
+  const refName = match?.[2]?.trim();
+  return owner && refName ? { owner, refName } : undefined;
+}
+
+export function sourceControlRefFromInput(input: {
+  readonly headSelector: string;
+  readonly source?: SourceControlRefSelector;
+}): SourceControlRefSelector | undefined {
+  return input.source ?? parseSourceControlOwnerRef(input.headSelector);
+}
+
 export interface SourceControlProviderShape {
   readonly kind: SourceControlProviderKind;
   readonly listChangeRequests: (input: {

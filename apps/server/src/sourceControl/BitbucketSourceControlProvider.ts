@@ -2,7 +2,7 @@ import { Effect, Layer, Option } from "effect";
 import { SourceControlProviderError, type ChangeRequest } from "@t3tools/contracts";
 
 import { BitbucketApi, type BitbucketApiError } from "./BitbucketApi.ts";
-import { SourceControlProvider, type SourceControlRefSelector } from "./SourceControlProvider.ts";
+import { SourceControlProvider, sourceControlRefFromInput } from "./SourceControlProvider.ts";
 import type { NormalizedBitbucketPullRequestRecord } from "./bitbucketPullRequests.ts";
 
 function providerError(operation: string, cause: BitbucketApiError): SourceControlProviderError {
@@ -36,27 +36,13 @@ function toChangeRequest(summary: NormalizedBitbucketPullRequestRecord): ChangeR
   };
 }
 
-function sourceFromInput(input: {
-  readonly headSelector: string;
-  readonly source?: SourceControlRefSelector;
-}): SourceControlRefSelector | undefined {
-  if (input.source) {
-    return input.source;
-  }
-
-  const match = /^([^:/\s]+):(.+)$/u.exec(input.headSelector.trim());
-  const owner = match?.[1]?.trim();
-  const refName = match?.[2]?.trim();
-  return owner && refName ? { owner, refName } : undefined;
-}
-
 export const make = Effect.fn("makeBitbucketSourceControlProvider")(function* () {
   const bitbucket = yield* BitbucketApi;
 
   return SourceControlProvider.of({
     kind: "bitbucket",
     listChangeRequests: (input) => {
-      const source = sourceFromInput(input);
+      const source = sourceControlRefFromInput(input);
       return bitbucket
         .listPullRequests({
           cwd: input.cwd,
@@ -77,7 +63,7 @@ export const make = Effect.fn("makeBitbucketSourceControlProvider")(function* ()
         Effect.mapError((error) => providerError("getChangeRequest", error)),
       ),
     createChangeRequest: (input) => {
-      const source = sourceFromInput(input);
+      const source = sourceControlRefFromInput(input);
       return bitbucket
         .createPullRequest({
           cwd: input.cwd,

@@ -17,6 +17,7 @@ import type {
   SourceControlProviderContext,
   SourceControlRefSelector,
 } from "./SourceControlProvider.ts";
+import { parseSourceControlOwnerRef } from "./SourceControlProvider.ts";
 import { VcsDriverRegistry } from "../vcs/VcsDriverRegistry.ts";
 
 const DEFAULT_API_BASE_URL = "https://api.bitbucket.org/2.0";
@@ -141,9 +142,7 @@ function normalizeChangeRequestId(reference: string): string {
 }
 
 function normalizeSourceBranch(headSelector: string): string {
-  const trimmed = headSelector.trim();
-  const ownerSelector = /^([^:/\s]+):(.+)$/u.exec(trimmed);
-  return ownerSelector?.[2]?.trim() ?? trimmed;
+  return parseSourceControlOwnerRef(headSelector)?.refName ?? headSelector.trim();
 }
 
 function sourceBranch(input: {
@@ -158,21 +157,30 @@ function sourceWorkspace(input: {
   readonly source?: SourceControlRefSelector;
 }): string | undefined {
   if (input.source?.owner) return input.source.owner;
-  const ownerSelector = /^([^:/\s]+):(.+)$/u.exec(input.headSelector.trim());
-  return ownerSelector?.[1]?.trim();
+  return parseSourceControlOwnerRef(input.headSelector)?.owner;
 }
 
-function toBitbucketState(state: "open" | "closed" | "merged" | "all"): string | null {
+function toBitbucketStates(state: "open" | "closed" | "merged" | "all"): ReadonlyArray<string> {
   switch (state) {
     case "open":
-      return "OPEN";
+      return ["OPEN"];
     case "closed":
-      return "DECLINED";
+      return ["DECLINED", "SUPERSEDED"];
     case "merged":
-      return "MERGED";
+      return ["MERGED"];
     case "all":
-      return null;
+      return ["OPEN", "MERGED", "DECLINED", "SUPERSEDED"];
   }
+}
+
+function bitbucketQueryString(filters: ReadonlyArray<string>): string {
+  return filters.join(" AND ");
+}
+
+function bitbucketStateFilter(states: ReadonlyArray<string>): string {
+  return states.length === 1
+    ? `state = "${states[0]}"`
+    : `(${states.map((state) => `state = "${state}"`).join(" OR ")})`;
 }
 
 function parseBitbucketRepositorySlug(value: string): BitbucketRepositoryLocator | null {
@@ -405,14 +413,17 @@ export const make = Effect.fn("makeBitbucketApi")(function* () {
     listPullRequests: (input) =>
       resolveRepository(input).pipe(
         Effect.flatMap((repository) => {
-          const state = toBitbucketState(input.state);
+          const states = toBitbucketStates(input.state);
           const query: Record<string, string> = {
             pagelen: String(Math.max(1, Math.min(input.limit ?? 20, 50))),
             sort: "-updated_on",
-            q: `source.branch.name = "${sourceBranch(input).replaceAll('"', '\\"')}"`,
+            q: bitbucketQueryString([
+              `source.branch.name = "${sourceBranch(input).replaceAll('"', '\\"')}"`,
+              bitbucketStateFilter(states),
+            ]),
           };
-          if (state !== null) {
-            query.state = state;
+          if (input.state !== "all" && states.length === 1) {
+            query.state = states[0] ?? "OPEN";
           }
 
           return executeJson(

@@ -61,7 +61,7 @@ const BITBUCKET_CHANGE_REQUEST_PRESENTATION: ChangeRequestPresentation = {
   longName: "pull request",
   pluralLongName: "pull requests",
   providerLongName: "Bitbucket pull request",
-  checkoutCommandExample: "https://bitbucket.org/workspace/repo/pull-requests/42",
+  checkoutCommandExample: "Not available through an official Bitbucket CLI",
   urlExample: "https://bitbucket.org/workspace/repo/pull-requests/42",
 };
 
