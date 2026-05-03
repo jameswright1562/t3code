@@ -598,6 +598,12 @@ export const make = Effect.fn("makeBitbucketApi")(function* () {
       }),
     getDefaultBranch: (input) =>
       getRepository(input).pipe(Effect.map((repository) => repository.mainbranch?.name ?? null)),
+    // Bitbucket Cloud pull requests are Git-backed and Bitbucket does not provide
+    // an official checkout CLI. This provider-local path uses GitVcsDriver as a
+    // narrow escape hatch to materialize Bitbucket PR refs. Do not generalize this
+    // as the source-control provider model: if we support non-Git-compatible
+    // hosting providers or native JJ/Sapling checkout flows, move this into a
+    // VCS-specific change-request checkout capability.
     checkoutPullRequest: (input) =>
       Effect.gen(function* () {
         const destinationRepository = yield* resolveRepository(input);
