@@ -15,7 +15,7 @@ export interface NormalizedBitbucketPullRequestRecord {
   readonly headRepositoryOwnerLogin?: string | null;
 }
 
-const BitbucketRepositoryRefSchema = Schema.Struct({
+export const BitbucketRepositoryRefSchema = Schema.Struct({
   full_name: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   workspace: Schema.optional(
     Schema.NullOr(
@@ -26,14 +26,14 @@ const BitbucketRepositoryRefSchema = Schema.Struct({
   ),
 });
 
-const BitbucketPullRequestBranchSchema = Schema.Struct({
+export const BitbucketPullRequestBranchSchema = Schema.Struct({
   repository: Schema.optional(Schema.NullOr(BitbucketRepositoryRefSchema)),
   branch: Schema.Struct({
     name: TrimmedNonEmptyString,
   }),
 });
 
-const BitbucketPullRequestSchema = Schema.Struct({
+export const BitbucketPullRequestSchema = Schema.Struct({
   id: PositiveInt,
   title: TrimmedNonEmptyString,
   state: Schema.optional(Schema.NullOr(Schema.String)),
@@ -45,6 +45,11 @@ const BitbucketPullRequestSchema = Schema.Struct({
   }),
   source: BitbucketPullRequestBranchSchema,
   destination: BitbucketPullRequestBranchSchema,
+});
+
+export const BitbucketPullRequestListSchema = Schema.Struct({
+  values: Schema.Array(BitbucketPullRequestSchema),
+  next: Schema.optional(TrimmedNonEmptyString),
 });
 
 function trimOptionalString(value: string | null | undefined): string | null {
@@ -72,7 +77,7 @@ function normalizeBitbucketPullRequestState(state: string | null | undefined) {
   }
 }
 
-function normalizeBitbucketPullRequestRecord(
+export function normalizeBitbucketPullRequestRecord(
   raw: Schema.Schema.Type<typeof BitbucketPullRequestSchema>,
 ): NormalizedBitbucketPullRequestRecord {
   const headRepositoryNameWithOwner = trimOptionalString(raw.source.repository?.full_name);

@@ -100,6 +100,49 @@ function selectProviderContext(
   );
 }
 
+function bindProviderContext(
+  provider: SourceControlProviderShape,
+  context: SourceControlProviderContext | null,
+): SourceControlProviderShape {
+  if (context === null) {
+    return provider;
+  }
+
+  return SourceControlProvider.of({
+    kind: provider.kind,
+    listChangeRequests: (input) =>
+      provider.listChangeRequests({
+        ...input,
+        context: input.context ?? context,
+      }),
+    getChangeRequest: (input) =>
+      provider.getChangeRequest({
+        ...input,
+        context: input.context ?? context,
+      }),
+    createChangeRequest: (input) =>
+      provider.createChangeRequest({
+        ...input,
+        context: input.context ?? context,
+      }),
+    getRepositoryCloneUrls: (input) =>
+      provider.getRepositoryCloneUrls({
+        ...input,
+        context: input.context ?? context,
+      }),
+    getDefaultBranch: (input) =>
+      provider.getDefaultBranch({
+        ...input,
+        context: input.context ?? context,
+      }),
+    checkoutChangeRequest: (input) =>
+      provider.checkoutChangeRequest({
+        ...input,
+        context: input.context ?? context,
+      }),
+  });
+}
+
 export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWithProviders")(
   function* (registrations: ReadonlyArray<SourceControlProviderRegistration>) {
     const vcsRegistry = yield* VcsDriverRegistry;
@@ -136,8 +179,9 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
       Cache.get(providerContextCache, input.cwd).pipe(
         Effect.map((context) => {
           const kind = context?.provider.kind ?? "unknown";
+          const provider = providers.get(kind) ?? unsupportedProvider(kind);
           return {
-            provider: providers.get(kind) ?? unsupportedProvider(kind),
+            provider: bindProviderContext(provider, context),
             context,
           } satisfies SourceControlProviderHandle;
         }),

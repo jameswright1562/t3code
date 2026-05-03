@@ -10,6 +10,7 @@ import { Context, Effect, Layer, Option } from "effect";
 
 import { ServerConfig } from "../config.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
+import { BitbucketApi } from "./BitbucketApi.ts";
 
 interface DiscoveryProbe {
   readonly label: string;
@@ -23,11 +24,20 @@ type VcsProbe = DiscoveryProbe & {
   readonly kind: VcsDriverKind;
 };
 
-type ProviderProbe = DiscoveryProbe & {
+type CliProviderProbe = DiscoveryProbe & {
+  readonly type: "cli";
   readonly kind: SourceControlProviderKind;
   readonly authArgs: ReadonlyArray<string>;
   readonly parseAuth: (input: AuthProbeInput) => SourceControlProviderAuth;
 };
+
+type ApiProviderProbe = Omit<DiscoveryProbe, "executable" | "versionArgs"> & {
+  readonly type: "api";
+  readonly kind: SourceControlProviderKind;
+  readonly executable: string;
+};
+
+type ProviderProbe = CliProviderProbe | ApiProviderProbe;
 
 interface AuthProbeInput {
   readonly stdout: string;
@@ -67,6 +77,7 @@ const VCS_PROBES: ReadonlyArray<VcsProbe> = [
 
 const SOURCE_CONTROL_PROVIDER_PROBES: ReadonlyArray<ProviderProbe> = [
   {
+    type: "cli",
     kind: "github",
     label: "GitHub",
     executable: "gh",
@@ -77,6 +88,7 @@ const SOURCE_CONTROL_PROVIDER_PROBES: ReadonlyArray<ProviderProbe> = [
     installHint: "Install GitHub CLI with `brew install gh` or from https://cli.github.com/.",
   },
   {
+    type: "cli",
     kind: "gitlab",
     label: "GitLab",
     executable: "glab",
@@ -88,6 +100,7 @@ const SOURCE_CONTROL_PROVIDER_PROBES: ReadonlyArray<ProviderProbe> = [
       "Install GitLab CLI with `brew install glab` or from https://gitlab.com/gitlab-org/cli.",
   },
   {
+    type: "cli",
     kind: "azure-devops",
     label: "Azure DevOps",
     executable: "az",
@@ -99,14 +112,13 @@ const SOURCE_CONTROL_PROVIDER_PROBES: ReadonlyArray<ProviderProbe> = [
       "Install Azure CLI with `brew install azure-cli`, then add Azure DevOps support with `az extension add --name azure-devops`.",
   },
   {
+    type: "api",
     kind: "bitbucket",
     label: "Bitbucket",
-    executable: "bb",
-    versionArgs: ["--version"],
-    authArgs: ["auth", "status"],
-    parseAuth: parseBitbucketAuth,
+    executable: "Bitbucket REST API",
     implemented: true,
-    installHint: "Install a Bitbucket CLI (`bb`) and authenticate it for your Bitbucket workspace.",
+    installHint:
+      "Create a Bitbucket API token with pull request/repository scopes, then set T3CODE_BITBUCKET_EMAIL and T3CODE_BITBUCKET_API_TOKEN.",
   },
 ];
 
@@ -266,37 +278,6 @@ function parseAzureAuth(input: AuthProbeInput): SourceControlProviderAuth {
   });
 }
 
-function parseBitbucketAuth(input: AuthProbeInput): SourceControlProviderAuth {
-  const output = combinedAuthOutput(input);
-  const account = matchFirst(output, [
-    /Logged in to .* as\s+([^\s(]+)/iu,
-    /Logged in as\s+([^\s(]+)/iu,
-    /account:\s*([^\s(]+)/iu,
-    /user:\s*([^\s(]+)/iu,
-    /username:\s*([^\s(]+)/iu,
-  ]);
-  const host = parseCliHost(output) ?? "bitbucket.org";
-
-  if (input.exitCode !== 0) {
-    return providerAuth({
-      status: "unauthenticated",
-      host,
-      detail:
-        firstSafeAuthLine(output) ?? "Authenticate the Bitbucket CLI before enabling Bitbucket.",
-    });
-  }
-
-  if (account) {
-    return providerAuth({ status: "authenticated", account, host });
-  }
-
-  return providerAuth({
-    status: "unknown",
-    host,
-    detail: firstSafeAuthLine(output) ?? "Bitbucket CLI auth status could not be parsed.",
-  });
-}
-
 export interface SourceControlDiscoveryShape {
   readonly discover: Effect.Effect<SourceControlDiscoveryResult>;
 }
@@ -311,6 +292,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const config = yield* ServerConfig;
     const process = yield* VcsProcess.VcsProcess;
+    const bitbucketApi = yield* BitbucketApi;
 
     const probe = <Kind extends VcsDriverKind | SourceControlProviderKind>(
       input: DiscoveryProbe & { readonly kind: Kind },
@@ -356,43 +338,60 @@ export const layer = Layer.effect(
         );
 
     const probeProvider = (input: ProviderProbe) =>
-      probe(input).pipe(
-        Effect.flatMap((item) => {
-          if (item.status !== "available") {
-            return Effect.succeed({
-              ...item,
-              auth: unknownAuth("CLI is not installed."),
-            } satisfies SourceControlProviderDiscoveryItem);
-          }
-
-          return process
-            .run({
-              operation: "source-control.discovery.auth",
-              command: input.executable,
-              args: input.authArgs,
-              cwd: config.cwd,
-              allowNonZeroExit: true,
-              timeoutMs: 5_000,
-              maxOutputBytes: 8_000,
-              truncateOutputAtMaxBytes: true,
-            })
-            .pipe(
-              Effect.map(
-                (result) =>
-                  ({
-                    ...item,
-                    auth: input.parseAuth(result),
-                  }) satisfies SourceControlProviderDiscoveryItem,
-              ),
-              Effect.catch((cause) =>
-                Effect.succeed({
+      input.type === "api"
+        ? bitbucketApi.probeAuth.pipe(
+            Effect.map(
+              (auth) =>
+                ({
+                  kind: input.kind,
+                  label: input.label,
+                  executable: input.executable,
+                  implemented: input.implemented,
+                  status: "available" as const,
+                  version: Option.none<string>(),
+                  installHint: input.installHint,
+                  detail: Option.none<string>(),
+                  auth,
+                }) satisfies SourceControlProviderDiscoveryItem,
+            ),
+          )
+        : probe(input).pipe(
+            Effect.flatMap((item) => {
+              if (item.status !== "available") {
+                return Effect.succeed({
                   ...item,
-                  auth: unknownAuth(Option.getOrUndefined(detailFromCause(cause))),
-                } satisfies SourceControlProviderDiscoveryItem),
-              ),
-            );
-        }),
-      );
+                  auth: unknownAuth("CLI is not installed."),
+                } satisfies SourceControlProviderDiscoveryItem);
+              }
+
+              return process
+                .run({
+                  operation: "source-control.discovery.auth",
+                  command: input.executable,
+                  args: input.authArgs,
+                  cwd: config.cwd,
+                  allowNonZeroExit: true,
+                  timeoutMs: 5_000,
+                  maxOutputBytes: 8_000,
+                  truncateOutputAtMaxBytes: true,
+                })
+                .pipe(
+                  Effect.map(
+                    (result) =>
+                      ({
+                        ...item,
+                        auth: input.parseAuth(result),
+                      }) satisfies SourceControlProviderDiscoveryItem,
+                  ),
+                  Effect.catch((cause) =>
+                    Effect.succeed({
+                      ...item,
+                      auth: unknownAuth(Option.getOrUndefined(detailFromCause(cause))),
+                    } satisfies SourceControlProviderDiscoveryItem),
+                  ),
+                );
+            }),
+          );
 
     return SourceControlDiscovery.of({
       discover: Effect.all({

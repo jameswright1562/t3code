@@ -1,7 +1,7 @@
 import { assert, it } from "@effect/vitest";
 import { DateTime, Effect, Layer, Option } from "effect";
 
-import { BitbucketCli } from "./BitbucketCli.ts";
+import { BitbucketApi } from "./BitbucketApi.ts";
 import { GitHubCli } from "./GitHubCli.ts";
 import { GitLabCli } from "./GitLabCli.ts";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
@@ -55,7 +55,7 @@ function makeRegistry(input: {
     Effect.provide(
       Layer.mergeAll(
         registryLayer,
-        Layer.mock(BitbucketCli)({}),
+        Layer.mock(BitbucketApi)({}),
         Layer.mock(GitHubCli)({}),
         Layer.mock(GitLabCli)({}),
       ),

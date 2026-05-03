@@ -6,6 +6,7 @@ import { VcsProcessSpawnError } from "@t3tools/contracts";
 
 import { ServerConfig } from "../config.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
+import { BitbucketApi } from "./BitbucketApi.ts";
 import { SourceControlDiscovery, layer } from "./SourceControlDiscovery.ts";
 
 const processOutput = (
@@ -56,6 +57,18 @@ Logged in to github.com account juliusmarminge (keyring)
             }),
           );
         },
+      }),
+    ),
+    Layer.provide(
+      Layer.mock(BitbucketApi)({
+        probeAuth: Effect.succeed({
+          status: "unauthenticated",
+          account: Option.none(),
+          host: Option.some("bitbucket.org"),
+          detail: Option.some(
+            "Set T3CODE_BITBUCKET_EMAIL and T3CODE_BITBUCKET_API_TOKEN, or T3CODE_BITBUCKET_ACCESS_TOKEN.",
+          ),
+        }),
       }),
     ),
     Layer.provideMerge(NodeServices.layer),
@@ -109,8 +122,8 @@ Logged in to github.com account juliusmarminge (keyring)
         {
           kind: "bitbucket",
           implemented: true,
-          status: "missing",
-          auth: "unknown",
+          status: "available",
+          auth: "unauthenticated",
           account: Option.none(),
         },
       ],
@@ -151,13 +164,6 @@ Logged in to gitlab.com as gitlab-user
           ) {
             return Effect.succeed(processOutput("azure-user@example.com\n"));
           }
-          if (input.command === "bb" && input.args.join(" ") === "auth status") {
-            return Effect.succeed(
-              processOutput(`bitbucket.org
-Logged in as bitbucket-user
-`),
-            );
-          }
           return Effect.fail(
             new VcsProcessSpawnError({
               operation: input.operation,
@@ -167,6 +173,16 @@ Logged in as bitbucket-user
             }),
           );
         },
+      }),
+    ),
+    Layer.provide(
+      Layer.mock(BitbucketApi)({
+        probeAuth: Effect.succeed({
+          status: "authenticated",
+          account: Option.some("bitbucket-user"),
+          host: Option.some("bitbucket.org"),
+          detail: Option.none(),
+        }),
       }),
     ),
     Layer.provideMerge(NodeServices.layer),

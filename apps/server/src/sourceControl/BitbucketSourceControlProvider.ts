@@ -1,11 +1,11 @@
 import { Effect, Layer, Option } from "effect";
 import { SourceControlProviderError, type ChangeRequest } from "@t3tools/contracts";
 
-import { BitbucketCli, type BitbucketCliError } from "./BitbucketCli.ts";
+import { BitbucketApi, type BitbucketApiError } from "./BitbucketApi.ts";
 import { SourceControlProvider, type SourceControlRefSelector } from "./SourceControlProvider.ts";
 import type { NormalizedBitbucketPullRequestRecord } from "./bitbucketPullRequests.ts";
 
-function providerError(operation: string, cause: BitbucketCliError): SourceControlProviderError {
+function providerError(operation: string, cause: BitbucketApiError): SourceControlProviderError {
   return new SourceControlProviderError({
     provider: "bitbucket",
     operation,
@@ -51,7 +51,7 @@ function sourceFromInput(input: {
 }
 
 export const make = Effect.fn("makeBitbucketSourceControlProvider")(function* () {
-  const bitbucket = yield* BitbucketCli;
+  const bitbucket = yield* BitbucketApi;
 
   return SourceControlProvider.of({
     kind: "bitbucket",
@@ -60,6 +60,7 @@ export const make = Effect.fn("makeBitbucketSourceControlProvider")(function* ()
       return bitbucket
         .listPullRequests({
           cwd: input.cwd,
+          ...(input.context ? { context: input.context } : {}),
           headSelector: input.headSelector,
           ...(source ? { source } : {}),
           state: input.state,
@@ -80,6 +81,7 @@ export const make = Effect.fn("makeBitbucketSourceControlProvider")(function* ()
       return bitbucket
         .createPullRequest({
           cwd: input.cwd,
+          ...(input.context ? { context: input.context } : {}),
           baseBranch: input.baseRefName,
           headSelector: input.headSelector,
           ...(source ? { source } : {}),
@@ -95,12 +97,16 @@ export const make = Effect.fn("makeBitbucketSourceControlProvider")(function* ()
         .pipe(Effect.mapError((error) => providerError("getRepositoryCloneUrls", error))),
     getDefaultBranch: (input) =>
       bitbucket
-        .getDefaultBranch({ cwd: input.cwd })
+        .getDefaultBranch({
+          cwd: input.cwd,
+          ...(input.context ? { context: input.context } : {}),
+        })
         .pipe(Effect.mapError((error) => providerError("getDefaultBranch", error))),
     checkoutChangeRequest: (input) =>
       bitbucket
         .checkoutPullRequest({
           cwd: input.cwd,
+          ...(input.context ? { context: input.context } : {}),
           reference: input.reference,
           ...(input.force !== undefined ? { force: input.force } : {}),
         })

@@ -1,12 +1,12 @@
 import { assert, it } from "@effect/vitest";
 import { Effect, Layer, Option } from "effect";
 
-import { BitbucketCli, type BitbucketCliShape } from "./BitbucketCli.ts";
+import { BitbucketApi, type BitbucketApiShape } from "./BitbucketApi.ts";
 import * as BitbucketSourceControlProvider from "./BitbucketSourceControlProvider.ts";
 
-function makeProvider(bitbucket: Partial<BitbucketCliShape>) {
+function makeProvider(bitbucket: Partial<BitbucketApiShape>) {
   return BitbucketSourceControlProvider.make().pipe(
-    Effect.provide(Layer.mock(BitbucketCli)(bitbucket)),
+    Effect.provide(Layer.mock(BitbucketApi)(bitbucket)),
   );
 }
 
@@ -51,7 +51,7 @@ it.effect("maps Bitbucket PR summaries into provider-neutral change requests", (
 
 it.effect("lists Bitbucket PRs through provider-neutral input names", () =>
   Effect.gen(function* () {
-    let listInput: Parameters<BitbucketCliShape["listPullRequests"]>[0] | null = null;
+    let listInput: Parameters<BitbucketApiShape["listPullRequests"]>[0] | null = null;
     const provider = yield* makeProvider({
       listPullRequests: (input) => {
         listInput = input;
@@ -77,7 +77,7 @@ it.effect("lists Bitbucket PRs through provider-neutral input names", () =>
 
 it.effect("creates Bitbucket PRs through provider-neutral input names", () =>
   Effect.gen(function* () {
-    let createInput: Parameters<BitbucketCliShape["createPullRequest"]>[0] | null = null;
+    let createInput: Parameters<BitbucketApiShape["createPullRequest"]>[0] | null = null;
     const provider = yield* makeProvider({
       createPullRequest: (input) => {
         createInput = input;
@@ -107,7 +107,7 @@ it.effect("creates Bitbucket PRs through provider-neutral input names", () =>
   }),
 );
 
-it.effect("uses Bitbucket CLI repository detection for default branch lookup", () =>
+it.effect("uses Bitbucket API repository detection for default branch lookup", () =>
   Effect.gen(function* () {
     let cwdInput: string | null = null;
     const provider = yield* makeProvider({
