@@ -162,16 +162,16 @@ function sourceWorkspace(input: {
   return ownerSelector?.[1]?.trim();
 }
 
-function toBitbucketState(state: "open" | "closed" | "merged" | "all"): string | null {
+function toBitbucketStates(state: "open" | "closed" | "merged" | "all"): ReadonlyArray<string> {
   switch (state) {
     case "open":
-      return "OPEN";
+      return ["OPEN"];
     case "closed":
-      return "DECLINED";
+      return ["DECLINED"];
     case "merged":
-      return "MERGED";
+      return ["MERGED"];
     case "all":
-      return null;
+      return ["OPEN", "MERGED", "DECLINED", "SUPERSEDED"];
   }
 }
 
@@ -405,26 +405,24 @@ export const make = Effect.fn("makeBitbucketApi")(function* () {
     listPullRequests: (input) =>
       resolveRepository(input).pipe(
         Effect.flatMap((repository) => {
-          const state = toBitbucketState(input.state);
+          const states = toBitbucketStates(input.state);
           const query: Record<string, string> = {
             pagelen: String(Math.max(1, Math.min(input.limit ?? 20, 50))),
             sort: "-updated_on",
             q: `source.branch.name = "${sourceBranch(input).replaceAll('"', '\\"')}"`,
           };
-          if (state !== null) {
-            query.state = state;
+
+          let request = HttpClientRequest.get(
+            apiUrl(
+              `/repositories/${encodeURIComponent(repository.workspace)}/${encodeURIComponent(repository.repoSlug)}/pullrequests`,
+            ),
+            { urlParams: query },
+          );
+          for (const s of states) {
+            request = HttpClientRequest.appendUrlParam(request, "state", s);
           }
 
-          return executeJson(
-            "listPullRequests",
-            HttpClientRequest.get(
-              apiUrl(
-                `/repositories/${encodeURIComponent(repository.workspace)}/${encodeURIComponent(repository.repoSlug)}/pullrequests`,
-              ),
-              { urlParams: query },
-            ),
-            BitbucketPullRequestListSchema,
-          );
+          return executeJson("listPullRequests", request, BitbucketPullRequestListSchema);
         }),
         Effect.map((list) => list.values.map(normalizeBitbucketPullRequestRecord)),
       ),

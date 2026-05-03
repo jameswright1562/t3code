@@ -1,6 +1,5 @@
-import { Cause, DateTime, Exit, Option, Result, Schema } from "effect";
+import { DateTime, Option, Schema } from "effect";
 import { PositiveInt, TrimmedNonEmptyString } from "@t3tools/contracts";
-import { decodeJsonResult, formatSchemaError } from "@t3tools/shared/schemaJson";
 
 export interface NormalizedBitbucketPullRequestRecord {
   readonly number: number;
@@ -102,50 +101,4 @@ export function normalizeBitbucketPullRequestRecord(
     ...(headRepositoryNameWithOwner ? { headRepositoryNameWithOwner } : {}),
     ...(headRepositoryOwnerLogin ? { headRepositoryOwnerLogin } : {}),
   };
-}
-
-const decodeBitbucketPullRequestList = decodeJsonResult(Schema.Unknown);
-const decodeBitbucketPullRequest = decodeJsonResult(BitbucketPullRequestSchema);
-const decodeBitbucketPullRequestEntry = Schema.decodeUnknownExit(BitbucketPullRequestSchema);
-
-export const formatBitbucketJsonDecodeError = formatSchemaError;
-
-export function decodeBitbucketPullRequestListJson(
-  raw: string,
-): Result.Result<
-  ReadonlyArray<NormalizedBitbucketPullRequestRecord>,
-  Cause.Cause<Schema.SchemaError>
-> {
-  const result = decodeBitbucketPullRequestList(raw);
-  if (Result.isFailure(result)) {
-    return Result.fail(result.failure);
-  }
-
-  const entries: ReadonlyArray<unknown> = Array.isArray(result.success)
-    ? result.success
-    : typeof result.success === "object" &&
-        result.success !== null &&
-        "values" in result.success &&
-        Array.isArray(result.success.values)
-      ? result.success.values
-      : [];
-  const pullRequests: NormalizedBitbucketPullRequestRecord[] = [];
-  for (const entry of entries) {
-    const decodedEntry = decodeBitbucketPullRequestEntry(entry);
-    if (Exit.isFailure(decodedEntry)) {
-      continue;
-    }
-    pullRequests.push(normalizeBitbucketPullRequestRecord(decodedEntry.value));
-  }
-  return Result.succeed(pullRequests);
-}
-
-export function decodeBitbucketPullRequestJson(
-  raw: string,
-): Result.Result<NormalizedBitbucketPullRequestRecord, Cause.Cause<Schema.SchemaError>> {
-  const result = decodeBitbucketPullRequest(raw);
-  if (Result.isSuccess(result)) {
-    return Result.succeed(normalizeBitbucketPullRequestRecord(result.success));
-  }
-  return Result.fail(result.failure);
 }
