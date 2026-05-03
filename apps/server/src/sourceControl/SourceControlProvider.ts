@@ -62,6 +62,20 @@ export interface SourceControlProviderShape {
   }) => Effect.Effect<void, SourceControlProviderError>;
 }
 
+export function sourceFromInput(input: {
+  readonly headSelector: string;
+  readonly source?: SourceControlRefSelector;
+}): SourceControlRefSelector | undefined {
+  if (input.source) {
+    return input.source;
+  }
+
+  const match = /^([^:/\s]+):(.+)$/u.exec(input.headSelector.trim());
+  const owner = match?.[1]?.trim();
+  const refName = match?.[2]?.trim();
+  return owner && refName ? { owner, refName } : undefined;
+}
+
 export class SourceControlProvider extends Context.Service<
   SourceControlProvider,
   SourceControlProviderShape

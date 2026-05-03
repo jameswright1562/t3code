@@ -2,7 +2,7 @@ import { Effect, Layer } from "effect";
 import { SourceControlProviderError, type ChangeRequest } from "@t3tools/contracts";
 
 import { AzureDevOpsCli, type AzureDevOpsCliError } from "./AzureDevOpsCli.ts";
-import { SourceControlProvider, type SourceControlRefSelector } from "./SourceControlProvider.ts";
+import { SourceControlProvider, sourceFromInput } from "./SourceControlProvider.ts";
 
 function providerError(operation: string, cause: AzureDevOpsCliError): SourceControlProviderError {
   return new SourceControlProviderError({
@@ -33,20 +33,6 @@ function toChangeRequest(summary: {
     updatedAt: summary.updatedAt,
     isCrossRepository: false,
   };
-}
-
-function sourceFromInput(input: {
-  readonly headSelector: string;
-  readonly source?: SourceControlRefSelector;
-}): SourceControlRefSelector | undefined {
-  if (input.source) {
-    return input.source;
-  }
-
-  const match = /^([^:/\s]+):(.+)$/u.exec(input.headSelector.trim());
-  const owner = match?.[1]?.trim();
-  const refName = match?.[2]?.trim();
-  return owner && refName ? { owner, refName } : undefined;
 }
 
 export const make = Effect.fn("makeAzureDevOpsSourceControlProvider")(function* () {
