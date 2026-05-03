@@ -1,17 +1,27 @@
 import { Cache, Context, Duration, Effect, Exit, Layer } from "effect";
-import { SourceControlProviderError } from "@t3tools/contracts";
+import {
+  SourceControlProviderError,
+  type SourceControlProviderDiscoveryItem,
+} from "@t3tools/contracts";
 import type { SourceControlProviderKind } from "@t3tools/contracts";
 import { detectSourceControlProviderFromRemoteUrl } from "@t3tools/shared/sourceControl";
 
+import * as AzureDevOpsSourceControlProvider from "./AzureDevOpsSourceControlProvider.ts";
 import {
   SourceControlProvider,
   type SourceControlProviderContext,
   type SourceControlProviderShape,
 } from "./SourceControlProvider.ts";
+import {
+  probeSourceControlProvider,
+  type SourceControlProviderDiscoverySpec,
+} from "./SourceControlProviderDiscovery.ts";
 import * as BitbucketSourceControlProvider from "./BitbucketSourceControlProvider.ts";
 import * as GitHubSourceControlProvider from "./GitHubSourceControlProvider.ts";
 import * as GitLabSourceControlProvider from "./GitLabSourceControlProvider.ts";
+import { ServerConfig } from "../config.ts";
 import { VcsDriverRegistry } from "../vcs/VcsDriverRegistry.ts";
+import * as VcsProcess from "../vcs/VcsProcess.ts";
 
 const PROVIDER_DETECTION_CACHE_CAPACITY = 2_048;
 const PROVIDER_DETECTION_CACHE_TTL = Duration.seconds(5);
@@ -19,6 +29,7 @@ const PROVIDER_DETECTION_CACHE_TTL = Duration.seconds(5);
 export interface SourceControlProviderRegistration {
   readonly kind: SourceControlProviderKind;
   readonly provider: SourceControlProviderShape;
+  readonly discovery: SourceControlProviderDiscoverySpec;
 }
 
 export interface SourceControlProviderHandle {
@@ -36,6 +47,7 @@ export interface SourceControlProviderRegistryShape {
   readonly resolve: (input: {
     readonly cwd: string;
   }) => Effect.Effect<SourceControlProviderShape, SourceControlProviderError>;
+  readonly discover: Effect.Effect<ReadonlyArray<SourceControlProviderDiscoveryItem>>;
 }
 
 export class SourceControlProviderRegistry extends Context.Service<
@@ -145,10 +157,13 @@ function bindProviderContext(
 
 export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWithProviders")(
   function* (registrations: ReadonlyArray<SourceControlProviderRegistration>) {
+    const config = yield* ServerConfig;
+    const process = yield* VcsProcess.VcsProcess;
     const vcsRegistry = yield* VcsDriverRegistry;
     const providers = new Map<SourceControlProviderKind, SourceControlProviderShape>(
       registrations.map((registration) => [registration.kind, registration.provider]),
     );
+    const discoverySpecs = registrations.map((registration) => registration.discovery);
 
     const get: SourceControlProviderRegistryShape["get"] = (kind) =>
       Effect.succeed(providers.get(kind) ?? unsupportedProvider(kind));
@@ -191,6 +206,16 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
       get,
       resolveHandle,
       resolve: (input) => resolveHandle(input).pipe(Effect.map((handle) => handle.provider)),
+      discover: Effect.all(
+        discoverySpecs.map((spec) =>
+          probeSourceControlProvider({
+            spec,
+            process,
+            cwd: config.cwd,
+          }),
+        ),
+        { concurrency: "unbounded" },
+      ),
     });
   },
 );
@@ -199,18 +224,27 @@ export const make = Effect.fn("makeSourceControlProviderRegistry")(function* () 
   const github = yield* GitHubSourceControlProvider.make();
   const gitlab = yield* GitLabSourceControlProvider.make();
   const bitbucket = yield* BitbucketSourceControlProvider.make();
+  const bitbucketDiscovery = yield* BitbucketSourceControlProvider.makeDiscovery();
   return yield* makeWithProviders([
     {
       kind: "github",
       provider: github,
+      discovery: GitHubSourceControlProvider.discovery,
     },
     {
       kind: "gitlab",
       provider: gitlab,
+      discovery: GitLabSourceControlProvider.discovery,
+    },
+    {
+      kind: "azure-devops",
+      provider: unsupportedProvider("azure-devops"),
+      discovery: AzureDevOpsSourceControlProvider.discovery,
     },
     {
       kind: "bitbucket",
       provider: bitbucket,
+      discovery: bitbucketDiscovery,
     },
   ]);
 });

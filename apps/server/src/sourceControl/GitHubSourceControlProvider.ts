@@ -8,6 +8,15 @@ import {
 import { GitHubCli, type GitHubCliError, type GitHubPullRequestSummary } from "./GitHubCli.ts";
 import { decodeGitHubPullRequestListJson } from "./gitHubPullRequests.ts";
 import { SourceControlProvider, type SourceControlProviderShape } from "./SourceControlProvider.ts";
+import {
+  combinedAuthOutput,
+  firstSafeAuthLine,
+  matchFirst,
+  parseCliHost,
+  providerAuth,
+  type SourceControlAuthProbeInput,
+  type SourceControlCliDiscoverySpec,
+} from "./SourceControlProviderDiscovery.ts";
 
 function providerError(operation: string, cause: GitHubCliError): SourceControlProviderError {
   return new SourceControlProviderError({
@@ -39,6 +48,45 @@ function toChangeRequest(summary: GitHubPullRequestSummary): ChangeRequest {
       : {}),
   };
 }
+
+function parseGitHubAuth(input: SourceControlAuthProbeInput) {
+  const output = combinedAuthOutput(input);
+  const account = matchFirst(output, [
+    /Logged in to .* account\s+([^\s(]+)/iu,
+    /Logged in to .* as\s+([^\s(]+)/iu,
+  ]);
+  const host = parseCliHost(output);
+
+  if (input.exitCode !== 0) {
+    return providerAuth({
+      status: "unauthenticated",
+      host,
+      detail: firstSafeAuthLine(output) ?? "Run `gh auth login` to authenticate GitHub CLI.",
+    });
+  }
+
+  if (account) {
+    return providerAuth({ status: "authenticated", account, host });
+  }
+
+  return providerAuth({
+    status: "unknown",
+    host,
+    detail: firstSafeAuthLine(output) ?? "GitHub CLI auth status could not be parsed.",
+  });
+}
+
+export const discovery = {
+  type: "cli",
+  kind: "github",
+  label: "GitHub",
+  executable: "gh",
+  versionArgs: ["--version"],
+  authArgs: ["auth", "status"],
+  parseAuth: parseGitHubAuth,
+  implemented: true,
+  installHint: "Install GitHub CLI with `brew install gh` or from https://cli.github.com/.",
+} satisfies SourceControlCliDiscoverySpec;
 
 export const make = Effect.fn("makeGitHubSourceControlProvider")(function* () {
   const github = yield* GitHubCli;

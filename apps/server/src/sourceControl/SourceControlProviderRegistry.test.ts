@@ -1,10 +1,13 @@
 import { assert, it } from "@effect/vitest";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { DateTime, Effect, Layer, Option } from "effect";
 
 import { BitbucketApi } from "./BitbucketApi.ts";
 import { GitHubCli } from "./GitHubCli.ts";
 import { GitLabCli } from "./GitLabCli.ts";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
+import { ServerConfig } from "../config.ts";
+import * as VcsProcess from "../vcs/VcsProcess.ts";
 import { VcsDriverRegistry } from "../vcs/VcsDriverRegistry.ts";
 import type { VcsDriverShape } from "../vcs/VcsDriver.ts";
 
@@ -58,6 +61,10 @@ function makeRegistry(input: {
         Layer.mock(BitbucketApi)({}),
         Layer.mock(GitHubCli)({}),
         Layer.mock(GitLabCli)({}),
+        Layer.mock(VcsProcess.VcsProcess)({}),
+        ServerConfig.layerTest(process.cwd(), { prefix: "t3-source-control-registry-test-" }).pipe(
+          Layer.provide(NodeServices.layer),
+        ),
       ),
     ),
   );

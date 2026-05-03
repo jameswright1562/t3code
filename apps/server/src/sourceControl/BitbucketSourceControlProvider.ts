@@ -3,6 +3,7 @@ import { SourceControlProviderError, type ChangeRequest } from "@t3tools/contrac
 
 import { BitbucketApi, type BitbucketApiError } from "./BitbucketApi.ts";
 import { SourceControlProvider, sourceControlRefFromInput } from "./SourceControlProvider.ts";
+import type { SourceControlApiDiscoverySpec } from "./SourceControlProviderDiscovery.ts";
 import type { NormalizedBitbucketPullRequestRecord } from "./bitbucketPullRequests.ts";
 
 function providerError(operation: string, cause: BitbucketApiError): SourceControlProviderError {
@@ -101,3 +102,18 @@ export const make = Effect.fn("makeBitbucketSourceControlProvider")(function* ()
 });
 
 export const layer = Layer.effect(SourceControlProvider, make());
+
+export const makeDiscovery = Effect.fn("makeBitbucketSourceControlProviderDiscovery")(function* () {
+  const bitbucket = yield* BitbucketApi;
+
+  return {
+    type: "api",
+    kind: "bitbucket",
+    label: "Bitbucket",
+    executable: "Bitbucket REST API",
+    implemented: true,
+    installHint:
+      "Create a Bitbucket API token with pull request/repository scopes, then set T3CODE_BITBUCKET_EMAIL and T3CODE_BITBUCKET_API_TOKEN.",
+    probeAuth: bitbucket.probeAuth,
+  } satisfies SourceControlApiDiscoverySpec;
+});

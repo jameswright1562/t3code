@@ -162,15 +162,15 @@ const VcsDriverRegistryLayerLive = VcsDriverRegistry.layer.pipe(
   Layer.provide(VcsProjectConfig.layer),
 );
 
+const SourceControlProviderRegistryLayerLive = SourceControlProviderRegistry.layer.pipe(
+  Layer.provide(Layer.mergeAll(BitbucketApi.layer, GitHubCli.layer, GitLabCli.layer)),
+  Layer.provideMerge(VcsDriverRegistryLayerLive),
+);
+
 const GitManagerLayerLive = GitManager.layer.pipe(
   Layer.provideMerge(ProjectSetupScriptRunnerLive),
   Layer.provideMerge(GitVcsDriver.layer),
-  Layer.provideMerge(
-    SourceControlProviderRegistry.layer.pipe(
-      Layer.provide(Layer.mergeAll(BitbucketApi.layer, GitHubCli.layer, GitLabCli.layer)),
-      Layer.provideMerge(VcsDriverRegistryLayerLive),
-    ),
-  ),
+  Layer.provideMerge(SourceControlProviderRegistryLayerLive),
   Layer.provideMerge(TextGeneration.layer),
 );
 
@@ -228,6 +228,7 @@ const ProviderRuntimeLayerLive = ProviderSessionReaperLive.pipe(
 const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   // Core Services
   Layer.provideMerge(CheckpointingLayerLive),
+  Layer.provideMerge(SourceControlProviderRegistryLayerLive),
   Layer.provideMerge(GitLayerLive),
   Layer.provideMerge(VcsLayerLive),
   Layer.provideMerge(ProviderRuntimeLayerLive),

@@ -6,8 +6,31 @@ import { VcsProcessSpawnError } from "@t3tools/contracts";
 
 import { ServerConfig } from "../config.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
-import { BitbucketApi } from "./BitbucketApi.ts";
+import { BitbucketApi, type BitbucketApiShape } from "./BitbucketApi.ts";
+import { GitHubCli } from "./GitHubCli.ts";
+import { GitLabCli } from "./GitLabCli.ts";
 import { SourceControlDiscovery, layer } from "./SourceControlDiscovery.ts";
+import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
+import { VcsDriverRegistry } from "../vcs/VcsDriverRegistry.ts";
+
+const sourceControlProviderRegistryTestLayer = (input: {
+  readonly bitbucket: Partial<BitbucketApiShape>;
+  readonly process: Partial<VcsProcess.VcsProcessShape>;
+}) =>
+  SourceControlProviderRegistry.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        ServerConfig.layerTest(process.cwd(), { prefix: "t3-source-control-registry-test-" }).pipe(
+          Layer.provide(NodeServices.layer),
+        ),
+        Layer.mock(BitbucketApi)(input.bitbucket),
+        Layer.mock(GitHubCli)({}),
+        Layer.mock(GitLabCli)({}),
+        Layer.mock(VcsDriverRegistry)({}),
+        Layer.mock(VcsProcess.VcsProcess)(input.process),
+      ),
+    ),
+  );
 
 const processOutput = (
   stdout: string,
@@ -24,51 +47,53 @@ const processOutput = (
 });
 
 it.effect("reports implemented tools separately from locally available CLIs", () => {
-  const testLayer = layer.pipe(
-    Layer.provide(
-      ServerConfig.layerTest(process.cwd(), { prefix: "t3-source-control-discovery-" }),
-    ),
-    Layer.provide(
-      Layer.mock(VcsProcess.VcsProcess)({
-        run: (input) => {
-          if (input.command === "git") {
-            return Effect.succeed(processOutput("git version 2.51.0\n"));
-          }
-          if (input.command === "gh" && input.args[0] === "--version") {
-            return Effect.succeed(processOutput("gh version 2.83.0\n"));
-          }
-          if (input.command === "gh" && input.args.join(" ") === "auth status") {
-            return Effect.succeed(
-              processOutput(`github.com
+  const processMock = {
+    run: (input: VcsProcess.VcsProcessInput) => {
+      if (input.command === "git") {
+        return Effect.succeed(processOutput("git version 2.51.0\n"));
+      }
+      if (input.command === "gh" && input.args[0] === "--version") {
+        return Effect.succeed(processOutput("gh version 2.83.0\n"));
+      }
+      if (input.command === "gh" && input.args.join(" ") === "auth status") {
+        return Effect.succeed(
+          processOutput(`github.com
 Logged in to github.com account juliusmarminge (keyring)
 - Active account: true
 - Git operations protocol: ssh
 - Token: gho_************************************
 - Token scopes: 'admin:public_key', 'gist', 'read:org', 'repo'
 `),
-            );
-          }
-          return Effect.fail(
-            new VcsProcessSpawnError({
-              operation: input.operation,
-              command: input.command,
-              cwd: input.cwd,
-              cause: new Error(`${input.command} not found`),
-            }),
-          );
-        },
-      }),
-    ),
-    Layer.provide(
-      Layer.mock(BitbucketApi)({
-        probeAuth: Effect.succeed({
-          status: "unauthenticated",
-          account: Option.none(),
-          host: Option.some("bitbucket.org"),
-          detail: Option.some(
-            "Set T3CODE_BITBUCKET_EMAIL and T3CODE_BITBUCKET_API_TOKEN, or T3CODE_BITBUCKET_ACCESS_TOKEN.",
-          ),
+        );
+      }
+      return Effect.fail(
+        new VcsProcessSpawnError({
+          operation: input.operation,
+          command: input.command,
+          cwd: input.cwd,
+          cause: new Error(`${input.command} not found`),
         }),
+      );
+    },
+  } satisfies Partial<VcsProcess.VcsProcessShape>;
+  const testLayer = layer.pipe(
+    Layer.provide(
+      ServerConfig.layerTest(process.cwd(), { prefix: "t3-source-control-discovery-" }),
+    ),
+    Layer.provide(Layer.mock(VcsProcess.VcsProcess)(processMock)),
+    Layer.provide(
+      sourceControlProviderRegistryTestLayer({
+        process: processMock,
+        bitbucket: {
+          probeAuth: Effect.succeed({
+            status: "unauthenticated",
+            account: Option.none(),
+            host: Option.some("bitbucket.org"),
+            detail: Option.some(
+              "Set T3CODE_BITBUCKET_EMAIL and T3CODE_BITBUCKET_API_TOKEN, or T3CODE_BITBUCKET_ACCESS_TOKEN.",
+            ),
+          }),
+        },
       }),
     ),
     Layer.provideMerge(NodeServices.layer),
@@ -132,57 +157,59 @@ Logged in to github.com account juliusmarminge (keyring)
 });
 
 it.effect("probes provider authentication without exposing token details", () => {
-  const testLayer = layer.pipe(
-    Layer.provide(
-      ServerConfig.layerTest(process.cwd(), { prefix: "t3-source-control-auth-discovery-" }),
-    ),
-    Layer.provide(
-      Layer.mock(VcsProcess.VcsProcess)({
-        run: (input) => {
-          if (input.args[0] === "--version") {
-            return Effect.succeed(processOutput(`${input.command} version test\n`));
-          }
-          if (input.command === "gh" && input.args.join(" ") === "auth status") {
-            return Effect.succeed(
-              processOutput(`github.com
+  const processMock = {
+    run: (input: VcsProcess.VcsProcessInput) => {
+      if (input.args[0] === "--version") {
+        return Effect.succeed(processOutput(`${input.command} version test\n`));
+      }
+      if (input.command === "gh" && input.args.join(" ") === "auth status") {
+        return Effect.succeed(
+          processOutput(`github.com
 Logged in to github.com account octocat (keyring)
 - Token: gho_************************************
 - Token scopes: 'repo'
 `),
-            );
-          }
-          if (input.command === "glab" && input.args.join(" ") === "auth status") {
-            return Effect.succeed(
-              processOutput(`gitlab.com
+        );
+      }
+      if (input.command === "glab" && input.args.join(" ") === "auth status") {
+        return Effect.succeed(
+          processOutput(`gitlab.com
 Logged in to gitlab.com as gitlab-user
 `),
-            );
-          }
-          if (
-            input.command === "az" &&
-            input.args.join(" ") === "account show --query user.name -o tsv"
-          ) {
-            return Effect.succeed(processOutput("azure-user@example.com\n"));
-          }
-          return Effect.fail(
-            new VcsProcessSpawnError({
-              operation: input.operation,
-              command: input.command,
-              cwd: input.cwd,
-              cause: new Error(`${input.command} not found`),
-            }),
-          );
-        },
-      }),
-    ),
-    Layer.provide(
-      Layer.mock(BitbucketApi)({
-        probeAuth: Effect.succeed({
-          status: "authenticated",
-          account: Option.some("bitbucket-user"),
-          host: Option.some("bitbucket.org"),
-          detail: Option.none(),
+        );
+      }
+      if (
+        input.command === "az" &&
+        input.args.join(" ") === "account show --query user.name -o tsv"
+      ) {
+        return Effect.succeed(processOutput("azure-user@example.com\n"));
+      }
+      return Effect.fail(
+        new VcsProcessSpawnError({
+          operation: input.operation,
+          command: input.command,
+          cwd: input.cwd,
+          cause: new Error(`${input.command} not found`),
         }),
+      );
+    },
+  } satisfies Partial<VcsProcess.VcsProcessShape>;
+  const testLayer = layer.pipe(
+    Layer.provide(
+      ServerConfig.layerTest(process.cwd(), { prefix: "t3-source-control-auth-discovery-" }),
+    ),
+    Layer.provide(Layer.mock(VcsProcess.VcsProcess)(processMock)),
+    Layer.provide(
+      sourceControlProviderRegistryTestLayer({
+        process: processMock,
+        bitbucket: {
+          probeAuth: Effect.succeed({
+            status: "authenticated",
+            account: Option.some("bitbucket-user"),
+            host: Option.some("bitbucket.org"),
+            detail: Option.none(),
+          }),
+        },
       }),
     ),
     Layer.provideMerge(NodeServices.layer),
