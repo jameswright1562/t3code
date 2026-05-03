@@ -8,6 +8,7 @@ This guide covers the providers currently supported by T3 Code:
 - GitHub
 - GitLab
 - Bitbucket
+- Azure DevOps
 
 ## What Provider Support Enables
 
@@ -171,6 +172,57 @@ T3 Code uses the same credentials to check your Bitbucket sign-in status.
 Bitbucket workspace billing and repository permissions can affect whether Git pushes are allowed.
 If pull request creation works but pushing fails, check the repository permissions, workspace plan,
 and whether your Git remote uses HTTPS credentials or SSH.
+
+## Azure DevOps
+
+Azure DevOps support uses Azure CLI with the Azure DevOps extension.
+
+### Requirements
+
+Install Azure CLI:
+
+```bash
+brew install azure-cli
+```
+
+Then install the Azure DevOps extension:
+
+```bash
+az extension add --name azure-devops
+```
+
+### Sign In
+
+Run:
+
+```bash
+az login
+```
+
+Follow the browser login flow for the Azure account that has access to your Azure DevOps
+organization and project.
+
+To verify the login:
+
+```bash
+az account show --query user.name -o tsv
+```
+
+T3 Code uses Azure CLI to check your sign-in status and show the signed-in account in Source
+Control settings.
+
+### Notes
+
+Azure DevOps repository remotes usually look like one of these:
+
+```text
+https://dev.azure.com/organization/project/_git/repository
+git@ssh.dev.azure.com:v3/organization/project/repository
+```
+
+Make sure Azure CLI can detect the organization and project for the repository you are working in.
+If your team uses SSH for Git operations, your Azure DevOps SSH key must be configured separately
+from `az login`.
 
 ## Version Control Requirements
 
