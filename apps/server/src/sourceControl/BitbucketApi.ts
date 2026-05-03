@@ -414,7 +414,7 @@ export const make = Effect.fn("makeBitbucketApi")(function* () {
       resolveRepository(input).pipe(
         Effect.flatMap((repository) => {
           const states = toBitbucketStates(input.state);
-          const query: Record<string, string> = {
+          const baseQuery: Record<string, string> = {
             pagelen: String(Math.max(1, Math.min(input.limit ?? 20, 50))),
             sort: "-updated_on",
             q: bitbucketQueryString([
@@ -422,20 +422,20 @@ export const make = Effect.fn("makeBitbucketApi")(function* () {
               bitbucketStateFilter(states),
             ]),
           };
-          if (input.state !== "all" && states.length === 1) {
-            query.state = states[0] ?? "OPEN";
+
+          let request = HttpClientRequest.get(
+            apiUrl(
+              `/repositories/${encodeURIComponent(repository.workspace)}/${encodeURIComponent(repository.repoSlug)}/pullrequests`,
+            ),
+            { urlParams: baseQuery },
+          );
+          if (input.state !== "all") {
+            for (const state of states) {
+              request = HttpClientRequest.appendUrlParam(request, "state", state);
+            }
           }
 
-          return executeJson(
-            "listPullRequests",
-            HttpClientRequest.get(
-              apiUrl(
-                `/repositories/${encodeURIComponent(repository.workspace)}/${encodeURIComponent(repository.repoSlug)}/pullrequests`,
-              ),
-              { urlParams: query },
-            ),
-            BitbucketPullRequestListSchema,
-          );
+          return executeJson("listPullRequests", request, BitbucketPullRequestListSchema);
         }),
         Effect.map((list) => list.values.map(normalizeBitbucketPullRequestRecord)),
       ),

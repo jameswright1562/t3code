@@ -35,6 +35,7 @@ type ApiProviderProbe = Omit<DiscoveryProbe, "executable" | "versionArgs"> & {
   readonly type: "api";
   readonly kind: SourceControlProviderKind;
   readonly executable: string;
+  readonly probeAuth: Effect.Effect<SourceControlProviderAuth, never>;
 };
 
 type ProviderProbe = CliProviderProbe | ApiProviderProbe;
@@ -75,7 +76,7 @@ const VCS_PROBES: ReadonlyArray<VcsProbe> = [
   },
 ];
 
-const SOURCE_CONTROL_PROVIDER_PROBES: ReadonlyArray<ProviderProbe> = [
+const CLI_PROVIDER_PROBES: ReadonlyArray<CliProviderProbe> = [
   {
     type: "cli",
     kind: "github",
@@ -110,15 +111,6 @@ const SOURCE_CONTROL_PROVIDER_PROBES: ReadonlyArray<ProviderProbe> = [
     implemented: false,
     installHint:
       "Install Azure CLI with `brew install azure-cli`, then add Azure DevOps support with `az extension add --name azure-devops`.",
-  },
-  {
-    type: "api",
-    kind: "bitbucket",
-    label: "Bitbucket",
-    executable: "Bitbucket REST API",
-    implemented: true,
-    installHint:
-      "Create a Bitbucket API token with pull request/repository scopes, then set T3CODE_BITBUCKET_EMAIL and T3CODE_BITBUCKET_API_TOKEN.",
   },
 ];
 
@@ -337,9 +329,23 @@ export const layer = Layer.effect(
           ),
         );
 
+    const sourceControlProviderProbes: ReadonlyArray<ProviderProbe> = [
+      ...CLI_PROVIDER_PROBES,
+      {
+        type: "api",
+        kind: "bitbucket",
+        label: "Bitbucket",
+        executable: "Bitbucket REST API",
+        implemented: true,
+        installHint:
+          "Create a Bitbucket API token with pull request/repository scopes, then set T3CODE_BITBUCKET_EMAIL and T3CODE_BITBUCKET_API_TOKEN.",
+        probeAuth: bitbucketApi.probeAuth,
+      },
+    ];
+
     const probeProvider = (input: ProviderProbe) =>
       input.type === "api"
-        ? bitbucketApi.probeAuth.pipe(
+        ? input.probeAuth.pipe(
             Effect.map(
               (auth) =>
                 ({
@@ -400,7 +406,7 @@ export const layer = Layer.effect(
           { concurrency: "unbounded" },
         ),
         sourceControlProviders: Effect.all(
-          SOURCE_CONTROL_PROVIDER_PROBES.map((entry) => probeProvider(entry)) as ReadonlyArray<
+          sourceControlProviderProbes.map((entry) => probeProvider(entry)) as ReadonlyArray<
             Effect.Effect<SourceControlProviderDiscoveryItem>
           >,
           { concurrency: "unbounded" },
