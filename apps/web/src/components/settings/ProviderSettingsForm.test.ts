@@ -25,10 +25,17 @@ describe("ProviderSettingsForm helpers", () => {
     const opencode = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("opencode")];
     expect(opencode).toBeDefined();
 
+    const configJsonc = deriveProviderSettingsFields(opencode!).find(
+      (field) => field.key === "configJsonc",
+    );
     const serverPassword = deriveProviderSettingsFields(opencode!).find(
       (field) => field.key === "serverPassword",
     );
 
+    expect(configJsonc).toMatchObject({
+      label: "OpenCode config (JSONC)",
+      control: "textarea",
+    });
     expect(serverPassword).toMatchObject({
       label: "Server password",
       description: "Stored in plain text on disk.",
