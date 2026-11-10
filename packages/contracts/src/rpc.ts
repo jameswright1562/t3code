@@ -412,6 +412,17 @@ import {
 import { VcsError } from "./vcs.ts";
 import { Project, ProjectMutation, ProjectMutationError } from "./project.ts";
 
+import {
+  HarnessMemoryEntry,
+  HarnessMemoryListInput,
+  HarnessMemoryMutationInput,
+  HarnessMemoryPinInput,
+  HarnessMemoryExport,
+  HarnessCheckpointRecoverInput,
+  HarnessCheckpointRecovery,
+  HarnessMemoryError,
+} from "./harnessMemory.ts";
+
 export const WS_METHODS = {
   projectsListEntries: "projects.listEntries",
   projectsListIgnoredFiles: "projects.listIgnoredFiles",
@@ -434,6 +445,13 @@ export const WS_METHODS = {
   assetsPersistChatAttachments: "assets.persistChatAttachments",
   attachmentsCreateUploadUrl: "attachments.createUploadUrl",
   attachmentsDelete: "attachments.delete",
+
+  harnessMemoryList: "harness.memory.list",
+  harnessMemoryConfirm: "harness.memory.confirm",
+  harnessMemoryForget: "harness.memory.forget",
+  harnessMemoryPin: "harness.memory.pin",
+  harnessMemoryExport: "harness.memory.export",
+  harnessCheckpointRecover: "harness.checkpoint.recover",
 
   mcpAppsCallTool: "mcpApps.callTool",
   mcpAppsToolInfo: "mcpApps.toolInfo",
@@ -642,6 +660,37 @@ const WsServerProbeRpc = Rpc.make(WS_METHODS.serverProbe, {
   payload: Schema.Struct({}),
   success: Schema.Struct({}),
   error: EnvironmentAuthorizationError,
+});
+
+const WsHarnessMemoryListRpc = Rpc.make(WS_METHODS.harnessMemoryList, {
+  payload: HarnessMemoryListInput,
+  success: Schema.Array(HarnessMemoryEntry),
+  error: Schema.Union([HarnessMemoryError, EnvironmentAuthorizationError]),
+});
+const WsHarnessMemoryConfirmRpc = Rpc.make(WS_METHODS.harnessMemoryConfirm, {
+  payload: HarnessMemoryMutationInput,
+  success: Schema.Boolean,
+  error: Schema.Union([HarnessMemoryError, EnvironmentAuthorizationError]),
+});
+const WsHarnessMemoryForgetRpc = Rpc.make(WS_METHODS.harnessMemoryForget, {
+  payload: HarnessMemoryMutationInput,
+  success: Schema.Boolean,
+  error: Schema.Union([HarnessMemoryError, EnvironmentAuthorizationError]),
+});
+const WsHarnessMemoryPinRpc = Rpc.make(WS_METHODS.harnessMemoryPin, {
+  payload: HarnessMemoryPinInput,
+  success: Schema.Boolean,
+  error: Schema.Union([HarnessMemoryError, EnvironmentAuthorizationError]),
+});
+const WsHarnessMemoryExportRpc = Rpc.make(WS_METHODS.harnessMemoryExport, {
+  payload: HarnessMemoryListInput,
+  success: HarnessMemoryExport,
+  error: Schema.Union([HarnessMemoryError, EnvironmentAuthorizationError]),
+});
+const WsHarnessCheckpointRecoverRpc = Rpc.make(WS_METHODS.harnessCheckpointRecover, {
+  payload: HarnessCheckpointRecoverInput,
+  success: HarnessCheckpointRecovery,
+  error: Schema.Union([HarnessMemoryError, EnvironmentAuthorizationError]),
 });
 
 const WsServerGetConfigRpc = Rpc.make(WS_METHODS.serverGetConfig, {
@@ -2067,6 +2116,12 @@ export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthori
 export const WsRpcGroup = RpcGroup.make(
   WsGuestShareCreateRpc,
   WsServerProbeRpc,
+  WsHarnessMemoryListRpc,
+  WsHarnessMemoryConfirmRpc,
+  WsHarnessMemoryForgetRpc,
+  WsHarnessMemoryPinRpc,
+  WsHarnessMemoryExportRpc,
+  WsHarnessCheckpointRecoverRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,
   WsServerUpdateProviderRpc,
