@@ -28,7 +28,7 @@ const callerContext = Effect.fn("mcp.memory.caller")(function* () {
 export const layer = McpToolAccess.toLayer(MemoryToolkit, {
   t3_memory_search: McpToolAccess.readsAsCaller(({ query, maxItems }) =>
     Effect.gen(function* () {
-      const caller = yield* callerContext;
+      const caller = yield* callerContext();
       const scopes = [
         { scopeType: "project" as const, scopeId: caller.projectId },
         { scopeType: "thread" as const, scopeId: caller.threadId },
@@ -55,7 +55,7 @@ export const layer = McpToolAccess.toLayer(MemoryToolkit, {
   ),
   t3_memory_propose: McpToolAccess.actsAsCaller(({ scope, kind, content }) =>
     Effect.gen(function* () {
-      const caller = yield* callerContext;
+      const caller = yield* callerContext();
       if (!content.trim()) {
         return yield* new OrchestratorMcpFailure({
           code: "invalid_request",
