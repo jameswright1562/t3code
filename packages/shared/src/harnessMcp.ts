@@ -14,6 +14,9 @@ export function selectHarnessMcpServers(
       // require collision-free identifiers, not arbitrary user-entered labels.
       if (!/^[a-z][a-z0-9_-]{0,47}$/i.test(id) || /^t3-code(?:-|$)/i.test(id)) return false;
       if (!server.enabled || !server.providerInstanceIds.includes(provider)) return false;
+      // Native Codex supports enabled_tools. Other adapters cannot guarantee
+      // server-side filtering; fail closed rather than silently granting all tools.
+      if (server.allowedTools.length > 0 && String(provider) !== "codex") return false;
       if (server.projectIds.length > 0 && !server.projectIds.includes(project)) return false;
       if (server.transport === "stdio") {
         return Boolean(server.command.trim()) && !/[\r\n\x00]/.test(server.command);
