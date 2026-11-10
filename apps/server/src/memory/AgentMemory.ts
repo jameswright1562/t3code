@@ -385,6 +385,126 @@ export const pinMemory = Effect.fn("AgentMemory.pinMemory")(function* (input: {
   );
 });
 
+/**
+ * User edits create a new verified revision, never alter provenance of the
+ * original. A superseded record remains in the audit trail but is excluded
+ * from future retrieval and native provider context.
+ */
+export const reviseMemory = Effect.fn("AgentMemory.reviseMemory")(function* (input: {
+  readonly id: string;
+  readonly replacementId: string;
+  readonly scope: MemoryScope;
+  readonly content: string;
+  readonly eventId: string;
+  readonly occurredAt?: string;
+}) {
+  const validationError = [
+    ensureText("id", input.id),
+    ensureText("replacementId", input.replacementId),
+    ensureText("scopeId", input.scope.scopeId),
+    ensureText("content", input.content),
+    ensureText("eventId", input.eventId),
+  ].find(Boolean);
+  if (validationError || input.id === input.replacementId) {
+    return yield* new AgentMemoryValidationError({
+      detail: validationError ?? "A revision needs a different memory ID",
+    });
+  }
+  const sql = yield* SqlClient.SqlClient;
+  const now = input.occurredAt ?? DateTime.formatIso(yield* DateTime.now);
+  return yield* sql.withTransaction(
+    Effect.gen(function* () {
+      const original = yield* sql<MemoryRow>`
+        SELECT id, scope_type AS "scopeType", scope_id AS "scopeId", kind, content,
+          source_ref AS "sourceRef", source_actor AS "sourceActor", verification,
+          confidence, pinned, created_at AS "createdAt", updated_at AS "updatedAt",
+          last_verified_at AS "lastVerifiedAt", superseded_by AS "supersededBy",
+          tombstoned_at AS "tombstonedAt"
+        FROM agent_memory_items
+        WHERE id = ${input.id}
+          AND scope_type = ${input.scope.scopeType}
+          AND scope_id = ${input.scope.scopeId}
+      `;
+      const old = original[0];
+      if (!old || old.tombstonedAt !== null) {
+        return yield* new AgentMemoryValidationError({ detail: "Memory not found in selected scope" });
+      }
+      // Replaying the same request must return its committed revision.
+      if (old.supersededBy === input.replacementId) {
+        const saved = yield* sql<MemoryRow>`
+          SELECT id, scope_type AS "scopeType", scope_id AS "scopeId", kind, content,
+            source_ref AS "sourceRef", source_actor AS "sourceActor", verification,
+            confidence, pinned, created_at AS "createdAt", updated_at AS "updatedAt",
+            last_verified_at AS "lastVerifiedAt", superseded_by AS "supersededBy",
+            tombstoned_at AS "tombstonedAt"
+          FROM agent_memory_items WHERE id = ${input.replacementId}
+            AND scope_type = ${input.scope.scopeType}
+            AND scope_id = ${input.scope.scopeId}
+        `;
+        if (saved[0]?.content === input.content) return toEntry(saved[0]);
+        return yield* new AgentMemoryValidationError({
+          detail: "Revision ID was already used with different content",
+        });
+      }
+      if (old.supersededBy !== null) {
+        return yield* new AgentMemoryValidationError({
+          detail: "This memory was already revised; refresh before editing",
+        });
+      }
+      const sourceRef = `memory:${old.id}`;
+      yield* sql`
+        INSERT INTO agent_memory_items (
+          id, scope_type, scope_id, kind, content, source_ref, source_actor,
+          verification, confidence, pinned, created_at, updated_at, last_verified_at
+        ) VALUES (
+          ${input.replacementId}, ${old.scopeType}, ${old.scopeId}, ${old.kind},
+          ${input.content}, ${sourceRef}, 'user', 'user_confirmed',
+          ${old.confidence}, ${old.pinned}, ${now}, ${now}, ${now}
+        )
+      `;
+      yield* sql`
+        UPDATE agent_memory_items SET superseded_by = ${input.replacementId}, updated_at = ${now}
+        WHERE id = ${old.id} AND scope_type = ${old.scopeType}
+          AND scope_id = ${old.scopeId} AND tombstoned_at IS NULL
+          AND superseded_by IS NULL
+      `;
+      yield* sql`
+        INSERT INTO agent_memory_events (
+          event_id, memory_id, operation, payload_json, occurred_at
+        ) VALUES (
+          ${input.eventId}, ${old.id}, 'superseded',
+          ${yield* encodeJson({ replacementId: input.replacementId })}, ${now}
+        )
+      `;
+      yield* sql`
+        INSERT INTO agent_memory_events (
+          event_id, memory_id, operation, payload_json, occurred_at
+        ) VALUES (
+          ${input.eventId + ":revision"}, ${input.replacementId}, 'user_revised',
+          ${yield* encodeJson({ previousId: old.id, originalSourceRef: old.sourceRef })}, ${now}
+        )
+      `;
+      return {
+        id: input.replacementId,
+        scopeType: old.scopeType,
+        scopeId: old.scopeId,
+        kind: old.kind,
+        content: input.content,
+        sourceRef,
+        sourceActor: "user",
+        verification: "user_confirmed",
+        confidence: old.confidence,
+        pinned: old.pinned === 1,
+        createdAt: now,
+        updatedAt: now,
+        lastVerifiedAt: now,
+        supersededBy: null,
+        tombstonedAt: null,
+      } satisfies MemoryEntry;
+    }),
+  );
+});
+
 /** Context checkpoints are versioned, append-only and scoped by thread. */
 export const saveCheckpoint = Effect.fn("AgentMemory.saveCheckpoint")(function* (input: SaveCheckpointInput) {
     if (
