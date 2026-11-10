@@ -18,7 +18,7 @@
 - Typed operations for memory creation, scoped retrieval, tombstone and explicit user confirmation. Agent proposals have verification=`proposed` and are **not** added to model prompts before user confirmation.
 - Agent-facing `t3_memory_search` and `t3_memory_propose` MCP tools; only the canonical calling thread/project scope is used, without agent-supplied project IDs.
 - Context builder selects relevant verified project/thread memories under an estimated 800-token default; injects them only when starting a fresh native provider session.
-- Run finalization persists a small, sequenced checkpoint after T3's durable Git checkpoint capture.
+- Run finalization persists a small checkpoint after T3's durable Git checkpoint capture, indexed by per-thread **run ordinal**. This is **not** yet an event-store replay cursor.
 - Ported OpenCode source-checkout launch support and T3 UI custom JSONC injection.
 - A dedicated public-runner GitHub Actions workflow runs focused tests and typechecks for memory and OpenCode.
 
