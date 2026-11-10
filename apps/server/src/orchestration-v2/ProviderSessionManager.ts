@@ -45,6 +45,7 @@ import {
 import { ProviderWorkspaceMissingError } from "../provider/Errors.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import { selectHarnessMcpServers } from "@t3tools/shared/harnessMcp";
 import * as ServerSettings from "../serverSettings.ts";
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import * as EventSink from "./EventSink.ts";
@@ -527,9 +528,23 @@ export const layerWithOptions = (
                   capabilities,
                   subagent,
                 });
+                const sharedMcpServers =
+                  callingThread === null || Option.isNone(serverSettings)
+                    ? {}
+                    : yield* serverSettings.value.getSettings.pipe(
+                        Effect.map((settings) =>
+                          selectHarnessMcpServers(
+                            settings.harnessMcpServers,
+                            providerInstanceId,
+                            callingThread.projectId,
+                          ),
+                        ),
+                        Effect.orElseSucceed(() => ({})),
+                      );
                 yield* mcpSessions.set({
                   ...credential.config,
                   ...(callingThread === null ? {} : { projectId: callingThread.projectId }),
+                  sharedMcpServers,
                 });
                 reserveMcpCredential(threadId, credential.config.providerSessionId);
                 return { mcpCredentialId: credential.config.providerSessionId, issued: true };
