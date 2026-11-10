@@ -1205,17 +1205,19 @@ export function createServerEnvironmentAtoms<R, E>(
 
   return {
     configValueAtom,
-    harnessMemories: createEnvironmentRpcQueryAtomFamily(runtime, {
+    harnessMemories: createEnvironmentQueryAtomFamily(runtime, {
       label: "environment-data:harness:memory:list",
-      tag: WS_METHODS.harnessMemoryList,
       idleTtlMs: 0,
       staleTimeMs: 0,
+      execute: (input: EnvironmentRpcInput<typeof WS_METHODS.harnessMemoryList>) =>
+        requestGuarded(WS_METHODS.harnessMemoryList, input),
     }),
-    harnessRecoverCheckpoint: createEnvironmentRpcQueryAtomFamily(runtime, {
+    harnessRecoverCheckpoint: createEnvironmentQueryAtomFamily(runtime, {
       label: "environment-data:harness:checkpoint:recover",
-      tag: WS_METHODS.harnessCheckpointRecover,
       idleTtlMs: 0,
       staleTimeMs: 0,
+      execute: (input: EnvironmentRpcInput<typeof WS_METHODS.harnessCheckpointRecover>) =>
+        requestGuarded(WS_METHODS.harnessCheckpointRecover, input),
     }),
     harnessConfirmMemory: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:harness:memory:confirm",
