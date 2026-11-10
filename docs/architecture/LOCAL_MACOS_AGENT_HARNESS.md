@@ -570,16 +570,6 @@ The first usable release must let the user start a multi-step task in T3 on macO
 
 ---
 
-## 22. Post-merge work (PR #3 merged; new release-gates branch)
-
-The merged PR #3 supplies the memory browser, live-only export, scoped checkpoint inspection and a configurable MCP registry. Those are foundations, **not** production release gates.
-
-The new `feat/macos-harness-release-gates` branch adds a **full memory ledger backup/restore** distinct from the older live-only export. The backed-up, scoped JSON includes source provenance, audit events, all revision ancestors, superseded entries and tombstones. The import path checks a SHA-256 integrity checksum, requires an exact selected scope, rejects conflicting IDs, is atomic across entries/events, and is safe to retry. Its frontend is exposed under project Memory settings. A checksum prevents accidental corruption; it does not authenticate an untrusted backup. Backup remains a manual user action; it never copies one project's data into another.
-
-New tests cover tombstoned/revised history, repeated import, corruption and cross-project restore refusal. CI results and a real macOS application smoke test are necessary before treating these as validated.
-
-**Still required:** native macOS Keychain/OAuth MCP support and health checks; pre-handoff checkpoints, event-cursor replay and Git divergence guards; persisted editable dependency plans, scheduling and checkout locks; trustworthy turn budgets and a measured native Claude A/B comparison; full release smoke and security verification. Do not mark these complete just because memory backup has landed.
-
 ## 21. Consolidated PR #3 gap closure and release gates (2026-11-10)
 
 All feature work belongs on **one integration branch and PR #3**, not four competing implementation PRs. Issues #4–#7 remain tracked requirements, not proof that any feature is complete. Do not merge this draft just because a particular focused test passes.
@@ -629,3 +619,14 @@ All feature work belongs on **one integration branch and PR #3**, not four compe
 - Enforce adapter-visible turn/delegation/parallelism caps even when native providers do not report authoritative token usage. Where a strict token cap cannot be measured, mark it **unavailable**, never pretend to enforce one.
 - Do not claim Claude five-hour subscription quota parity until controlled A/B telemetry is recorded; estimated tokens are not subscription quota percentages.
 
+---
+
+## 22. Post-merge work (PR #3 merged; new release-gates branch)
+
+The merged PR #3 supplies the memory browser, live-only export, scoped checkpoint inspection and a configurable MCP registry. Those are foundations, **not** production release gates.
+
+The new `feat/macos-harness-release-gates` branch adds a **full memory ledger backup/restore** distinct from the older live-only export. The backed-up, scoped JSON includes source provenance, audit events, all revision ancestors, superseded entries and tombstones. The import path checks a SHA-256 integrity checksum, requires an exact selected scope, rejects conflicting IDs, is atomic across entries/events, and is safe to retry. Its frontend is exposed under project Memory settings. A checksum prevents accidental corruption; it does not authenticate an untrusted backup. Backup remains a manual user action; it never copies one project's data into another.
+
+New tests cover tombstoned/revised history, repeated import, corruption and cross-project restore refusal. CI results and a real macOS application smoke test are necessary before treating these as validated.
+
+**Still required:** native macOS Keychain/OAuth MCP support and health checks; pre-handoff checkpoints, event-cursor replay and Git divergence guards; persisted editable dependency plans, scheduling and checkout locks; trustworthy turn budgets and a measured native Claude A/B comparison; full release smoke and security verification. Do not mark these complete just because memory backup has landed.

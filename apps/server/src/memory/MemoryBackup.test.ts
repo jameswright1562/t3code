@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -59,6 +60,36 @@ layer("Lossless project-scoped memory backup", (it) => {
         scope, backup: { ...backup, checksum: "0".repeat(64) },
       }));
       assert.equal(corrupt._tag, "Failure");
+      // A validly checksummed but conflicting import must roll back a prior
+      // insert in the SAME transaction, rather than partially restoring it.
+      const old = backup.entries[0]!;
+      const staged = {
+        schemaVersion: 1 as const, scope,
+        entries: [
+          { ...old, id: "backup-rollback-row", content: "Uncommitted record" },
+          { ...old, content: "Malicious conflict" },
+        ],
+        events: [
+          {
+            eventId: "backup-rollback-event", memoryId: "backup-rollback-row",
+            operation: "created", payloadJson: "{}", occurredAt: old.createdAt,
+          },
+          ...backup.events,
+        ],
+      };
+      const conflict = {
+        ...staged,
+        checksum: createHash("sha256").update(JSON.stringify(staged), "utf8").digest("hex"),
+      };
+      const attempted = yield* Effect.result(importMemoryBackup({ scope, backup: conflict }));
+      assert.equal(attempted._tag, "Failure");
+      const sql = yield* SqlClient.SqlClient;
+      const residue = yield* sql<{ count: number }>`SELECT COUNT(*) AS "count"
+        FROM agent_memory_items WHERE id = 'backup-rollback-row'`;
+      assert.equal(residue[0]?.count, 0);
+      const events = yield* sql<{ count: number }>`SELECT COUNT(*) AS "count"
+        FROM agent_memory_events WHERE event_id = 'backup-rollback-event'`;
+      assert.equal(events[0]?.count, 0);
       assert.equal((yield* listMemory([scope]))[0]?.content, "Trusted");
     }),
   );
