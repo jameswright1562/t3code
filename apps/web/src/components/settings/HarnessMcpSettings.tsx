@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { validateHarnessMcpServer } from "@t3tools/shared/harnessMcp";
 import type { HarnessMcpServerConfig, ProjectId, ProviderInstanceId } from "@t3tools/contracts";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { serverEnvironment } from "~/state/server";
@@ -121,6 +122,11 @@ export function HarnessMcpSettings() {
       projectIds: projectIds as ProjectId[],
       allowedTools: allowedTools.split(",").map((v) => v.trim()).filter(Boolean),
     };
+    const validationError = validateHarnessMcpServer(nextId, entry);
+    if (validationError !== null) {
+      setMessage(validationError);
+      return;
+    }
     setBusy(true);
     setMessage(null);
     try {

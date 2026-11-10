@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import type { HarnessMcpServerConfig, ProjectId, ProviderInstanceId } from "@t3tools/contracts";
 import {
   selectHarnessMcpServers,
+  validateHarnessMcpServer,
   toClaudeHarnessMcpServers,
   toCodexHarnessMcpConfig,
 } from "./harnessMcp.ts";
@@ -34,6 +35,24 @@ describe("shared MCP provider routing", () => {
     };
     expect(Object.keys(selectHarnessMcpServers(registry, "claudeAgent" as ProviderInstanceId, "alpha" as ProjectId))).toEqual(["allowed", "local"]);
     expect(Object.keys(selectHarnessMcpServers(registry, "claudeAgent" as ProviderInstanceId, "beta" as ProjectId))).toEqual(["otherProject"]);
+  });
+
+  it("refuses inline credentials and invalid stdio arguments before native injection", () => {
+    const registry = {
+      clean: server({ url: "https://mcp.example.org/mcp?tenant=abc" }),
+      userinfo: server({ url: "https://user:secret@mcp.example.org/mcp" }),
+      tokenQuery: server({ url: "https://mcp.example.org/mcp?access_token=secret" }),
+      fragment: server({ url: "https://mcp.example.org/mcp#secret" }),
+      unsafeArg: server({
+        transport: "stdio", url: "", command: "npx", args: ["--api-key", "secret"],
+      }),
+      unsafeCwd: server({ transport: "stdio", url: "", command: "npx", cwd: "bad\npath" }),
+    };
+    expect(Object.keys(selectHarnessMcpServers(
+      registry, "claudeAgent" as ProviderInstanceId, "alpha" as ProjectId,
+    ))).toEqual(["clean"]);
+    expect(validateHarnessMcpServer("userinfo", registry.userinfo)).toMatch(/credentials/);
+    expect(validateHarnessMcpServer("unsafeArg", registry.unsafeArg)).toMatch(/tokens/);
   });
 
   it("serializes HTTP and stdio servers to native runtime formats", () => {
