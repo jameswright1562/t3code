@@ -567,3 +567,55 @@ Memory and context data should always be exportable into a versioned JSON/Markdo
 The first usable release must let the user start a multi-step task in T3 on macOS, edit the plan, select Claude/Codex/Cursor/custom models, choose direct checkout or worktree, configure MCP servers via UI, and pause/restart/recover with intact approved plan, source-backed memories, selected files and task status. It must expose accurate token/quota measurements where available and not knowingly reproduce the historical accelerated Claude five-hour drain.
 
 **Memory durability and context recovery are release blockers.** A pretty plan board without those guarantees is not a finished harness.
+
+---
+
+## 21. Consolidated PR #3 gap closure and release gates (2026-11-10)
+
+All feature work belongs on **one integration branch and PR #3**, not four competing implementation PRs. Issues #4–#7 remain tracked requirements, not proof that any feature is complete. Do not merge this draft just because a particular focused test passes.
+
+### Verified implementation increments
+
+- Checkpoint reader now supports `recoverCheckpoint({ projectId, threadId })` with an exact project/thread predicate, schema-version validation, and fallback to a previous valid snapshot when later JSON is corrupt. The result reports how many later snapshots were rejected. This **does not** reconstruct side effects, provider session state, or replay events.
+- The legacy `latestCheckpoint(threadId)` is preserved for existing call sites, but host-facing recovery should use the scoped API.
+- `exportMemory(scopes)` exports bounded, non-deleted records for explicitly authorized scopes and preserves source references. This is a **live-memory snapshot**, not a full backup/restore with tombstones, event history or artifact files.
+- New tests exercise corrupt-latest fallback, cross-project checkpoint isolation, and memory export scope isolation. CI remains the authority for passing status.
+
+### Required before production-ready claim
+
+| Area | Required implementation | Gate |
+| --- | --- | --- |
+| Memory UI | Accessible browser, authenticated confirm/decline, edit-as-revision, pin, supersede, tombstone, full export/import with audit and source links | Browser E2E + scope/privilege/restart tests |
+| MCP UI | UI CRUD/test/health for HTTP + stdio, canonical server-scoped credential references via macOS Keychain, OAuth PKCE/state, explicit provider/project authorization and tool allowlists | Real stdio/HTTP integration tests, credential redaction, disconnect/reconnect, cross-provider tests |
+| Crash resilience | Checkpoint before compaction/delegation/handoff and at safe boundaries, event cursor, idempotent effect ledger, Git HEAD/file fingerprint check, checkpoint browser + user-approved Resume | Kill/relaunch matrix at every side-effect boundary, corruption and divergent HEAD tests |
+| Plans | Persist editable plan steps/revisions/dependencies/artifacts; scheduler rejects stale revisions, defaults sequential; checkout locks/worktree isolation; cancellation/retry semantics | Deterministic state machine and concurrent-writer tests |
+| Token efficiency | Separate native subscription vs metered API paths, per-run/task/child hard caps where observable, provider-specific telemetry with unknown labels, no token-spending polling | Controlled Claude Code vs T3 A/B macOS runs; no unaudited inference/background agents |
+| Compatibility | Source-checkout and packaged Mac smoke runs; Cursor/OpenCode/Claude/Codex/custom routes; full mono-repo typecheck/lint/tests and upstream integration audit | Required CI green plus manual Mac launch and provider smoke tests |
+
+### Explicit recovery decision model
+
+1. Identify the canonical project and thread from the trusted host, **not** model-provided IDs.
+2. Select the newest compatible checkpoint under that exact scope. If corrupt, show a warning and offer the last valid one; retain invalid rows for forensic inspection.
+3. Compare saved branch, HEAD and referenced artifacts with the actual working tree. Never silently execute a stale plan.
+4. Replay only committed canonical events after the snapshot's event cursor **once that cursor has been implemented**. A run ordinal is not an event cursor.
+5. Determine which external tool operations committed. Require human review for any ambiguous write/side effect; never blindly retry.
+6. Resume a compatible native provider session if verifiable, otherwise show a bounded, source-backed handoff packet and explicitly label it lossy.
+7. The user confirms Resume; do not start agents autonomously on app launch.
+
+### Security constraints on MCP and memory
+
+- Only trusted host-authenticated UI calls may confirm or mutate user-trusted memories. Agent MCP tools may only propose/search within their canonical scope.
+- Store credentials by opaque Keychain reference; never in SQLite, audit payloads, shell history, model prompts, logs, exports, or shared MCP server descriptions.
+- Enforce tool visibility and invocation permissions on **every call**, not just when presenting the tool catalog. A provider cannot self-assign access.
+- Reject unsafe stdio command arguments and unknown working directories at the UI boundary. Local stdio processes run with the user's OS permissions; clearly display that risk.
+- Audit edits, grants, revocations and side effects with stable operation identifiers and source provenance. Treat untrusted tool output as data rather than instructions.
+- Do not auto-share private-project memories with global/workspace scopes or other projects.
+
+### Operating and token-drain defaults
+
+- No scheduled triggers and no always-on background orchestration. Work proceeds only during a user-started task while the Mac is active.
+- Sequential steps and maximum one active writer per checkout by default. Parallelism requires disjoint operations or isolated worktrees.
+- No duplicate plan/review/critique model calls unless explicitly requested. Cache compact context by source revision and inject only on fresh sessions.
+- Enforce adapter-visible turn/delegation/parallelism caps even when native providers do not report authoritative token usage. Where a strict token cap cannot be measured, mark it **unavailable**, never pretend to enforce one.
+- Do not claim Claude five-hour subscription quota parity until controlled A/B telemetry is recorded; estimated tokens are not subscription quota percentages.
+
