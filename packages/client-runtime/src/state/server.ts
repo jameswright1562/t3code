@@ -1239,9 +1239,12 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:harness:memory:backup",
       tag: WS_METHODS.harnessMemoryBackup,
     }),
-    harnessCheckpointHistory: createEnvironmentRpcQuery(runtime, {
+    harnessCheckpointHistory: createEnvironmentQueryAtomFamily(runtime, {
       label: "environment-data:harness:checkpoint:history",
-      tag: WS_METHODS.harnessCheckpointHistory,
+      idleTtlMs: 0,
+      staleTimeMs: 0,
+      execute: (input: EnvironmentRpcInput<typeof WS_METHODS.harnessCheckpointHistory>) =>
+        requestGuarded(WS_METHODS.harnessCheckpointHistory, input),
     }),
     harnessRestoreMemory: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:harness:memory:restore",
