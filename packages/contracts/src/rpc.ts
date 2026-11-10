@@ -417,6 +417,7 @@ import {
   HarnessMemoryListInput,
   HarnessMemoryMutationInput,
   HarnessMemoryPinInput,
+  HarnessMemoryReviseInput,
   HarnessMemoryExport,
   HarnessCheckpointRecoverInput,
   HarnessCheckpointRecovery,
@@ -450,6 +451,7 @@ export const WS_METHODS = {
   harnessMemoryConfirm: "harness.memory.confirm",
   harnessMemoryForget: "harness.memory.forget",
   harnessMemoryPin: "harness.memory.pin",
+  harnessMemoryRevise: "harness.memory.revise",
   harnessMemoryExport: "harness.memory.export",
   harnessCheckpointRecover: "harness.checkpoint.recover",
 
@@ -680,6 +682,11 @@ const WsHarnessMemoryForgetRpc = Rpc.make(WS_METHODS.harnessMemoryForget, {
 const WsHarnessMemoryPinRpc = Rpc.make(WS_METHODS.harnessMemoryPin, {
   payload: HarnessMemoryPinInput,
   success: Schema.Boolean,
+  error: Schema.Union([HarnessMemoryError, EnvironmentAuthorizationError]),
+});
+const WsHarnessMemoryReviseRpc = Rpc.make(WS_METHODS.harnessMemoryRevise, {
+  payload: HarnessMemoryReviseInput,
+  success: HarnessMemoryEntry,
   error: Schema.Union([HarnessMemoryError, EnvironmentAuthorizationError]),
 });
 const WsHarnessMemoryExportRpc = Rpc.make(WS_METHODS.harnessMemoryExport, {
@@ -2120,6 +2127,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsHarnessMemoryConfirmRpc,
   WsHarnessMemoryForgetRpc,
   WsHarnessMemoryPinRpc,
+  WsHarnessMemoryReviseRpc,
   WsHarnessMemoryExportRpc,
   WsHarnessCheckpointRecoverRpc,
   WsServerGetConfigRpc,
