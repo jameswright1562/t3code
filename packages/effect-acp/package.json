@@ -15,6 +15,10 @@
       "types": "./src/schema.ts",
       "import": "./src/schema.ts"
     },
+    "./compat": {
+      "types": "./src/compat.ts",
+      "import": "./src/compat.ts"
+    },
     "./rpc": {
       "types": "./src/rpc.ts",
       "import": "./src/rpc.ts"
@@ -23,33 +27,28 @@
       "types": "./src/protocol.ts",
       "import": "./src/protocol.ts"
     },
-    "./terminal": {
-      "types": "./src/terminal.ts",
-      "import": "./src/terminal.ts"
-    },
     "./errors": {
       "types": "./src/errors.ts",
       "import": "./src/errors.ts"
+    },
+    "./schema-v1": {
+      "types": "./src/_generated/schema-v1.gen.ts",
+      "import": "./src/_generated/schema-v1.gen.ts"
     }
   },
   "scripts": {
-    "dev": "tsdown src/client.ts src/agent.ts src/_generated/schema.gen.ts src/rpc.ts src/protocol.ts src/terminal.ts --format esm,cjs --dts --watch --clean",
-    "build": "tsdown src/client.ts src/agent.ts src/_generated/schema.gen.ts src/rpc.ts src/protocol.ts src/terminal.ts --format esm,cjs --dts --clean",
-    "prepare": "effect-language-service patch",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "generate": "bun run scripts/generate.ts"
+    "typecheck": "effect-tsgo tsrs --noEmit",
+    "test": "vp test run --config ../../vite.config.ts --dir .",
+    "generate": "node scripts/generate.ts"
   },
   "dependencies": {
     "effect": "catalog:"
   },
   "devDependencies": {
-    "@effect/language-service": "catalog:",
     "@effect/openapi-generator": "catalog:",
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
-    "tsdown": "catalog:",
-    "typescript": "catalog:",
-    "vitest": "catalog:"
+    "@types/node": "catalog:",
+    "vite-plus": "catalog:"
   }
 }

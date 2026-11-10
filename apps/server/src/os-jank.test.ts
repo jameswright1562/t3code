@@ -1,185 +1,153 @@
-import { describe, expect, it, vi } from "vitest";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { it as effectIt } from "@effect/vitest";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import { CommandAvailability, WindowsShellEnvironment } from "@t3tools/shared/shell";
+import * as Effect from "effect/Effect";
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Observe the existing synchronous shell probe without launching the user's login shell.
+import * as NodeChildProcess from "node:child_process";
+import * as NodeOS from "node:os";
+import { assert, it, vi } from "vite-plus/test";
 
-import { fixPath } from "./os-jank.ts";
+import { fixPath, hydratePosixHome } from "./os-jank.ts";
 
-describe("fixPath", () => {
-  it("hydrates PATH on linux using the resolved login shell", () => {
-    const env: NodeJS.ProcessEnv = {
-      SHELL: "/bin/zsh",
-      PATH: "/Users/test/.local/bin:/usr/bin",
-    };
-    const readPath = vi.fn(() => "/opt/homebrew/bin:/usr/bin");
+vi.mock("node:child_process", { spy: true });
 
-    fixPath({
-      env,
-      platform: "linux",
-      readPath,
-    });
+it("hydrates HOME independently of a blank process HOME", () => {
+  const originalHome = process.env.HOME;
+  const env: NodeJS.ProcessEnv = { HOME: " " };
 
-    expect(readPath).toHaveBeenCalledWith("/bin/zsh");
-    expect(env.PATH).toBe("/opt/homebrew/bin:/usr/bin:/Users/test/.local/bin");
-  });
+  try {
+    process.env.HOME = " ";
+    hydratePosixHome(env);
+  } finally {
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+  }
 
-  it("falls back to launchctl PATH on macOS when shell probing fails", () => {
-    const env: NodeJS.ProcessEnv = {
-      SHELL: "/opt/homebrew/bin/nu",
-      PATH: "/usr/bin",
-    };
-    const readPath = vi
-      .fn()
-      .mockImplementationOnce(() => {
-        throw new Error("unknown flag");
-      })
-      .mockImplementationOnce(() => undefined);
-    const readLaunchctlPath = vi.fn(() => "/opt/homebrew/bin:/usr/bin");
-    const logWarning = vi.fn();
-
-    fixPath({
-      env,
-      platform: "darwin",
-      readPath,
-      readLaunchctlPath,
-      userShell: "/bin/zsh",
-      logWarning,
-    });
-
-    expect(readPath).toHaveBeenNthCalledWith(1, "/opt/homebrew/bin/nu");
-    expect(readPath).toHaveBeenNthCalledWith(2, "/bin/zsh");
-    expect(readLaunchctlPath).toHaveBeenCalledTimes(1);
-    expect(logWarning).toHaveBeenCalledWith(
-      "Failed to read PATH from login shell /opt/homebrew/bin/nu.",
-      expect.any(Error),
-    );
-    expect(env.PATH).toBe("/opt/homebrew/bin:/usr/bin");
-  });
-
-  it("repairs PATH on Windows by merging PowerShell PATH with inherited PATH", () => {
-    const env: NodeJS.ProcessEnv = {
-      PATH: "C:\\Windows\\System32",
-      APPDATA: "C:\\Users\\testuser\\AppData\\Roaming",
-      LOCALAPPDATA: "C:\\Users\\testuser\\AppData\\Local",
-      USERPROFILE: "C:\\Users\\testuser",
-    };
-    const readWindowsEnvironment = vi.fn(() => ({
-      PATH: "C:\\Custom\\Bin;C:\\Windows\\System32",
-    }));
-    const isWindowsCommandAvailable = vi.fn(() => true);
-
-    fixPath({
-      env,
-      platform: "win32",
-      readWindowsEnvironment,
-      isWindowsCommandAvailable,
-    });
-
-    expect(readWindowsEnvironment).toHaveBeenCalledWith(["PATH"], { loadProfile: false });
-    expect(env.PATH).toBe(
-      [
-        "C:\\Users\\testuser\\AppData\\Roaming\\npm",
-        "C:\\Users\\testuser\\AppData\\Local\\Programs\\nodejs",
-        "C:\\Users\\testuser\\AppData\\Local\\Volta\\bin",
-        "C:\\Users\\testuser\\AppData\\Local\\pnpm",
-        "C:\\Users\\testuser\\.bun\\bin",
-        "C:\\Users\\testuser\\scoop\\shims",
-        "C:\\Custom\\Bin",
-        "C:\\Windows\\System32",
-      ].join(";"),
-    );
-  });
-
-  it("applies profile-derived fnm variables on Windows when node is missing", () => {
-    const env: NodeJS.ProcessEnv = {
-      PATH: "C:\\Windows\\System32",
-      APPDATA: "C:\\Users\\testuser\\AppData\\Roaming",
-      LOCALAPPDATA: "C:\\Users\\testuser\\AppData\\Local",
-      USERPROFILE: "C:\\Users\\testuser",
-    };
-    const readWindowsEnvironment = vi.fn(
-      (_names: ReadonlyArray<string>, options?: { loadProfile?: boolean }) =>
-        options?.loadProfile
-          ? {
-              PATH: "C:\\Profile\\Node;C:\\Windows\\System32",
-              FNM_DIR: "C:\\Users\\testuser\\AppData\\Roaming\\fnm",
-              FNM_MULTISHELL_PATH: "C:\\Users\\testuser\\AppData\\Local\\fnm_multishells\\123",
-            }
-          : { PATH: "C:\\Custom\\Bin;C:\\Windows\\System32" },
-    );
-    const isWindowsCommandAvailable = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true);
-
-    fixPath({
-      env,
-      platform: "win32",
-      readWindowsEnvironment,
-      isWindowsCommandAvailable,
-    });
-
-    expect(env.PATH).toBe(
-      [
-        "C:\\Profile\\Node",
-        "C:\\Windows\\System32",
-        "C:\\Users\\testuser\\AppData\\Roaming\\npm",
-        "C:\\Users\\testuser\\AppData\\Local\\Programs\\nodejs",
-        "C:\\Users\\testuser\\AppData\\Local\\Volta\\bin",
-        "C:\\Users\\testuser\\AppData\\Local\\pnpm",
-        "C:\\Users\\testuser\\.bun\\bin",
-        "C:\\Users\\testuser\\scoop\\shims",
-        "C:\\Custom\\Bin",
-      ].join(";"),
-    );
-    expect(env.FNM_DIR).toBe("C:\\Users\\testuser\\AppData\\Roaming\\fnm");
-    expect(env.FNM_MULTISHELL_PATH).toBe(
-      "C:\\Users\\testuser\\AppData\\Local\\fnm_multishells\\123",
-    );
-  });
-
-  it("preserves baseline PATH on Windows when the profile probe fails", () => {
-    const env: NodeJS.ProcessEnv = {
-      PATH: "C:\\Windows\\System32",
-      APPDATA: "C:\\Users\\testuser\\AppData\\Roaming",
-      USERPROFILE: "C:\\Users\\testuser",
-    };
-    const readWindowsEnvironment = vi.fn(
-      (_names: ReadonlyArray<string>, options?: { loadProfile?: boolean }) => {
-        if (options?.loadProfile) {
-          throw new Error("profile load failed");
-        }
-        return { PATH: "C:\\Custom\\Bin;C:\\Windows\\System32" };
-      },
-    );
-    const isWindowsCommandAvailable = vi.fn(() => false);
-
-    fixPath({
-      env,
-      platform: "win32",
-      readWindowsEnvironment,
-      isWindowsCommandAvailable,
-    });
-
-    expect(env.PATH).toBe(
-      [
-        "C:\\Users\\testuser\\AppData\\Roaming\\npm",
-        "C:\\Users\\testuser\\.bun\\bin",
-        "C:\\Users\\testuser\\scoop\\shims",
-        "C:\\Custom\\Bin",
-        "C:\\Windows\\System32",
-      ].join(";"),
-    );
-  });
-
-  it("does nothing on unsupported platforms", () => {
-    const env: NodeJS.ProcessEnv = {
-      SHELL: "C:/Program Files/Git/bin/bash.exe",
-      PATH: "C:\\Windows\\System32",
-    };
-    const readPath = vi.fn(() => "/usr/local/bin:/usr/bin");
-
-    fixPath({
-      env,
-      platform: "freebsd",
-      readPath,
-    });
-
-    expect(readPath).not.toHaveBeenCalled();
-    expect(env.PATH).toBe("C:\\Windows\\System32");
-  });
+  assert.equal(env.HOME, NodeOS.userInfo().homedir);
 });
+
+it("preserves an explicitly configured HOME", () => {
+  const env: NodeJS.ProcessEnv = { HOME: "/custom/home" };
+
+  hydratePosixHome(env, () => {
+    throw new Error("HOME lookup should not run");
+  });
+
+  assert.equal(env.HOME, "/custom/home");
+});
+
+effectIt.effect("hydrates PATH when the desktop handoff is absent", () =>
+  Effect.acquireUseRelease(
+    Effect.sync(() =>
+      vi
+        .spyOn(NodeChildProcess, "execFileSync")
+        .mockReturnValue("__T3CODE_ENV_PATH_START__\n/opt/tools/bin\n__T3CODE_ENV_PATH_END__\n"),
+    ),
+    (probe) =>
+      Effect.gen(function* () {
+        const env: NodeJS.ProcessEnv = { SHELL: "/bin/bash", PATH: "/usr/bin" };
+
+        yield* fixPath().pipe(
+          Effect.provideService(HostProcess.Platform, "linux"),
+          Effect.provideService(HostProcess.Environment, env),
+          Effect.provide(NodeServices.layer),
+        );
+
+        assert.equal(probe.mock.calls.length, 1);
+        assert.equal(env.PATH, "/opt/tools/bin:/usr/bin");
+      }),
+    (probe) => Effect.sync(() => probe.mockRestore()),
+  ),
+);
+
+effectIt.effect("keeps mise's PATH record with the login shell PATH", () =>
+  Effect.acquireUseRelease(
+    Effect.sync(() =>
+      vi
+        .spyOn(NodeChildProcess, "execFileSync")
+        .mockReturnValue(
+          [
+            "__T3CODE_ENV_PATH_START__",
+            "/home/me/.local/bin:/mise/installs/claude/latest:/mise/shims",
+            "__T3CODE_ENV_PATH_END__",
+            "__T3CODE_ENV___MISE_DIFF_START__",
+            "mise-diff",
+            "__T3CODE_ENV___MISE_DIFF_END__",
+          ].join("\n"),
+        ),
+    ),
+    () =>
+      Effect.gen(function* () {
+        const env: NodeJS.ProcessEnv = { SHELL: "/bin/bash", PATH: "/usr/bin" };
+
+        yield* fixPath().pipe(
+          Effect.provideService(HostProcess.Platform, "linux"),
+          Effect.provideService(HostProcess.Environment, env),
+          Effect.provide(NodeServices.layer),
+        );
+
+        assert.equal(env.__MISE_DIFF, "mise-diff");
+      }),
+    (probe) => Effect.sync(() => probe.mockRestore()),
+  ),
+);
+
+effectIt.effect("hydrates a missing JAVA_HOME from the login shell and keeps an explicit one", () =>
+  Effect.acquireUseRelease(
+    Effect.sync(() =>
+      vi
+        .spyOn(NodeChildProcess, "execFileSync")
+        .mockReturnValue(
+          [
+            "__T3CODE_ENV_PATH_START__",
+            "/opt/homebrew/bin",
+            "__T3CODE_ENV_PATH_END__",
+            "__T3CODE_ENV_JAVA_HOME_START__",
+            "/opt/homebrew/opt/openjdk@17",
+            "__T3CODE_ENV_JAVA_HOME_END__",
+          ].join("\n"),
+        ),
+    ),
+    () =>
+      Effect.gen(function* () {
+        const missing: NodeJS.ProcessEnv = { SHELL: "/bin/zsh", PATH: "/usr/bin" };
+        const explicit: NodeJS.ProcessEnv = {
+          SHELL: "/bin/zsh",
+          PATH: "/usr/bin",
+          JAVA_HOME: "/custom/jdk",
+        };
+
+        for (const env of [missing, explicit]) {
+          yield* fixPath().pipe(
+            Effect.provideService(HostProcess.Platform, "darwin"),
+            Effect.provideService(HostProcess.Environment, env),
+            Effect.provide(NodeServices.layer),
+          );
+        }
+
+        assert.equal(missing.JAVA_HOME, "/opt/homebrew/opt/openjdk@17");
+        assert.equal(explicit.JAVA_HOME, "/custom/jdk");
+      }),
+    (probe) => Effect.sync(() => probe.mockRestore()),
+  ),
+);
+
+effectIt.effect("replaces a Path-spelled Windows PATH instead of adding a second key", () =>
+  Effect.gen(function* () {
+    const env: NodeJS.ProcessEnv = { Path: "C:\\Windows" };
+
+    yield* fixPath().pipe(
+      Effect.provideService(HostProcess.Platform, "win32"),
+      Effect.provideService(HostProcess.Environment, env),
+      Effect.provideService(WindowsShellEnvironment, () => Effect.succeed({ PATH: "C:\\Tools" })),
+      Effect.provideService(CommandAvailability, () => Effect.succeed(true)),
+      Effect.provide(NodeServices.layer),
+    );
+
+    assert.deepEqual(env, { PATH: "C:\\Tools;C:\\Windows" });
+  }),
+);

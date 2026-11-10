@@ -4,91 +4,105 @@ import type {
   VcsStatusResult,
 } from "@t3tools/contracts";
 import { isTemporaryWorktreeBranch } from "@t3tools/shared/git";
+import type { ChangeRequestTerminology } from "@t3tools/client-runtime/source-control-clients";
 import {
-  DEFAULT_CHANGE_REQUEST_TERMINOLOGY,
-  getChangeRequestTerminology,
-  type ChangeRequestTerminology,
-} from "../sourceControlPresentation";
+  changeRequestTerminologyFor,
+  type DefaultBranchActionDialogCopy,
+  type DefaultBranchConfirmableAction,
+  type GitActionIconName,
+  type GitDialogAction,
+} from "@t3tools/client-runtime/state/vcs";
 
-export type GitActionIconName = "commit" | "push" | "pr";
-
-export type GitDialogAction = "commit" | "push" | "create_pr";
+export {
+  requiresDefaultBranchConfirmation,
+  type DefaultBranchConfirmableAction,
+  type GitActionIconName,
+} from "@t3tools/client-runtime/state/vcs";
 
 export interface GitActionMenuItem {
   id: "commit" | "push" | "pr";
   label: string;
   disabled: boolean;
   icon: GitActionIconName;
-  kind: "open_dialog" | "open_pr";
+  kind: "open_dialog";
   dialogAction?: GitDialogAction;
 }
 
 export interface GitQuickAction {
   label: string;
   disabled: boolean;
-  kind: "run_action" | "run_pull" | "open_pr" | "show_hint";
+  kind: "run_action" | "run_pull" | "open_publish" | "show_hint";
   action?: GitStackedAction;
   hint?: string;
 }
 
-export interface DefaultBranchActionDialogCopy {
-  title: string;
-  description: string;
-  continueLabel: string;
+export interface GitActionProgressPresentation {
+  readonly status: string;
+  readonly output: string | null;
+  readonly startedAtMs: number | null;
 }
 
-export type DefaultBranchConfirmableAction =
-  | "push"
-  | "create_pr"
-  | "commit_push"
-  | "commit_push_pr";
-
-function resolveChangeRequestTerminology(
-  gitStatus: VcsStatusResult | null,
-): ChangeRequestTerminology {
-  return gitStatus?.sourceControlProvider
-    ? getChangeRequestTerminology(gitStatus.sourceControlProvider)
-    : DEFAULT_CHANGE_REQUEST_TERMINOLOGY;
+export interface GitActionResultToastTiming {
+  readonly timeout: 0;
+  readonly dismissAfterVisibleMs: number | null;
 }
 
-export function buildGitActionProgressStages(input: {
-  action: GitStackedAction;
-  hasCustomCommitMessage: boolean;
-  hasWorkingTreeChanges: boolean;
-  pushTarget?: string;
-  featureBranch?: boolean;
-  shouldPushBeforePr?: boolean;
-  terminology?: ChangeRequestTerminology;
-}): string[] {
-  const terminology = input.terminology ?? DEFAULT_CHANGE_REQUEST_TERMINOLOGY;
-  const branchStages = input.featureBranch ? ["Preparing feature ref..."] : [];
-  const pushStage = input.pushTarget ? `Pushing to ${input.pushTarget}...` : "Pushing...";
-  const prStages = [
-    `Preparing ${terminology.shortLabel}...`,
-    `Generating ${terminology.shortLabel} content...`,
-    `Creating ${terminology.singular}...`,
-  ];
+export const GIT_ACTION_SUCCESS_VISIBLE_MS = 10_000;
 
-  if (input.action === "push") {
-    return [pushStage];
-  }
-  if (input.action === "create_pr") {
-    return input.shouldPushBeforePr ? [pushStage, ...prStages] : prStages;
+export function resolveGitActionResultToastTiming(
+  type: "error" | "success",
+): GitActionResultToastTiming {
+  return {
+    timeout: 0,
+    dismissAfterVisibleMs: type === "success" ? GIT_ACTION_SUCCESS_VISIBLE_MS : null,
+  };
+}
+
+export function resolveGitActionProgressPresentation(input: {
+  readonly isRunning: boolean;
+  readonly operation: string | null;
+  readonly currentLabel: string | null;
+  readonly lastOutputLine: string | null;
+  readonly phaseStartedAtMs: number | null;
+  readonly hookStartedAtMs: number | null;
+}): GitActionProgressPresentation | null {
+  if (
+    !input.isRunning ||
+    (input.operation !== "run_change_request" && input.operation !== "pull")
+  ) {
+    return null;
   }
 
-  const shouldIncludeCommitStages = input.action === "commit" || input.hasWorkingTreeChanges;
-  const commitStages = !shouldIncludeCommitStages
-    ? []
-    : input.hasCustomCommitMessage
-      ? ["Committing..."]
-      : ["Generating commit message...", "Committing..."];
-  if (input.action === "commit") {
-    return [...branchStages, ...commitStages];
+  const currentLabel = input.currentLabel?.trim();
+  const output = input.lastOutputLine?.trim();
+  const isPull = input.operation === "pull";
+  return {
+    status:
+      currentLabel && currentLabel !== "Running source control action"
+        ? currentLabel
+        : isPull
+          ? "Pulling latest changes..."
+          : "Starting source control action...",
+    output: !isPull && output ? output : null,
+    startedAtMs: isPull
+      ? input.phaseStartedAtMs
+      : (input.hookStartedAtMs ?? input.phaseStartedAtMs),
+  };
+}
+
+export function formatGitActionElapsed(startedAtMs: number | null, nowMs: number): string | null {
+  if (startedAtMs === null) {
+    return null;
   }
-  if (input.action === "commit_push") {
-    return [...branchStages, ...commitStages, pushStage];
+
+  const elapsedSeconds = Math.max(0, Math.floor((nowMs - startedAtMs) / 1_000));
+  if (elapsedSeconds < 60) {
+    return `${elapsedSeconds}s`;
   }
-  return [...branchStages, ...commitStages, pushStage, ...prStages];
+
+  const minutes = Math.floor(elapsedSeconds / 60);
+  const seconds = elapsedSeconds % 60;
+  return `${minutes}m ${seconds}s`;
 }
 
 export function buildMenuItems(
@@ -97,7 +111,7 @@ export function buildMenuItems(
   hasPrimaryRemote = true,
 ): GitActionMenuItem[] {
   if (!gitStatus) return [];
-  const terminology = resolveChangeRequestTerminology(gitStatus);
+  const terminology = changeRequestTerminologyFor(gitStatus);
 
   const hasBranch = gitStatus.refName !== null;
   const hasChanges = gitStatus.hasWorkingTreeChanges;
@@ -115,46 +129,48 @@ export function buildMenuItems(
   const canCreatePr =
     !isBusy &&
     hasBranch &&
-    !hasChanges &&
     !hasOpenPr &&
     hasDefaultBranchDelta &&
     !isBehind &&
     (gitStatus.hasUpstream || canPushWithoutUpstream);
-  const canOpenPr = !isBusy && hasOpenPr;
+
+  const commitItem: GitActionMenuItem = {
+    id: "commit",
+    label: "Commit",
+    disabled: !canCommit,
+    icon: "commit",
+    kind: "open_dialog",
+    dialogAction: "commit",
+  };
+
+  if (!hasPrimaryRemote) {
+    return [commitItem];
+  }
+
+  const pushItem: GitActionMenuItem = {
+    id: "push",
+    label: "Push",
+    disabled: !canPush,
+    icon: "push",
+    kind: "open_dialog",
+    dialogAction: "push",
+  };
+
+  if (hasOpenPr) {
+    return [commitItem, pushItem];
+  }
 
   return [
+    commitItem,
+    pushItem,
     {
-      id: "commit",
-      label: "Commit",
-      disabled: !canCommit,
-      icon: "commit",
+      id: "pr",
+      label: `Create ${terminology.shortLabel}`,
+      disabled: !canCreatePr,
+      icon: "pr",
       kind: "open_dialog",
-      dialogAction: "commit",
+      dialogAction: "create_pr",
     },
-    {
-      id: "push",
-      label: "Push",
-      disabled: !canPush,
-      icon: "push",
-      kind: "open_dialog",
-      dialogAction: "push",
-    },
-    hasOpenPr
-      ? {
-          id: "pr",
-          label: `View ${terminology.shortLabel}`,
-          disabled: !canOpenPr,
-          icon: "pr",
-          kind: "open_pr",
-        }
-      : {
-          id: "pr",
-          label: `Create ${terminology.shortLabel}`,
-          disabled: !canCreatePr,
-          icon: "pr",
-          kind: "open_dialog",
-          dialogAction: "create_pr",
-        },
   ];
 }
 
@@ -184,7 +200,7 @@ export function resolveQuickAction(
   const hasDefaultBranchDelta = (gitStatus.aheadOfDefaultCount ?? gitStatus.aheadCount) > 0;
   const isBehind = gitStatus.behindCount > 0;
   const isDiverged = isAhead && isBehind;
-  const terminology = resolveChangeRequestTerminology(gitStatus);
+  const terminology = changeRequestTerminologyFor(gitStatus);
 
   if (!hasBranch) {
     return {
@@ -196,7 +212,7 @@ export function resolveQuickAction(
   }
 
   if (hasChanges) {
-    if (!gitStatus.hasUpstream && !hasPrimaryRemote) {
+    if (isBehind || (!gitStatus.hasUpstream && !hasPrimaryRemote)) {
       return { label: "Commit", disabled: false, kind: "run_action", action: "commit" };
     }
     if (hasOpenPr || isDefaultRef) {
@@ -212,19 +228,20 @@ export function resolveQuickAction(
 
   if (!gitStatus.hasUpstream) {
     if (!hasPrimaryRemote) {
-      if (hasOpenPr && !isAhead) {
-        return { label: `View ${terminology.shortLabel}`, disabled: false, kind: "open_pr" };
-      }
       return {
-        label: "Push",
-        disabled: true,
-        kind: "show_hint",
-        hint: `Add an "origin" remote before pushing or creating a ${terminology.singular}.`,
+        label: "Publish repository",
+        disabled: false,
+        kind: "open_publish",
       };
     }
     if (!isAhead) {
       if (hasOpenPr) {
-        return { label: `View ${terminology.shortLabel}`, disabled: false, kind: "open_pr" };
+        return {
+          label: "Commit",
+          disabled: true,
+          kind: "show_hint",
+          hint: "Branch is up to date. No action needed.",
+        };
       }
       return {
         label: "Push",
@@ -284,7 +301,12 @@ export function resolveQuickAction(
   }
 
   if (hasOpenPr && gitStatus.hasUpstream) {
-    return { label: `View ${terminology.shortLabel}`, disabled: false, kind: "open_pr" };
+    return {
+      label: "Commit",
+      disabled: true,
+      kind: "show_hint",
+      hint: "Branch is up to date. No action needed.",
+    };
   }
 
   if (hasDefaultBranchDelta && !isDefaultRef) {
@@ -304,28 +326,15 @@ export function resolveQuickAction(
   };
 }
 
-export function requiresDefaultBranchConfirmation(
-  action: GitStackedAction,
-  isDefaultRef: boolean,
-): boolean {
-  if (!isDefaultRef) return false;
-  return (
-    action === "push" ||
-    action === "create_pr" ||
-    action === "commit_push" ||
-    action === "commit_push_pr"
-  );
-}
-
 export function resolveDefaultBranchActionDialogCopy(input: {
   action: DefaultBranchConfirmableAction;
   branchName: string;
   includesCommit: boolean;
-  terminology?: ChangeRequestTerminology;
+  terminology: ChangeRequestTerminology;
 }): DefaultBranchActionDialogCopy {
   const branchLabel = input.branchName;
   const suffix = ` on "${branchLabel}". You can continue on this ref or create a feature ref and run the same action there.`;
-  const terminology = input.terminology ?? DEFAULT_CHANGE_REQUEST_TERMINOLOGY;
+  const { terminology } = input;
 
   if (input.action === "push" || input.action === "commit_push") {
     if (input.includesCommit) {
@@ -356,6 +365,15 @@ export function resolveDefaultBranchActionDialogCopy(input: {
   };
 }
 
+/** Clean trees cannot create feature branches because the server derives names from uncommitted changes. */
+export function resolveFeatureBranchUnavailableReason(input: {
+  branchName: string;
+  hasWorkingTreeChanges: boolean;
+}): string | null {
+  if (input.hasWorkingTreeChanges) return null;
+  return `There are no changes to commit, so a feature branch can't be named. Create a branch yourself or continue on ${input.branchName}.`;
+}
+
 export function resolveThreadBranchUpdate(
   result: GitRunStackedActionResult,
 ): { branch: string } | null {
@@ -366,6 +384,16 @@ export function resolveThreadBranchUpdate(
   return {
     branch: result.branch.name,
   };
+}
+
+export function resolveThreadBranchMetadataPatch(
+  branch: string | null,
+  expectedBranch: string | null,
+): {
+  branch: string | null;
+  expectedBranch: string | null;
+} {
+  return { branch, expectedBranch };
 }
 
 export function resolveLiveThreadBranchUpdate(input: {
@@ -398,5 +426,30 @@ export function resolveLiveThreadBranchUpdate(input: {
   };
 }
 
-// Re-export from shared for backwards compatibility in this module's exports
-export { resolveAutoFeatureBranchName } from "@t3tools/shared/git";
+export type ChangesLineTotals = {
+  readonly insertions: number;
+  readonly deletions: number;
+  /** Ref the counts compare against; `null` means they are uncommitted changes against HEAD. */
+  readonly baseRef: string | null;
+};
+
+// `branchChanges ?? workingTree` treats `{0,0}` as present, so a zero branch total hid a dirty
+// working tree and the Changes row read +0 while Diff still showed the work.
+export function resolveChangesTotals(
+  status: VcsStatusResult | null | undefined,
+): ChangesLineTotals | null {
+  if (!status) return null;
+  const branch = status.branchChanges;
+  const tree = { ...status.workingTree, baseRef: null };
+  const selected =
+    branch && (branch.insertions > 0 || branch.deletions > 0)
+      ? branch
+      : tree.insertions > 0 || tree.deletions > 0
+        ? tree
+        : (branch ?? tree);
+  return {
+    insertions: selected.insertions,
+    deletions: selected.deletions,
+    baseRef: selected.baseRef,
+  };
+}

@@ -1,34 +1,111 @@
 import type {
-  AuthBootstrapInput,
-  AuthBootstrapResult,
+  AuthBrowserSessionResult,
   AuthClientMetadata,
-  AuthCreatePairingCredentialInput,
-  AuthPairingCredentialResult,
-  AuthRevokeClientSessionInput,
-  AuthRevokePairingLinkInput,
+  AuthEnvironmentScope,
+  ServerAuthSessionMethod,
   AuthSessionId,
   AuthSessionState,
 } from "@t3tools/contracts";
+import { EnvironmentHttpCommonError, PRIMARY_LOCAL_ENVIRONMENT_ID } from "@t3tools/contracts";
+import type { EnvironmentHttpCommonError as EnvironmentHttpCommonErrorType } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+import { HttpClientError } from "effect/http";
 
 import {
   getPairingTokenFromUrl,
   stripPairingTokenFromUrl as stripPairingTokenUrl,
-} from "../../pairingUrl";
+} from "@t3tools/shared/remote";
 
-import { resolvePrimaryEnvironmentHttpUrl } from "./target";
-import { Data, Predicate } from "effect";
+import { PrimaryEnvironmentHttpClient } from "./httpClient";
+import { runPrimaryHttp } from "../../lib/runtime";
 
-export class BootstrapHttpError extends Data.TaggedError("BootstrapHttpError")<{
-  readonly message: string;
-  readonly status: number;
-}> {}
-const isBootstrapHttpError = (u: unknown): u is BootstrapHttpError =>
-  Predicate.isTagged(u, "BootstrapHttpError");
+const PrimaryEnvironmentRequestOperation = Schema.Literals([
+  "fetch-session-state",
+  "exchange-bootstrap-credential",
+  "fetch-environment-descriptor",
+  "create-pairing-credential",
+  "list-pairing-links",
+  "revoke-pairing-link",
+  "list-client-sessions",
+  "revoke-client-session",
+  "revoke-other-client-sessions",
+]);
+type PrimaryEnvironmentRequestOperation = typeof PrimaryEnvironmentRequestOperation.Type;
+
+export class PrimaryEnvironmentRequestError extends Schema.TaggedError<PrimaryEnvironmentRequestError>()(
+  "PrimaryEnvironmentRequestError",
+  {
+    operation: PrimaryEnvironmentRequestOperation,
+    status: Schema.Number,
+    pairingLinkId: Schema.optional(Schema.String),
+    sessionId: Schema.optional(Schema.String),
+    cause: Schema.Defect(),
+  },
+) {
+  static fromCause(input: {
+    readonly operation: PrimaryEnvironmentRequestOperation;
+    readonly cause: unknown;
+    readonly pairingLinkId?: string;
+    readonly sessionId?: string;
+  }): PrimaryEnvironmentRequestError {
+    const status = readHttpApiStatus(input.cause) ?? 500;
+    return new PrimaryEnvironmentRequestError({
+      operation: input.operation,
+      status,
+      ...(input.pairingLinkId !== undefined ? { pairingLinkId: input.pairingLinkId } : {}),
+      ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
+      cause: input.cause,
+    });
+  }
+
+  override get message(): string {
+    return `Primary environment request failed during ${this.operation} (HTTP ${this.status}).`;
+  }
+}
+
+const isPrimaryEnvironmentRequestError = Schema.is(PrimaryEnvironmentRequestError);
+
+export class PrimaryEnvironmentPairingCredentialRejectedError extends Schema.TaggedError<PrimaryEnvironmentPairingCredentialRejectedError>()(
+  "PrimaryEnvironmentPairingCredentialRejectedError",
+  {
+    providedLength: Schema.Number,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Invalid pairing token. Check the token and try again.";
+  }
+}
+
+export class PrimaryEnvironmentAuthSessionTimeoutError extends Schema.TaggedError<PrimaryEnvironmentAuthSessionTimeoutError>()(
+  "PrimaryEnvironmentAuthSessionTimeoutError",
+  {
+    timeoutMs: Schema.Number,
+    elapsedMs: Schema.Number,
+  },
+) {
+  override get message(): string {
+    return "Timed out waiting for authenticated session after bootstrap.";
+  }
+}
+
+export class PrimaryEnvironmentPairingCredentialRequiredError extends Schema.TaggedError<PrimaryEnvironmentPairingCredentialRequiredError>()(
+  "PrimaryEnvironmentPairingCredentialRequiredError",
+  {
+    providedLength: Schema.Number,
+  },
+) {
+  override get message(): string {
+    return "Enter a pairing token to continue.";
+  }
+}
+
+const isEnvironmentHttpCommonError = Schema.is(EnvironmentHttpCommonError);
 
 export interface ServerPairingLinkRecord {
   readonly id: string;
-  readonly credential: string;
-  readonly role: "owner" | "client";
+  readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
   readonly subject: string;
   readonly label?: string;
   readonly createdAt: string;
@@ -38,8 +115,8 @@ export interface ServerPairingLinkRecord {
 export interface ServerClientSessionRecord {
   readonly sessionId: AuthSessionId;
   readonly subject: string;
-  readonly role: "owner" | "client";
-  readonly method: "browser-session-cookie" | "bearer-session-token";
+  readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
+  readonly method: ServerAuthSessionMethod;
   readonly client: AuthClientMetadata;
   readonly issuedAt: string;
   readonly expiresAt: string;
@@ -58,6 +135,7 @@ type ServerAuthGateState =
 
 let bootstrapPromise: Promise<ServerAuthGateState> | null = null;
 let resolvedAuthenticatedGateState: ServerAuthGateState | null = null;
+let explicitPairingRequested = false;
 const AUTH_SESSION_ESTABLISH_TIMEOUT_MS = 2_000;
 const AUTH_SESSION_ESTABLISH_STEP_MS = 100;
 
@@ -84,87 +162,80 @@ export function takePairingTokenFromUrl(): string | null {
 }
 
 function getDesktopBootstrapCredential(): string | null {
-  const bootstrap = window.desktopBridge?.getLocalEnvironmentBootstrap();
-  return typeof bootstrap?.bootstrapToken === "string" && bootstrap.bootstrapToken.length > 0
-    ? bootstrap.bootstrapToken
+  // DesktopBackendConfiguration gives primary and WSL the same bootstrap token.
+  const bootstraps = window.desktopBridge?.getLocalEnvironmentBootstraps() ?? [];
+  const primary = bootstraps.find((entry) => entry.id === PRIMARY_LOCAL_ENVIRONMENT_ID);
+  return typeof primary?.bootstrapToken === "string" && primary.bootstrapToken.length > 0
+    ? primary.bootstrapToken
     : null;
 }
 
 export async function fetchSessionState(): Promise<AuthSessionState> {
   return retryTransientBootstrap(async () => {
-    const response = await fetch(resolvePrimaryEnvironmentHttpUrl("/api/auth/session"), {
-      credentials: "include",
-    });
-    if (!response.ok) {
-      throw new BootstrapHttpError({
-        message: `Failed to load server auth session state (${response.status}).`,
-        status: response.status,
+    try {
+      return await runPrimaryHttp(
+        PrimaryEnvironmentHttpClient.pipe(
+          Effect.flatMap((client) => client.auth.session({ headers: {} })),
+        ),
+      );
+    } catch (error) {
+      throw PrimaryEnvironmentRequestError.fromCause({
+        operation: "fetch-session-state",
+        cause: error,
       });
     }
-    return (await response.json()) as AuthSessionState;
   });
 }
 
-async function readErrorMessage(response: Response, fallbackMessage: string): Promise<string> {
-  const text = await response.text();
-  return text || fallbackMessage;
+function readHttpApiStatus(error: unknown): number | null {
+  if (isEnvironmentHttpCommonError(error)) {
+    return readEnvironmentHttpErrorStatus(error);
+  }
+  return HttpClientError.isHttpClientError(error) && error.response !== undefined
+    ? error.response.status
+    : null;
 }
 
-const INVALID_BOOTSTRAP_CREDENTIAL_MESSAGES = new Set([
-  "Invalid bootstrap credential.",
-  "Unknown bootstrap credential.",
-]);
-
-function parseBootstrapErrorMessage(message: string): string {
-  const trimmed = message.trim();
-  if (trimmed.length === 0) {
-    return "";
+function readEnvironmentHttpErrorStatus(error: EnvironmentHttpCommonErrorType): number {
+  switch (error._tag) {
+    case "EnvironmentRequestInvalidError":
+      return 400;
+    case "EnvironmentAuthInvalidError":
+      return 401;
+    case "EnvironmentScopeRequiredError":
+    case "EnvironmentOperationForbiddenError":
+      return 403;
+    case "EnvironmentResourceNotFoundError":
+      return 404;
+    case "EnvironmentInternalError":
+      return 500;
   }
-
-  try {
-    const parsed = JSON.parse(trimmed) as {
-      error?: unknown;
-    };
-    if (typeof parsed.error === "string" && parsed.error.trim().length > 0) {
-      return parsed.error.trim();
-    }
-  } catch {
-    // Not JSON; fall back to plain text.
-  }
-
-  return trimmed;
 }
 
-function toFriendlyBootstrapErrorMessage(status: number, message: string): string {
-  const parsedMessage = parseBootstrapErrorMessage(message);
-  if (status === 401 && INVALID_BOOTSTRAP_CREDENTIAL_MESSAGES.has(parsedMessage)) {
-    return "Invalid pairing token. Check the token and try again.";
-  }
-
-  return parsedMessage;
-}
-
-async function exchangeBootstrapCredential(credential: string): Promise<AuthBootstrapResult> {
+async function exchangeBootstrapCredential(credential: string): Promise<AuthBrowserSessionResult> {
   return retryTransientBootstrap(async () => {
-    const payload: AuthBootstrapInput = { credential };
-    const response = await fetch(resolvePrimaryEnvironmentHttpUrl("/api/auth/bootstrap"), {
-      body: JSON.stringify(payload),
-      credentials: "include",
-      headers: {
-        "content-type": "application/json",
-      },
-      method: "POST",
-    });
-
-    if (!response.ok) {
-      const message = toFriendlyBootstrapErrorMessage(response.status, await response.text());
-      throw new BootstrapHttpError({
-        message: message || `Failed to bootstrap auth session (${response.status}).`,
-        status: response.status,
+    try {
+      return await runPrimaryHttp(
+        PrimaryEnvironmentHttpClient.pipe(
+          Effect.flatMap((client) => client.auth.browserSession({ payload: { credential } })),
+        ),
+      );
+    } catch (error) {
+      if (
+        isEnvironmentHttpCommonError(error) &&
+        error._tag === "EnvironmentAuthInvalidError" &&
+        error.reason === "invalid_credential"
+      ) {
+        throw new PrimaryEnvironmentPairingCredentialRejectedError({
+          providedLength: credential.length,
+          cause: error,
+        });
+      }
+      throw PrimaryEnvironmentRequestError.fromCause({
+        operation: "exchange-bootstrap-credential",
+        cause: error,
       });
     }
-
-    return (await response.json()) as AuthBootstrapResult;
   });
 }
 
@@ -177,8 +248,12 @@ async function waitForAuthenticatedSessionAfterBootstrap(): Promise<AuthSessionS
       return session;
     }
 
-    if (Date.now() - startedAt >= AUTH_SESSION_ESTABLISH_TIMEOUT_MS) {
-      throw new Error("Timed out waiting for authenticated session after bootstrap.");
+    const elapsedMs = Date.now() - startedAt;
+    if (elapsedMs >= AUTH_SESSION_ESTABLISH_TIMEOUT_MS) {
+      throw new PrimaryEnvironmentAuthSessionTimeoutError({
+        timeoutMs: AUTH_SESSION_ESTABLISH_TIMEOUT_MS,
+        elapsedMs,
+      });
     }
 
     await waitForBootstrapRetry(AUTH_SESSION_ESTABLISH_STEP_MS);
@@ -189,7 +264,7 @@ const TRANSIENT_BOOTSTRAP_STATUS_CODES = new Set([502, 503, 504]);
 const BOOTSTRAP_RETRY_TIMEOUT_MS = 15_000;
 const BOOTSTRAP_RETRY_STEP_MS = 500;
 
-export async function retryTransientBootstrap<T>(operation: () => Promise<T>): Promise<T> {
+async function retryTransientBootstrap<T>(operation: () => Promise<T>): Promise<T> {
   const startedAt = Date.now();
   while (true) {
     try {
@@ -215,7 +290,7 @@ function waitForBootstrapRetry(delayMs: number): Promise<void> {
 }
 
 function isTransientBootstrapError(error: unknown): boolean {
-  if (isBootstrapHttpError(error)) {
+  if (isPrimaryEnvironmentRequestError(error)) {
     return TRANSIENT_BOOTSTRAP_STATUS_CODES.has(error.status);
   }
 
@@ -226,13 +301,13 @@ function isTransientBootstrapError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
-async function bootstrapServerAuth(): Promise<ServerAuthGateState> {
-  const bootstrapCredential = getDesktopBootstrapCredential();
+async function bootstrapServerAuth(urlCredential: string | null): Promise<ServerAuthGateState> {
   const currentSession = await fetchSessionState();
-  if (currentSession.authenticated) {
+  if (currentSession.authenticated && !urlCredential) {
     return { status: "authenticated" };
   }
 
+  const bootstrapCredential = urlCredential ?? getDesktopBootstrapCredential();
   if (!bootstrapCredential) {
     return {
       status: "requires-auth",
@@ -256,140 +331,58 @@ async function bootstrapServerAuth(): Promise<ServerAuthGateState> {
 export async function submitServerAuthCredential(credential: string): Promise<void> {
   const trimmedCredential = credential.trim();
   if (!trimmedCredential) {
-    throw new Error("Enter a pairing token to continue.");
+    throw new PrimaryEnvironmentPairingCredentialRequiredError({
+      providedLength: credential.length,
+    });
   }
 
   resolvedAuthenticatedGateState = null;
   await exchangeBootstrapCredential(trimmedCredential);
+  await waitForAuthenticatedSessionAfterBootstrap();
+  resolvedAuthenticatedGateState = { status: "authenticated" };
   bootstrapPromise = null;
+  explicitPairingRequested = false;
   stripPairingTokenFromUrl();
 }
 
-export async function createServerPairingCredential(
-  label?: string,
-): Promise<AuthPairingCredentialResult> {
-  const trimmedLabel = label?.trim();
-  const payload: AuthCreatePairingCredentialInput = trimmedLabel ? { label: trimmedLabel } : {};
-  const response = await fetch(resolvePrimaryEnvironmentHttpUrl("/api/auth/pairing-token"), {
-    body: JSON.stringify(payload),
-    credentials: "include",
-    headers: {
-      "content-type": "application/json",
-    },
-    method: "POST",
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      await readErrorMessage(response, `Failed to create pairing credential (${response.status}).`),
-    );
-  }
-
-  return (await response.json()) as AuthPairingCredentialResult;
-}
-
-export async function listServerPairingLinks(): Promise<ReadonlyArray<ServerPairingLinkRecord>> {
-  const response = await fetch(resolvePrimaryEnvironmentHttpUrl("/api/auth/pairing-links"), {
-    credentials: "include",
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      await readErrorMessage(response, `Failed to load pairing links (${response.status}).`),
-    );
-  }
-
-  return (await response.json()) as ReadonlyArray<ServerPairingLinkRecord>;
-}
-
-export async function revokeServerPairingLink(id: string): Promise<void> {
-  const payload: AuthRevokePairingLinkInput = { id };
-  const response = await fetch(resolvePrimaryEnvironmentHttpUrl("/api/auth/pairing-links/revoke"), {
-    body: JSON.stringify(payload),
-    credentials: "include",
-    headers: {
-      "content-type": "application/json",
-    },
-    method: "POST",
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      await readErrorMessage(response, `Failed to revoke pairing link (${response.status}).`),
-    );
-  }
-}
-
-export async function listServerClientSessions(): Promise<
-  ReadonlyArray<ServerClientSessionRecord>
-> {
-  const response = await fetch(resolvePrimaryEnvironmentHttpUrl("/api/auth/clients"), {
-    credentials: "include",
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      await readErrorMessage(response, `Failed to load paired clients (${response.status}).`),
-    );
-  }
-
-  return (await response.json()) as ReadonlyArray<ServerClientSessionRecord>;
-}
-
-export async function revokeServerClientSession(sessionId: AuthSessionId): Promise<void> {
-  const payload: AuthRevokeClientSessionInput = { sessionId };
-  const response = await fetch(resolvePrimaryEnvironmentHttpUrl("/api/auth/clients/revoke"), {
-    body: JSON.stringify(payload),
-    credentials: "include",
-    headers: {
-      "content-type": "application/json",
-    },
-    method: "POST",
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      await readErrorMessage(response, `Failed to revoke client session (${response.status}).`),
-    );
-  }
-}
-
-export async function revokeOtherServerClientSessions(): Promise<number> {
-  const response = await fetch(
-    resolvePrimaryEnvironmentHttpUrl("/api/auth/clients/revoke-others"),
-    {
-      credentials: "include",
-      method: "POST",
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(
-      await readErrorMessage(
-        response,
-        `Failed to revoke other client sessions (${response.status}).`,
-      ),
-    );
-  }
-
-  const result = (await response.json()) as { revokedCount?: number };
-  return result.revokedCount ?? 0;
-}
-
 export async function resolveInitialServerAuthGateState(): Promise<ServerAuthGateState> {
-  if (resolvedAuthenticatedGateState?.status === "authenticated") {
-    return resolvedAuthenticatedGateState;
+  // Preserve explicit grant replacement across the auth-gate reload triggered by token removal.
+  if (window.location.pathname.replace(/\/+$/, "") !== "/pair") {
+    explicitPairingRequested = false;
+  } else if (peekPairingTokenFromUrl()) {
+    explicitPairingRequested = true;
+  }
+  if (explicitPairingRequested) {
+    const currentSession = await fetchSessionState();
+    return { status: "requires-auth", auth: currentSession.auth };
   }
 
-  if (bootstrapPromise) {
-    return bootstrapPromise;
+  const urlCredential = takePairingTokenFromUrl();
+  const previousPromise = bootstrapPromise;
+  if (urlCredential) {
+    resolvedAuthenticatedGateState = null;
+  } else {
+    if (previousPromise) {
+      return previousPromise;
+    }
+
+    if (resolvedAuthenticatedGateState?.status === "authenticated") {
+      return resolvedAuthenticatedGateState;
+    }
   }
 
-  const nextPromise = bootstrapServerAuth();
+  const nextPromise = previousPromise
+    ? previousPromise
+        .catch(() => undefined)
+        .then(() => {
+          resolvedAuthenticatedGateState = null;
+          return bootstrapServerAuth(urlCredential);
+        })
+    : bootstrapServerAuth(urlCredential);
   bootstrapPromise = nextPromise;
   return nextPromise
     .then((result) => {
-      if (result.status === "authenticated") {
+      if (bootstrapPromise === nextPromise && result.status === "authenticated") {
         resolvedAuthenticatedGateState = result;
       }
       return result;
@@ -404,4 +397,5 @@ export async function resolveInitialServerAuthGateState(): Promise<ServerAuthGat
 export function __resetServerAuthBootstrapForTests() {
   bootstrapPromise = null;
   resolvedAuthenticatedGateState = null;
+  explicitPairingRequested = false;
 }

@@ -1,12 +1,32 @@
-import { scopeProjectRef } from "@t3tools/client-runtime";
-import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  ScopedProjectRef,
+  SidebarProjectGroupingMode,
+} from "@t3tools/contracts";
 import {
-  deriveLogicalProjectKeyFromSettings,
+  buildProjectGroups,
   derivePhysicalProjectKey,
-  deriveProjectGroupLabel,
+  resolveScratchProjectScopeKey,
   type ProjectGroupingSettings,
-} from "./logicalProject";
+} from "@t3tools/client-runtime/state/project-grouping";
 import type { Project } from "./types";
+
+export const PROJECT_GROUPING_MODE_LABELS: Record<SidebarProjectGroupingMode, string> = {
+  repository: "Group by repository",
+  repository_path: "Group by repository path",
+  separate: "Keep separate",
+};
+
+export function withProjectGroupingOverride(
+  overrides: Readonly<Record<string, SidebarProjectGroupingMode>> | undefined,
+  overrideKey: string,
+  selection: SidebarProjectGroupingMode | "inherit",
+): Record<string, SidebarProjectGroupingMode> {
+  const next = { ...overrides };
+  if (selection === "inherit") delete next[overrideKey];
+  else next[overrideKey] = selection;
+  return next;
+}
 
 export type EnvironmentPresence = "local-only" | "remote-only" | "mixed";
 
@@ -20,21 +40,99 @@ export interface SidebarProjectSnapshot extends Project {
   displayName: string;
   groupedProjectCount: number;
   environmentPresence: EnvironmentPresence;
+  allRemoteMembersAreDesktopLocal: boolean;
+  allRemoteMembersAreWsl: boolean;
   memberProjects: readonly SidebarProjectGroupMember[];
   memberProjectRefs: readonly ScopedProjectRef[];
   remoteEnvironmentLabels: readonly string[];
+  pinned: boolean;
+  archived: boolean;
+}
+
+export function projectGroupsSpanEnvironments(
+  groups: ReadonlyArray<Pick<SidebarProjectSnapshot, "memberProjects">>,
+): boolean {
+  const environmentIds = new Set<EnvironmentId>();
+  for (const group of groups) {
+    for (const member of group.memberProjects) {
+      environmentIds.add(member.environmentId);
+      if (environmentIds.size > 1) return true;
+    }
+  }
+  return false;
+}
+
+export interface SidebarProjectPickerEntry {
+  group: SidebarProjectSnapshot;
+  targetProject: SidebarProjectGroupMember;
+  isPreferred: boolean;
+}
+
+export function getSidebarProjectSettingsKey(
+  group: SidebarProjectSnapshot,
+  settings: ProjectGroupingSettings,
+  projects: ReadonlyArray<Project>,
+  projectRef?: ScopedProjectRef,
+): string {
+  if (!group.isScratch) return group.projectKey;
+  const project =
+    group.memberProjects.find(
+      (member) =>
+        member.environmentId === projectRef?.environmentId && member.id === projectRef.projectId,
+    ) ??
+    group.memberProjects.find((member) => member.environmentId === projectRef?.environmentId) ??
+    group;
+  return (
+    buildPhysicalToLogicalProjectKeyMap({ projects, settings, primaryEnvironmentId: null }).get(
+      derivePhysicalProjectKey(project),
+    ) ?? group.projectKey
+  );
+}
+
+export function resolveSidebarProjectScopeKey(input: {
+  readonly groups: ReadonlyArray<SidebarProjectSnapshot>;
+  readonly key: string | null;
+  readonly settings?: ProjectGroupingSettings;
+  readonly canClearMissingScope?: boolean;
+}): string | null {
+  if (input.key === null) return null;
+  const group =
+    input.groups.find((candidate) => candidate.projectKey === input.key) ??
+    input.groups.find(
+      (candidate) =>
+        candidate.isScratch &&
+        resolveScratchProjectScopeKey(input.key, candidate.memberProjects, input.settings) ===
+          candidate.projectKey,
+    );
+  return group?.projectKey ?? (input.canClearMissingScope ? null : input.key);
+}
+
+export function resolveSidebarProjectScopeKeys(input: {
+  readonly groups: ReadonlyArray<SidebarProjectSnapshot>;
+  readonly keys: ReadonlyArray<string>;
+  readonly settings?: ProjectGroupingSettings;
+  readonly canClearMissingScope?: boolean;
+}): string[] {
+  return [
+    ...new Set(input.keys.flatMap((key) => resolveSidebarProjectScopeKey({ ...input, key }) ?? [])),
+  ];
 }
 
 export function buildPhysicalToLogicalProjectKeyMap(input: {
   projects: ReadonlyArray<Project>;
   settings: ProjectGroupingSettings;
+  primaryEnvironmentId: EnvironmentId | null;
 }): Map<string, string> {
   const mapping = new Map<string, string>();
-  for (const project of input.projects) {
-    mapping.set(
-      derivePhysicalProjectKey(project),
-      deriveLogicalProjectKeyFromSettings(project, input.settings),
-    );
+  const groups = buildProjectGroups({
+    projects: input.projects,
+    settings: input.settings,
+    preferredEnvironmentId: input.primaryEnvironmentId,
+  });
+  for (const group of groups) {
+    for (const member of group.members) {
+      mapping.set(member.physicalProjectKey, group.key);
+    }
   }
   return mapping;
 }
@@ -42,42 +140,31 @@ export function buildPhysicalToLogicalProjectKeyMap(input: {
 export function buildSidebarProjectSnapshots(input: {
   projects: ReadonlyArray<Project>;
   settings: ProjectGroupingSettings;
+  groupScratchProjects?: boolean;
   primaryEnvironmentId: EnvironmentId | null;
   resolveEnvironmentLabel: (environmentId: EnvironmentId) => string | null;
+  isDesktopLocalEnvironment?: (environmentId: EnvironmentId) => boolean;
+  isWslEnvironment?: (environmentId: EnvironmentId) => boolean;
 }): SidebarProjectSnapshot[] {
-  const groupedMembers = new Map<string, SidebarProjectGroupMember[]>();
-  for (const project of input.projects) {
-    const logicalKey = deriveLogicalProjectKeyFromSettings(project, input.settings);
-    const member: SidebarProjectGroupMember = {
-      ...project,
-      physicalProjectKey: derivePhysicalProjectKey(project),
-      environmentLabel: input.resolveEnvironmentLabel(project.environmentId),
-    };
-    const existing = groupedMembers.get(logicalKey);
-    if (existing) {
-      existing.push(member);
-    } else {
-      groupedMembers.set(logicalKey, [member]);
-    }
-  }
-
-  const result: SidebarProjectSnapshot[] = [];
-  const seen = new Set<string>();
-  for (const project of input.projects) {
-    const logicalKey = deriveLogicalProjectKeyFromSettings(project, input.settings);
-    if (seen.has(logicalKey)) {
-      continue;
-    }
-    seen.add(logicalKey);
-
-    const members = groupedMembers.get(logicalKey) ?? [];
+  return buildProjectGroups({
+    projects: input.projects,
+    groupScratchProjects: input.groupScratchProjects ?? false,
+    settings: input.settings,
+    preferredEnvironmentId: input.primaryEnvironmentId,
+  }).map((group): SidebarProjectSnapshot => {
+    const members = group.members.map(
+      ({ physicalProjectKey, project }): SidebarProjectGroupMember => ({
+        ...project,
+        physicalProjectKey,
+        environmentLabel: input.resolveEnvironmentLabel(project.environmentId),
+      }),
+    );
     const representative =
-      (input.primaryEnvironmentId
-        ? members.find((member) => member.environmentId === input.primaryEnvironmentId)
-        : null) ?? members[0];
-    if (!representative) {
-      continue;
-    }
+      members.find(
+        (member) =>
+          member.environmentId === group.representative.environmentId &&
+          member.id === group.representative.id,
+      ) ?? members[0]!;
 
     const hasLocal =
       input.primaryEnvironmentId !== null &&
@@ -86,33 +173,74 @@ export function buildSidebarProjectSnapshots(input: {
       input.primaryEnvironmentId !== null
         ? members.some((member) => member.environmentId !== input.primaryEnvironmentId)
         : false;
-    const remoteEnvironmentLabels = members
-      .filter(
-        (member) =>
-          input.primaryEnvironmentId !== null &&
-          member.environmentId !== input.primaryEnvironmentId,
-      )
+    const remoteMembers = members.filter(
+      (member) =>
+        input.primaryEnvironmentId !== null && member.environmentId !== input.primaryEnvironmentId,
+    );
+    const remoteEnvironmentLabels = remoteMembers
       .flatMap((member) => (member.environmentLabel ? [member.environmentLabel] : []))
       .filter((label, index, labels) => labels.indexOf(label) === index);
+    const isDesktopLocal = input.isDesktopLocalEnvironment ?? (() => false);
+    const isWsl = input.isWslEnvironment ?? (() => false);
+    const allRemoteMembersAreDesktopLocal =
+      remoteMembers.length > 0 &&
+      remoteMembers.every((member) => isDesktopLocal(member.environmentId));
+    const allRemoteMembersAreWsl =
+      remoteMembers.length > 0 && remoteMembers.every((member) => isWsl(member.environmentId));
 
-    result.push({
+    return {
       ...representative,
-      projectKey: logicalKey,
-      displayName:
-        members.length > 1
-          ? deriveProjectGroupLabel({
-              representative,
-              members,
-            })
-          : representative.name,
+      projectKey: group.key,
+      displayName: group.label,
       groupedProjectCount: members.length,
       environmentPresence:
         hasLocal && hasRemote ? "mixed" : hasRemote ? "remote-only" : "local-only",
+      allRemoteMembersAreDesktopLocal,
+      allRemoteMembersAreWsl,
       memberProjects: members,
-      memberProjectRefs: members.map((member) => scopeProjectRef(member.environmentId, member.id)),
+      memberProjectRefs: group.memberProjectRefs,
       remoteEnvironmentLabels,
-    });
-  }
+      pinned: group.pinned,
+      archived: group.archived,
+    };
+  });
+}
 
-  return result;
+export function buildSidebarProjectPickerEntries(input: {
+  groups: ReadonlyArray<SidebarProjectSnapshot>;
+  preferredProjectRef: ScopedProjectRef | null;
+}) {
+  const preferredProjectRef = input.preferredProjectRef;
+  const entries = input.groups.flatMap((group): SidebarProjectPickerEntry[] => {
+    const isPreferred = preferredProjectRef
+      ? group.memberProjectRefs.some(
+          (projectRef) =>
+            projectRef.environmentId === preferredProjectRef.environmentId &&
+            projectRef.projectId === preferredProjectRef.projectId,
+        )
+      : false;
+    const preferredProject = preferredProjectRef
+      ? (group.memberProjects.find(
+          (project) =>
+            project.environmentId === preferredProjectRef.environmentId &&
+            project.id === preferredProjectRef.projectId,
+        ) ??
+        group.memberProjects.find(
+          (project) => project.environmentId === preferredProjectRef.environmentId,
+        ))
+      : null;
+    const targetProject =
+      preferredProject ??
+      group.memberProjects.find(
+        (project) => project.environmentId === group.environmentId && project.id === group.id,
+      ) ??
+      group.memberProjects[0];
+    if (!targetProject) return [];
+
+    return [{ group, targetProject, isPreferred }];
+  });
+  // The current project leads, even ahead of pinned projects.
+  const preferred = entries.find((entry) => entry.isPreferred);
+  if (!preferred) return entries;
+  return [preferred, ...entries.filter((entry) => entry !== preferred)];
 }

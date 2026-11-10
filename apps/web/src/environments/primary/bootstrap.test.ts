@@ -1,35 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { EnvironmentId } from "@t3tools/contracts";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import {
-  getPrimaryKnownEnvironment,
-  resolveInitialPrimaryEnvironmentDescriptor,
-  resetPrimaryEnvironmentDescriptorForTests,
-  writePrimaryEnvironmentDescriptor,
-} from ".";
-
-function jsonResponse(body: unknown, init?: ResponseInit) {
-  return new Response(JSON.stringify(body), {
-    headers: {
-      "content-type": "application/json",
-    },
-    status: 200,
-    ...init,
-  });
-}
-
-const BASE_ENVIRONMENT = {
-  environmentId: "environment-local",
-  label: "Local environment",
-  platform: {
-    os: "darwin",
-    arch: "arm64",
-  },
-  serverVersion: "0.0.0-test",
-  capabilities: {
-    repositoryIdentity: true,
-  },
-};
+import { readPrimaryEnvironmentTarget, resolvePrimaryEnvironmentHttpUrl } from ".";
 
 function installTestBrowser(url: string) {
   vi.stubGlobal("window", {
@@ -48,106 +19,40 @@ describe("environmentBootstrap", () => {
   });
 
   afterEach(() => {
-    resetPrimaryEnvironmentDescriptorForTests();
     vi.unstubAllEnvs();
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
-  it("attaches the bootstrapped environment descriptor to the primary environment", () => {
-    vi.stubGlobal("window", {
-      location: {
-        origin: "http://localhost:3773",
-      },
-      desktopBridge: undefined,
-    });
-    writePrimaryEnvironmentDescriptor({
-      environmentId: EnvironmentId.make("environment-local"),
-      label: "Bootstrapped environment",
-      platform: {
-        os: "darwin",
-        arch: "arm64",
-      },
-      serverVersion: "0.0.0-test",
-      capabilities: {
-        repositoryIdentity: true,
-      },
-    });
-
-    expect(getPrimaryKnownEnvironment()).toEqual({
-      id: "environment-local",
-      label: "Bootstrapped environment",
-      source: "window-origin",
-      environmentId: "environment-local",
-      target: {
-        httpBaseUrl: "http://localhost:3773/",
-        wsBaseUrl: "ws://localhost:3773/",
-      },
-    });
-  });
-
-  it("reuses an in-flight descriptor bootstrap request", async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(BASE_ENVIRONMENT));
-    vi.stubGlobal("fetch", fetchMock);
-
-    await Promise.all([
-      resolveInitialPrimaryEnvironmentDescriptor(),
-      resolveInitialPrimaryEnvironmentDescriptor(),
-    ]);
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock).toHaveBeenCalledWith("http://localhost/.well-known/t3/environment");
-  });
-
-  it("uses https descriptor urls when the primary environment uses wss", async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(BASE_ENVIRONMENT));
-    vi.stubGlobal("fetch", fetchMock);
+  it("uses https descriptor urls when the primary environment uses wss", () => {
     vi.stubEnv("VITE_HTTP_URL", "https://remote.example.com");
     vi.stubEnv("VITE_WS_URL", "wss://remote.example.com");
 
-    await expect(resolveInitialPrimaryEnvironmentDescriptor()).resolves.toEqual(BASE_ENVIRONMENT);
-    expect(fetchMock).toHaveBeenCalledWith("https://remote.example.com/.well-known/t3/environment");
+    expect(resolvePrimaryEnvironmentHttpUrl("/.well-known/t3/environment")).toBe(
+      "https://remote.example.com/.well-known/t3/environment",
+    );
   });
 
-  it("derives the websocket url when only VITE_HTTP_URL is configured", async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(BASE_ENVIRONMENT));
-    vi.stubGlobal("fetch", fetchMock);
-    vi.stubEnv("VITE_HTTP_URL", "https://remote.example.com");
+  it("keeps an uppercase wss scheme secure when deriving the http url", () => {
+    vi.stubEnv("VITE_WS_URL", "WSS://remote.example.com");
 
-    await expect(resolveInitialPrimaryEnvironmentDescriptor()).resolves.toEqual(BASE_ENVIRONMENT);
-    expect(fetchMock).toHaveBeenCalledWith("https://remote.example.com/.well-known/t3/environment");
-    expect(getPrimaryKnownEnvironment()?.target).toEqual({
+    expect(readPrimaryEnvironmentTarget()?.target).toEqual({
       httpBaseUrl: "https://remote.example.com/",
       wsBaseUrl: "wss://remote.example.com/",
     });
   });
 
-  it("derives the http url when only VITE_WS_URL is configured", async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(BASE_ENVIRONMENT));
-    vi.stubGlobal("fetch", fetchMock);
-    vi.stubEnv("VITE_WS_URL", "wss://remote.example.com");
+  it("keeps an uppercase https scheme secure when deriving the websocket url", () => {
+    vi.stubEnv("VITE_HTTP_URL", "HTTPS://remote.example.com");
 
-    await expect(resolveInitialPrimaryEnvironmentDescriptor()).resolves.toEqual(BASE_ENVIRONMENT);
-    expect(fetchMock).toHaveBeenCalledWith("https://remote.example.com/.well-known/t3/environment");
-    expect(getPrimaryKnownEnvironment()?.target).toEqual({
+    expect(readPrimaryEnvironmentTarget()?.target).toEqual({
       httpBaseUrl: "https://remote.example.com/",
       wsBaseUrl: "wss://remote.example.com/",
     });
   });
 
-  it("uses the current origin as the descriptor base for local dev environments", async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(BASE_ENVIRONMENT));
-    vi.stubGlobal("fetch", fetchMock);
-    installTestBrowser("http://localhost:5735/");
-
-    await expect(resolveInitialPrimaryEnvironmentDescriptor()).resolves.toEqual(BASE_ENVIRONMENT);
-    expect(fetchMock).toHaveBeenCalledWith("http://localhost:5735/.well-known/t3/environment");
-  });
-
-  it("uses the vite proxy for desktop-managed loopback descriptor requests during local dev", async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(BASE_ENVIRONMENT));
-    vi.stubGlobal("fetch", fetchMock);
+  it("uses the vite proxy for desktop-managed loopback descriptor requests during local dev", () => {
     vi.stubEnv("VITE_DEV_SERVER_URL", "http://127.0.0.1:5733");
     vi.stubGlobal("window", {
       location: new URL("http://127.0.0.1:5733/"),
@@ -155,16 +60,21 @@ describe("environmentBootstrap", () => {
         replaceState: vi.fn(),
       },
       desktopBridge: {
-        getLocalEnvironmentBootstrap: () => ({
-          label: "Local environment",
-          httpBaseUrl: "http://127.0.0.1:3773",
-          wsBaseUrl: "ws://127.0.0.1:3773",
-          bootstrapToken: "desktop-bootstrap-token",
-        }),
+        getLocalEnvironmentEnabled: () => true,
+        getLocalEnvironmentBootstraps: () => [
+          {
+            id: "primary",
+            label: "Windows",
+            httpBaseUrl: "http://127.0.0.1:3773",
+            wsBaseUrl: "ws://127.0.0.1:3773",
+            bootstrapToken: "desktop-bootstrap-token",
+          },
+        ],
       },
     });
 
-    await expect(resolveInitialPrimaryEnvironmentDescriptor()).resolves.toEqual(BASE_ENVIRONMENT);
-    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:5733/.well-known/t3/environment");
+    expect(resolvePrimaryEnvironmentHttpUrl("/.well-known/t3/environment")).toBe(
+      "http://127.0.0.1:5733/.well-known/t3/environment",
+    );
   });
 });

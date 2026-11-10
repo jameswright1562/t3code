@@ -1,5 +1,8 @@
-import { scopeThreadRef } from "@t3tools/client-runtime";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import type { EnvironmentShellStatus } from "@t3tools/client-runtime/state/shell";
+import type { EnvironmentThreadState } from "@t3tools/client-runtime/state/threads";
 import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+import * as Option from "effect/Option";
 import type { DraftId } from "./composerDraftStore";
 
 export type ThreadRouteTarget =
@@ -12,6 +15,46 @@ export type ThreadRouteTarget =
       draftId: DraftId;
     };
 
+type DraftThreadRouteState = {
+  environmentId: EnvironmentId;
+  threadId: ThreadId;
+  promotedTo?: ScopedThreadRef | null;
+};
+
+export type ThreadRouteRenderState = "loading" | "ready" | "missing";
+
+export function isThreadRouteSnapshotAuthoritative(
+  status: EnvironmentShellStatus | null | undefined,
+): boolean {
+  return status === "live";
+}
+
+export function resolveThreadRouteRenderState(input: {
+  bootstrapComplete: boolean;
+  serverThreadExists: boolean;
+  serverThreadDeleted: boolean;
+  unlistedThreadDetail: EnvironmentThreadState;
+  draftThreadExists: boolean;
+}): ThreadRouteRenderState {
+  if (input.draftThreadExists || (input.serverThreadExists && !input.serverThreadDeleted)) {
+    return "ready";
+  }
+  if (!input.bootstrapComplete) {
+    return "loading";
+  }
+  if (input.serverThreadExists || input.unlistedThreadDetail.status === "deleted") {
+    return "missing";
+  }
+  // Shell membership can lag a new thread; its detail decides.
+  const projection = Option.getOrNull(input.unlistedThreadDetail.data);
+  if (projection === null) {
+    return "loading";
+  }
+  return projection.thread.deletedAt !== null || projection.thread.archivedAt !== null
+    ? "missing"
+    : "ready";
+}
+
 export function buildThreadRouteParams(ref: ScopedThreadRef): {
   environmentId: EnvironmentId;
   threadId: ThreadId;
@@ -20,6 +63,12 @@ export function buildThreadRouteParams(ref: ScopedThreadRef): {
     environmentId: ref.environmentId,
     threadId: ref.threadId,
   };
+}
+
+/** Whether a (decoded) location pathname is `ref`'s own thread route, `/$environmentId/$threadId`. */
+export function isThreadRoutePathname(pathname: string, ref: ScopedThreadRef): boolean {
+  const { environmentId, threadId } = buildThreadRouteParams(ref);
+  return pathname.replace(/\/$/, "") === `/${environmentId}/${threadId}`;
 }
 
 export function buildDraftThreadRouteParams(draftId: DraftId): {
@@ -56,4 +105,17 @@ export function resolveThreadRouteTarget(
     kind: "draft",
     draftId: params.draftId as DraftId,
   };
+}
+
+export function resolveActiveThreadRouteRef(
+  target: ThreadRouteTarget | null,
+  draftThread: DraftThreadRouteState | null,
+): ScopedThreadRef | null {
+  if (target?.kind === "server") {
+    return target.threadRef;
+  }
+  if (target?.kind !== "draft" || !draftThread?.promotedTo) {
+    return null;
+  }
+  return draftThread.promotedTo;
 }

@@ -1,214 +1,173 @@
+import { SourceControlProviderKind, VcsProcessSpawnError } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { Effect, Layer, Option } from "effect";
-import { ChildProcessSpawner } from "effect/unstable/process";
-import { VcsProcessSpawnError } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import { providerAuth } from "@t3tools/source-control-core/server/discovery";
+import type * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
+import {
+  fakeDiscovery,
+  fakeSourceControlProvider,
+} from "@t3tools/source-control-testing/fakeSourceControlDriver";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import { SpawnExecutableResolution } from "@t3tools/shared/shell";
+import * as TestSourceControlHost from "@t3tools/source-control-testing/TestSourceControlHost";
 
-import { ServerConfig } from "../config.ts";
+import * as ServerConfig from "../config.ts";
+import * as ServerSettings from "../serverSettings.ts";
+import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
-import { SourceControlDiscovery, layer } from "./SourceControlDiscovery.ts";
+import * as SourceControlDiscovery from "./SourceControlDiscovery.ts";
+import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 
-const processOutput = (
-  stdout: string,
-  options?: {
-    readonly stderr?: string;
-    readonly exitCode?: ChildProcessSpawner.ExitCode;
-  },
-): VcsProcess.VcsProcessOutput => ({
-  exitCode: options?.exitCode ?? ChildProcessSpawner.ExitCode(0),
-  stdout,
-  stderr: options?.stderr ?? "",
-  stdoutTruncated: false,
-  stderrTruncated: false,
+const kind = SourceControlProviderKind.make;
+
+// Serves both the host's runs and the server's own VCS probes, whose inputs share these fields.
+const run = (
+  input: Pick<
+    SourceControlHost.SourceControlProcessInput,
+    "operation" | "command" | "args" | "cwd"
+  >,
+): Effect.Effect<SourceControlHost.SourceControlProcessOutput, VcsProcessSpawnError> => {
+  if (input.args[0] === "--version") {
+    return input.command === "missing-cli"
+      ? Effect.fail(
+          new VcsProcessSpawnError({
+            operation: input.operation,
+            command: input.command,
+            cwd: input.cwd,
+            cause: new Error(`${input.command} not found`),
+          }),
+        )
+      : Effect.succeed(TestSourceControlHost.processOutput(`${input.command} version test\n`));
+  }
+  return Effect.succeed(
+    TestSourceControlHost.processOutput(`signed in as ${input.command}-user\n`),
+  );
+};
+
+const cliDiscovery = (name: string) => ({
+  type: "cli" as const,
+  kind: kind(name),
+  label: name,
+  installHint: `Install ${name}.`,
+  executable: name === "beta" ? "missing-cli" : `${name}-cli`,
+  versionArgs: ["--version"],
+  authArgs: ["auth", "status"],
+  parseAuth: ({ stdout }: { readonly stdout: string }) =>
+    providerAuth({ status: "authenticated", account: /as (\S+)/.exec(stdout)?.[1] }),
 });
 
-it.effect("reports implemented tools separately from locally available CLIs", () => {
-  const testLayer = layer.pipe(
-    Layer.provide(
+const layerDiscovery = (runProcess = run) =>
+  Layer.effect(
+    SourceControlProviderRegistry.SourceControlProviderRegistry,
+    SourceControlProviderRegistry.makeWithProviders(
+      [
+        cliDiscovery("alpha"),
+        cliDiscovery("beta"),
+        fakeDiscovery("gamma", {
+          probeAuth: Effect.succeed(providerAuth({ status: "authenticated", account: "api-user" })),
+        }),
+      ].map((discovery) => ({
+        kind: discovery.kind,
+        provider: fakeSourceControlProvider(discovery.kind),
+        discovery,
+      })),
+    ),
+  ).pipe(
+    Layer.provideMerge(TestSourceControlHost.layer({ process: { run: runProcess } })),
+    Layer.provideMerge(ServerSettings.ServerSettingsService.layerTest()),
+    Layer.provideMerge(Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({})),
+    Layer.provideMerge(Layer.mock(VcsProcess.VcsProcess)({ run: runProcess })),
+    Layer.provideMerge(
       ServerConfig.layerTest(process.cwd(), { prefix: "t3-source-control-discovery-" }),
     ),
-    Layer.provide(
-      Layer.mock(VcsProcess.VcsProcess)({
-        run: (input) => {
-          if (input.command === "git") {
-            return Effect.succeed(processOutput("git version 2.51.0\n"));
-          }
-          if (input.command === "gh" && input.args[0] === "--version") {
-            return Effect.succeed(processOutput("gh version 2.83.0\n"));
-          }
-          if (input.command === "gh" && input.args.join(" ") === "auth status") {
-            return Effect.succeed(
-              processOutput(`github.com
-Logged in to github.com account juliusmarminge (keyring)
-- Active account: true
-- Git operations protocol: ssh
-- Token: gho_************************************
-- Token scopes: 'admin:public_key', 'gist', 'read:org', 'repo'
-`),
-            );
-          }
-          return Effect.fail(
-            new VcsProcessSpawnError({
-              operation: input.operation,
-              command: input.command,
-              cwd: input.cwd,
-              cause: new Error(`${input.command} not found`),
-            }),
-          );
-        },
-      }),
-    ),
     Layer.provideMerge(NodeServices.layer),
   );
 
-  return Effect.gen(function* () {
-    const discovery = yield* SourceControlDiscovery;
+it.effect("reports every hosting integration in registry order with its sign-in", () =>
+  Effect.gen(function* () {
+    const discovery = yield* SourceControlDiscovery.SourceControlDiscovery;
     const result = yield* discovery.discover;
 
     assert.deepStrictEqual(
-      result.versionControlSystems.map((item) => ({
-        kind: item.kind,
-        implemented: item.implemented,
-        status: item.status,
-      })),
-      [
-        { kind: "git", implemented: true, status: "available" },
-        { kind: "jj", implemented: false, status: "missing" },
-      ],
-    );
-    assert.deepStrictEqual(
       result.sourceControlProviders.map((item) => ({
         kind: item.kind,
-        implemented: item.implemented,
         status: item.status,
+        version: item.version,
         auth: item.auth.status,
         account: item.auth.account,
       })),
       [
         {
-          kind: "github",
-          implemented: true,
+          kind: kind("alpha"),
           status: "available",
+          version: Option.some("alpha-cli version test"),
           auth: "authenticated",
-          account: Option.some("juliusmarminge"),
+          account: Option.some("alpha-cli-user"),
         },
         {
-          kind: "gitlab",
-          implemented: true,
+          kind: kind("beta"),
           status: "missing",
+          version: Option.none(),
           auth: "unknown",
           account: Option.none(),
         },
         {
-          kind: "azure-devops",
-          implemented: false,
-          status: "missing",
-          auth: "unknown",
-          account: Option.none(),
-        },
-        {
-          kind: "bitbucket",
-          implemented: false,
-          status: "missing",
-          auth: "unknown",
-          account: Option.none(),
+          kind: kind("gamma"),
+          status: "available",
+          version: Option.none(),
+          auth: "authenticated",
+          account: Option.some("api-user"),
         },
       ],
     );
-  }).pipe(Effect.provide(testLayer));
-});
-
-it.effect("probes provider authentication without exposing token details", () => {
-  const testLayer = layer.pipe(
-    Layer.provide(
-      ServerConfig.layerTest(process.cwd(), { prefix: "t3-source-control-auth-discovery-" }),
-    ),
-    Layer.provide(
-      Layer.mock(VcsProcess.VcsProcess)({
-        run: (input) => {
-          if (input.args[0] === "--version") {
-            return Effect.succeed(processOutput(`${input.command} version test\n`));
-          }
-          if (input.command === "gh" && input.args.join(" ") === "auth status") {
-            return Effect.succeed(
-              processOutput(`github.com
-Logged in to github.com account octocat (keyring)
-- Token: gho_************************************
-- Token scopes: 'repo'
-`),
-            );
-          }
-          if (input.command === "glab" && input.args.join(" ") === "auth status") {
-            return Effect.succeed(
-              processOutput(`gitlab.com
-Logged in to gitlab.com as gitlab-user
-`),
-            );
-          }
-          if (
-            input.command === "az" &&
-            input.args.join(" ") === "account show --query user.name -o tsv"
-          ) {
-            return Effect.succeed(processOutput("azure-user@example.com\n"));
-          }
-          if (input.command === "bb" && input.args.join(" ") === "auth status") {
-            return Effect.succeed(
-              processOutput(`bitbucket.org
-Logged in as bitbucket-user
-`),
-            );
-          }
-          return Effect.fail(
-            new VcsProcessSpawnError({
-              operation: input.operation,
-              command: input.command,
-              cwd: input.cwd,
-              cause: new Error(`${input.command} not found`),
-            }),
-          );
-        },
-      }),
-    ),
-    Layer.provideMerge(NodeServices.layer),
-  );
-
-  return Effect.gen(function* () {
-    const discovery = yield* SourceControlDiscovery;
-    const result = yield* discovery.discover;
-
     assert.deepStrictEqual(
-      result.sourceControlProviders.map((item) => ({
-        kind: item.kind,
-        auth: item.auth.status,
-        account: item.auth.account,
-        detail: item.auth.detail,
-      })),
+      result.versionControlSystems.map((item) => [item.kind, item.status]),
       [
-        {
-          kind: "github",
-          auth: "authenticated",
-          account: Option.some("octocat"),
-          detail: Option.none(),
-        },
-        {
-          kind: "gitlab",
-          auth: "authenticated",
-          account: Option.some("gitlab-user"),
-          detail: Option.none(),
-        },
-        {
-          kind: "azure-devops",
-          auth: "authenticated",
-          account: Option.some("azure-user@example.com"),
-          detail: Option.none(),
-        },
-        {
-          kind: "bitbucket",
-          auth: "authenticated",
-          account: Option.some("bitbucket-user"),
-          detail: Option.none(),
-        },
+        ["git", "available"],
+        ["jj", "available"],
       ],
     );
-  }).pipe(Effect.provide(testLayer));
-});
+  }).pipe(Effect.provide(SourceControlDiscovery.layer.pipe(Layer.provide(layerDiscovery())))),
+);
+
+it.effect.each(["darwin", "linux"] as const)(
+  "names incompatible executables only on macOS (%s)",
+  (platform) => {
+    const runProcess: typeof run = (input) =>
+      Effect.fail(
+        new VcsProcessSpawnError({
+          operation: input.operation,
+          command: input.command,
+          cwd: input.cwd,
+          cause:
+            input.command === "missing-cli"
+              ? new Error("not found")
+              : Object.assign(new Error("spawn Unknown system error -86"), { errno: -86 }),
+        }),
+      );
+    return Effect.gen(function* () {
+      const discovery = yield* SourceControlDiscovery.SourceControlDiscovery;
+      const result = yield* discovery.discover;
+      for (const item of [...result.versionControlSystems, ...result.sourceControlProviders]) {
+        if (item.kind === kind("gamma")) continue;
+        assert.strictEqual(item.status, "missing");
+        if (platform === "darwin" && item.executable !== "missing-cli") {
+          assert.include(
+            item.installHint,
+            `\`/usr/local/bin/${item.executable}\` is built for another CPU architecture, so this arm64 machine cannot run it. Remove or replace it.`,
+          );
+        } else {
+          assert.notInclude(item.installHint, "CPU architecture");
+        }
+      }
+    }).pipe(
+      Effect.provide(SourceControlDiscovery.layer.pipe(Layer.provide(layerDiscovery(runProcess)))),
+      Effect.provideService(SpawnExecutableResolution, (command) => `/usr/local/bin/${command}`),
+      Effect.provideService(HostProcess.Platform, platform),
+      Effect.provideService(HostProcess.Architecture, "arm64"),
+    );
+  },
+);

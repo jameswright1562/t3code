@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { showContextMenuFallback } from "./contextMenuFallback";
 
@@ -24,13 +24,23 @@ class FakeElement {
   parent: FakeElement | null = null;
   style: Record<string, string> & { cssText?: string } = {};
   dataset: Record<string, string> = {};
+  attributes = new Map<string, string>();
   className = "";
   disabled = false;
+  focused = false;
   type = "";
   private textValue = "";
   private readonly listeners = new Map<string, FakeListener[]>();
 
   constructor(readonly tagName: string) {}
+
+  get isConnected() {
+    let current: FakeElement | null = this;
+    while (current?.parent) {
+      current = current.parent;
+    }
+    return current?.tagName === "body";
+  }
 
   appendChild(child: FakeElement) {
     child.parent = this;
@@ -55,11 +65,35 @@ class FakeElement {
     this.listeners.set(type, existing);
   }
 
+  setAttribute(name: string, value: string) {
+    this.attributes.set(name, value);
+  }
+
   dispatchEvent(event: FakeDomEvent) {
     for (const listener of this.listeners.get(event.type) ?? []) {
       listener(event);
     }
     return true;
+  }
+
+  focus() {
+    const fakeDocument = document as unknown as FakeDocument;
+    if (fakeDocument.activeElement === this) {
+      return;
+    }
+    fakeDocument.activeElement?.blur();
+    fakeDocument.activeElement = this;
+    this.focused = true;
+    this.dispatchEvent(new FakeDomEvent("focus"));
+  }
+
+  blur() {
+    const fakeDocument = document as unknown as FakeDocument;
+    if (fakeDocument.activeElement === this) {
+      fakeDocument.activeElement = null;
+    }
+    this.focused = false;
+    this.dispatchEvent(new FakeDomEvent("blur"));
   }
 
   set textContent(value: string) {
@@ -116,6 +150,7 @@ class FakeBody extends FakeElement {
 
 class FakeDocument {
   body = new FakeBody();
+  activeElement: FakeElement | null = null;
   private readonly listeners = new Map<string, FakeListener[]>();
 
   createElement(tagName: string) {
@@ -152,9 +187,12 @@ function findButton(label: string): FakeElement | undefined {
 
 beforeEach(() => {
   vi.stubGlobal("document", new FakeDocument());
+  vi.stubGlobal("HTMLElement", FakeElement);
   vi.stubGlobal("window", {
     innerWidth: 1280,
     innerHeight: 800,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
   });
   vi.stubGlobal("requestAnimationFrame", (callback: (time: number) => void) => {
     callback(0);
@@ -183,39 +221,20 @@ afterEach(() => {
 });
 
 describe("showContextMenuFallback", () => {
-  it("resolves a clicked flat menu item", async () => {
-    const selectionPromise = showContextMenuFallback([
-      { id: "rename", label: "Rename" },
-      { id: "delete", label: "Delete", destructive: true },
-    ]);
+  it("ignores a click from the gesture that opened the menu", async () => {
+    let enablePointerSelection: ((time: number) => void) | undefined;
+    vi.stubGlobal("requestAnimationFrame", (callback: (time: number) => void) => {
+      enablePointerSelection = callback;
+      return 0;
+    });
 
+    const selectionPromise = showContextMenuFallback([{ id: "rename", label: "Rename" }]);
     const renameButton = findButton("Rename");
-    expect(renameButton).toBeTruthy();
+
+    renameButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    enablePointerSelection?.(0);
     renameButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     await expect(selectionPromise).resolves.toBe("rename");
-  });
-
-  it("opens nested submenus and resolves the clicked leaf id", async () => {
-    const selectionPromise = showContextMenuFallback([
-      {
-        id: "rename:submenu",
-        label: "Rename project",
-        children: [
-          { id: "rename:project-a", label: "/tmp/project-a" },
-          { id: "rename:project-b", label: "/tmp/project-b" },
-        ],
-      },
-    ]);
-
-    const parentButton = findButton("Rename project");
-    expect(parentButton).toBeTruthy();
-    parentButton?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
-
-    const childButton = findButton("/tmp/project-b");
-    expect(childButton).toBeTruthy();
-    childButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-
-    await expect(selectionPromise).resolves.toBe("rename:project-b");
   });
 });

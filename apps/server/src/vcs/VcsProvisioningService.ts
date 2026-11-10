@@ -1,4 +1,6 @@
-import { Context, Effect, Layer } from "effect";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 
 import {
   type VcsDriverKind,
@@ -6,15 +8,13 @@ import {
   type VcsInitInput,
   VcsUnsupportedOperationError,
 } from "@t3tools/contracts";
-import { VcsDriverRegistry } from "./VcsDriverRegistry.ts";
-
-export interface VcsProvisioningServiceShape {
-  readonly initRepository: (input: VcsInitInput) => Effect.Effect<void, VcsError>;
-}
+import * as VcsDriverRegistry from "./VcsDriverRegistry.ts";
 
 export class VcsProvisioningService extends Context.Service<
   VcsProvisioningService,
-  VcsProvisioningServiceShape
+  {
+    readonly initRepository: (input: VcsInitInput) => Effect.Effect<void, VcsError>;
+  }
 >()("t3/vcs/VcsProvisioningService") {}
 
 function resolveRequestedKind(
@@ -35,10 +35,11 @@ function resolveRequestedKind(
   return Effect.succeed(kind);
 }
 
-export const make = Effect.fn("makeVcsProvisioningService")(function* () {
-  const registry = yield* VcsDriverRegistry;
+/** @public */
+export const make = Effect.gen(function* () {
+  const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
 
-  const initRepository: VcsProvisioningServiceShape["initRepository"] = Effect.fn(
+  const initRepository: VcsProvisioningService["Service"]["initRepository"] = Effect.fn(
     "VcsProvisioningService.initRepository",
   )(function* (input) {
     const kind = yield* resolveRequestedKind(input.kind);
@@ -51,4 +52,4 @@ export const make = Effect.fn("makeVcsProvisioningService")(function* () {
   });
 });
 
-export const layer = Layer.effect(VcsProvisioningService, make());
+export const layer = Layer.effect(VcsProvisioningService, make);
