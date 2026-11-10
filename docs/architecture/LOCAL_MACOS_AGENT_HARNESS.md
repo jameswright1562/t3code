@@ -465,10 +465,10 @@ Memory and context data should always be exportable into a versioned JSON/Markdo
 
 - [x] Create isolated feature branch in the owner's T3 fork.
 - [x] Check in this end-to-end architecture specification.
-- [ ] Add additive SQLite memory/checkpoint/audit migration.
-- [ ] Add typed memory interfaces and initial persistence functions.
-- [ ] Add tests for durable write/read, project scope and checkpoint ordering.
-- [ ] Add documentation on the exact current implementation status.
+- [x] Add additive SQLite memory/checkpoint/audit migration.
+- [x] Add typed memory interfaces and initial persistence functions.
+- [x] Add tests for durable write/read, project scope and checkpoint ordering (written, not yet executed).
+- [x] Add documentation on the exact current implementation status (see fork README).
 - [ ] Run a test pass on macOS or CI.
 
 ### Phase 1 — reconcile upstream safely
