@@ -125,6 +125,8 @@ import { codexAppServerArgs, resolveCodexLaunchArgs } from "../../provider/codex
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import { selectHarnessMcpServers, toCodexHarnessMcpConfig } from "@t3tools/shared/harnessMcp";
+import * as ServerSettings from "../../serverSettings.ts";
 import {
   MCP_APP_EXTENSION_ID,
   MCP_APP_MIME_TYPE,
@@ -1408,6 +1410,7 @@ function codexThreadRuntimeParams(input: {
   readonly mcpSession: McpProviderSession.McpProviderSessionConfig | undefined;
   readonly modelSelection?: { readonly model: string };
   readonly runtimePolicy?: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
+  readonly extraMcpConfig?: Readonly<Record<string, Schema.Json>>;
 }): {
   readonly cwd?: string;
   readonly model?: string;
@@ -1444,6 +1447,7 @@ function codexThreadRuntimeParams(input: {
               omit_tools_from: ["code_mode", "deferred"],
             },
           }),
+      ...(input.extraMcpConfig ?? {}),
     },
   };
 }
@@ -1724,6 +1728,26 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
   adapterOptions: CodexAdapterV2Options,
 ) {
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
+  const settingsOption = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
+  // No provider gets another project's MCP servers. Missing trusted project
+  // metadata disables all custom servers rather than widening access.
+  const sharedMcpConfig = (
+    session: McpProviderSession.McpProviderSessionConfig | undefined,
+  ): Effect.Effect<Readonly<Record<string, Schema.Json>>> =>
+    session?.projectId === undefined || Option.isNone(settingsOption)
+      ? Effect.succeed({})
+      : settingsOption.value.getSettings.pipe(
+          Effect.map((settings) =>
+            toCodexHarnessMcpConfig(
+              selectHarnessMcpServers(
+                settings.harnessMcpServers,
+                session.providerInstanceId,
+                session.projectId!,
+              ),
+            ),
+          ),
+          Effect.orElseSucceed(() => ({})),
+        );
   const readMcpSession = (threadId: ThreadId | null) =>
     threadId === null ? Effect.undefined : mcpSessions.read(threadId);
   const { clientFactory, digest, fileSystem, idAllocator, serverConfig } = adapterOptions;
@@ -7284,14 +7308,17 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             ensureInitialized.pipe(
               Effect.andThen(mcpSessions.read(threadInput.threadId)),
               Effect.flatMap((mcpSession) =>
-                client.request(
-                  "thread/start",
-                  codexThreadRuntimeParams({
-                    threadId: threadInput.threadId,
-                    mcpSession,
-                    modelSelection: threadInput.modelSelection,
-                    runtimePolicy: threadInput.runtimePolicy,
-                  }),
+                Effect.flatMap(sharedMcpConfig(mcpSession), (extraMcpConfig) =>
+                  client.request(
+                    "thread/start",
+                    codexThreadRuntimeParams({
+                      threadId: threadInput.threadId,
+                      mcpSession,
+                      modelSelection: threadInput.modelSelection,
+                      runtimePolicy: threadInput.runtimePolicy,
+                      extraMcpConfig,
+                    }),
+                  ),
                 ),
               ),
               Effect.map((response): OrchestrationV2ProviderThread =>
