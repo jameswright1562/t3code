@@ -34,7 +34,7 @@ export function selectHarnessMcpServers(
 export function toClaudeHarnessMcpServers(
   selected: HarnessMcpSelection,
 ): Readonly<Record<string, { readonly type: "http"; readonly url: string } |
-  { readonly type: "stdio"; readonly command: string; readonly args: readonly string[]; readonly cwd?: string }>> {
+  { readonly type: "stdio"; readonly command: string; readonly args: string[]; readonly cwd?: string }>> {
   return Object.fromEntries(
     Object.entries(selected).map(([id, server]) => [
       id,
@@ -43,7 +43,7 @@ export function toClaudeHarnessMcpServers(
         : {
             type: "stdio" as const,
             command: server.command,
-            args: server.args,
+            args: [...server.args],
             ...(server.cwd.trim() === "" ? {} : { cwd: server.cwd }),
           },
     ]),
