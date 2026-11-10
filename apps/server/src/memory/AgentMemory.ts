@@ -82,7 +82,7 @@ export interface SaveCheckpointInput {
   readonly projectId: string;
   readonly threadId: string;
   readonly taskId?: string | null;
-  /** Last committed orchestration event sequence covered by this snapshot. */
+  /** Monotonic per-thread checkpoint index (currently run ordinal). This is NOT an event-store replay cursor. */
   readonly sequence: number;
   readonly checkpoint: ContextCheckpoint;
   readonly createdAt?: string;
