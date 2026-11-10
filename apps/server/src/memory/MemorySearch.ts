@@ -15,7 +15,7 @@ const toEntry = (row: MemoryRow): MemoryEntry => ({ ...row, pinned: row.pinned =
 
 /** Quoted FTS phrases are derived from Unicode word tokens, not raw user syntax. */
 export function makeMemoryFtsQuery(query: string): string | null {
-  const tokens = [...new Set(query.toLocaleLowerCase("en").match(/[\\p{L}\\p{N}_.-]{3,}/gu) ?? [])].slice(0, 8);
+  const tokens = [...new Set(query.toLocaleLowerCase("en").match(/[\p{L}\p{N}_.-]{3,}/gu) ?? [])].slice(0, 8);
   return tokens.length === 0 ? null : tokens.map((token) => `"${token}"`).join(" OR ");
 }
 
