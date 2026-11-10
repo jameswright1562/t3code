@@ -9,6 +9,7 @@ import {
   latestCheckpoint,
   pinMemory,
   recoverCheckpoint,
+  reviseMemory,
   exportMemory,
   listMemory,
   remember,
@@ -71,6 +72,64 @@ layer("Checkpoint fallback and authorized export", (it) => {
       assert.equal(snapshot.entries[0]?.sourceRef, common.sourceRef);
       const empty = yield* Effect.result(exportMemory([]));
       assert.equal(empty._tag, "Failure");
+    }),
+  );
+});
+
+layer("Memory revisions", (it) => {
+  it.effect("preserves original provenance and audit while replacing live project memory", () =>
+    Effect.gen(function* () {
+      const original = {
+        id: "memory-edit-original",
+        eventId: "memory-edit-original-created",
+        scopeType: "project" as const,
+        scopeId: "project-memory-revision",
+        kind: "decision" as const,
+        content: "Initial decision",
+        sourceRef: "repo:commit:old",
+        sourceActor: "agent:codex",
+        verification: "verified" as const,
+        pinned: true,
+      };
+      yield* remember(original);
+      const scope = { scopeType: original.scopeType, scopeId: original.scopeId };
+      const revision = {
+        id: original.id,
+        replacementId: "memory-edit-revision",
+        scope,
+        content: "Corrected decision after review",
+        eventId: "memory-edit-event",
+      };
+      const wrong = yield* Effect.result(
+        reviseMemory({ ...revision, scope: { scopeType: "project", scopeId: "other-project" } }),
+      );
+      assert.equal(wrong._tag, "Failure");
+      const saved = yield* reviseMemory(revision);
+      assert.equal(saved.id, revision.replacementId);
+      assert.equal(saved.sourceRef, `memory:${original.id}`);
+      assert.equal(saved.sourceActor, "user");
+      assert.equal(saved.verification, "user_confirmed");
+      assert.equal(saved.pinned, true);
+      assert.deepStrictEqual(yield* reviseMemory(revision), saved);
+      const active = yield* listMemory([scope]);
+      assert.ok(active.some((entry) => entry.id === revision.replacementId));
+      assert.ok(active.every((entry) => entry.id !== original.id));
+      const conflict = yield* Effect.result(
+        reviseMemory({ ...revision, content: "Changed content, same replacement id" }),
+      );
+      assert.equal(conflict._tag, "Failure");
+      const sql = yield* SqlClient.SqlClient;
+      const events = yield* sql<{ readonly count: number }>`
+        SELECT COUNT(*) AS "count" FROM agent_memory_events
+        WHERE event_id IN (${revision.eventId}, ${revision.eventId + ":revision"})
+      `;
+      assert.equal(events[0]?.count, 2);
+      const previous = yield* sql<{ readonly supersededBy: string; readonly sourceRef: string }>`
+        SELECT superseded_by AS "supersededBy", source_ref AS "sourceRef"
+        FROM agent_memory_items WHERE id = ${original.id}
+      `;
+      assert.equal(previous[0]?.supersededBy, revision.replacementId);
+      assert.equal(previous[0]?.sourceRef, original.sourceRef);
     }),
   );
 });
