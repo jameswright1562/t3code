@@ -607,6 +607,53 @@ export const recoverCheckpoint = Effect.fn("AgentMemory.recoverCheckpoint")(func
 });
 
 /**
+ * Read bounded checkpoint history for an explicitly selected canonical
+ * project/thread pair. Invalid/corrupt entries are counted but never returned
+ * as executable recovery state. Pagination is intentionally recent-first.
+ */
+export const listCheckpointHistory = Effect.fn("AgentMemory.listCheckpointHistory")(function* (input: {
+  readonly projectId: string;
+  readonly threadId: string;
+  readonly limit?: number;
+}) {
+  if (!input.projectId.trim() || !input.threadId.trim()) {
+    return yield* new AgentMemoryValidationError({ detail: "Project and thread are required" });
+  }
+  const sql = yield* SqlClient.SqlClient;
+  const limit = Math.max(1, Math.min(100, Math.floor(input.limit ?? 30)));
+  const rows = yield* sql<CheckpointRow>`
+    SELECT id, project_id AS "projectId", thread_id AS "threadId",
+      task_id AS "taskId", sequence, checkpoint_json AS "checkpointJson",
+      created_at AS "createdAt"
+    FROM agent_memory_checkpoints
+    WHERE project_id = ${input.projectId} AND thread_id = ${input.threadId}
+    ORDER BY sequence DESC LIMIT ${limit + 1}
+  `;
+  const checkpoints: SavedCheckpoint[] = [];
+  let skippedInvalid = 0;
+  for (const row of rows.slice(0, limit)) {
+    const decoded = yield* decodeJson(row.checkpointJson).pipe(Effect.orElseSucceed(() => null));
+    if (typeof decoded !== "object" || decoded === null || Array.isArray(decoded) ||
+        !("schemaVersion" in decoded) || decoded.schemaVersion !== 1 ||
+        !("objective" in decoded) || typeof decoded.objective !== "string" ||
+        decoded.objective.trim().length === 0) {
+      skippedInvalid++;
+      continue;
+    }
+    checkpoints.push({
+      id: row.id,
+      projectId: row.projectId,
+      threadId: row.threadId,
+      taskId: row.taskId,
+      sequence: row.sequence,
+      checkpoint: decoded as unknown as ContextCheckpoint,
+      createdAt: row.createdAt,
+    });
+  }
+  return { checkpoints, skippedInvalid, truncated: rows.length > limit };
+});
+
+/**
  * Legacy thread-only lookup. Prefer recoverCheckpoint with the canonical
  * project ID at any user/API boundary to prevent cross-project probing.
  */

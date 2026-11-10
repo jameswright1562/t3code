@@ -44,6 +44,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.harnessMemoryExport]: "harness",
   [WS_METHODS.harnessMemoryBackup]: "harness",
   [WS_METHODS.harnessMemoryRestore]: "harness",
+  [WS_METHODS.harnessCheckpointHistory]: "harness",
   [WS_METHODS.harnessCheckpointRecover]: "harness",
   [WS_METHODS.serverGetConfig]: "server",
   [WS_METHODS.serverGetNpmRelease]: "server",

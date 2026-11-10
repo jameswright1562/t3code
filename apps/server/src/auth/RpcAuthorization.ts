@@ -68,6 +68,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.harnessMemoryExport]: AuthSettingsWriteScope,
   [WS_METHODS.harnessMemoryBackup]: AuthSettingsWriteScope,
   [WS_METHODS.harnessMemoryRestore]: AuthSettingsWriteScope,
+  [WS_METHODS.harnessCheckpointHistory]: AuthSettingsWriteScope,
   [WS_METHODS.harnessCheckpointRecover]: AuthSettingsWriteScope,
   [WS_METHODS.harnessMemoryConfirm]: AuthSettingsWriteScope,
   [WS_METHODS.harnessMemoryForget]: AuthSettingsWriteScope,

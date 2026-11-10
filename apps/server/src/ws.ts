@@ -2428,6 +2428,11 @@ export const layerWsRpc = (
             Effect.provideService(SqlClient.SqlClient, sql),
             Effect.mapError(() => new HarnessMemoryError({ message: "Could not restore backup: invalid, conflicting or out of scope." })),
           ),
+        [WS_METHODS.harnessCheckpointHistory]: (input) =>
+          AgentHarnessMemory.listCheckpointHistory(input).pipe(
+            Effect.provideService(SqlClient.SqlClient, sql),
+            Effect.mapError(() => new HarnessMemoryError({ message: "Could not load scoped checkpoint history." })),
+          ),
         [WS_METHODS.harnessCheckpointRecover]: (input) =>
           AgentHarnessMemory.recoverCheckpoint(input).pipe(
             Effect.provideService(SqlClient.SqlClient, sql),

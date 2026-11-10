@@ -32,6 +32,7 @@ export function AgentMemorySettings() {
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [threadId, setThreadId] = useState("");
+  const [selectedCheckpointId, setSelectedCheckpointId] = useState("");
   const [editing, setEditing] = useState<{ id: string; content: string } | null>(null);
   const recovery = useEnvironmentQuery(
     environmentId !== null && projectId !== null && threadId.trim().length > 0
@@ -41,6 +42,19 @@ export function AgentMemorySettings() {
         })
       : null,
   );
+
+  const checkpointHistory = useEnvironmentQuery(
+    environmentId !== null && projectId !== null && threadId.trim().length > 0
+      ? serverEnvironment.harnessCheckpointHistory({
+          environmentId, input: { projectId, threadId: threadId.trim(), limit: 30 },
+        })
+      : null,
+  );
+  const selectedCheckpoint =
+    checkpointHistory.data?.checkpoints.find((value) => value.id === selectedCheckpointId) ??
+    checkpointHistory.data?.checkpoints[0] ??
+    recovery.data?.checkpoint ??
+    null;
 
   const confirm = useAtomCommand(serverEnvironment.harnessConfirmMemory);
   const forget = useAtomCommand(serverEnvironment.harnessForgetMemory);
@@ -358,20 +372,45 @@ export function AgentMemorySettings() {
             <Input
               id="harness-recovery-thread"
               value={threadId}
-              onChange={(event) => setThreadId(event.target.value)}
+              onChange={(event) => {
+                setThreadId(event.target.value);
+                setSelectedCheckpointId("");
+              }
               placeholder="Thread ID"
             />
             {recovery.error ? <p role="alert">{recovery.error}</p> : null}
+            {checkpointHistory.error ? <p role="alert">{checkpointHistory.error}</p> : null}
+            {checkpointHistory.data?.truncated ? (
+              <p className="text-xs text-muted-foreground">
+                Showing only the 30 most recent checkpoint records for this thread.
+              </p>
+            ) : null}
+            {(checkpointHistory.data?.checkpoints.length ?? 0) > 0 ? (
+              <label className="flex flex-col gap-1 text-sm">
+                Select a saved checkpoint
+                <select
+                  className="rounded-md border bg-background px-2 py-1"
+                  value={selectedCheckpoint?.id ?? ""}
+                  onChange={(event) => setSelectedCheckpointId(event.target.value)}
+                >
+                  {checkpointHistory.data?.checkpoints.map((saved) => (
+                    <option key={saved.id} value={saved.id}>
+                      Checkpoint #{saved.sequence} · {saved.createdAt}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             {recovery.data?.skippedInvalid ? (
               <p role="status">Skipped {recovery.data.skippedInvalid} invalid checkpoint(s).</p>
             ) : null}
-            {recovery.data?.checkpoint ? (
+            {selectedCheckpoint ? (
               <div className="flex flex-col gap-2">
                 <p className="text-sm font-medium">
-                  Latest valid checkpoint #{recovery.data.checkpoint.sequence}
+                  Saved checkpoint #{selectedCheckpoint.sequence}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Saved {recovery.data.checkpoint.createdAt}. This preview does not resume execution.
+                  Saved {selectedCheckpoint.createdAt}. This preview does not resume execution.
                   Git revisions, working-tree changes and external side effects must be checked
                   before a saved checkpoint can be used to resume an agent.
                 </p>
@@ -379,7 +418,7 @@ export function AgentMemorySettings() {
                   aria-label="Saved checkpoint context JSON"
                   className="max-h-60 overflow-auto rounded-md border bg-muted/40 p-3 text-xs"
                 >
-                  {JSON.stringify(recovery.data.checkpoint.checkpoint, null, 2)}
+                  {JSON.stringify(selectedCheckpoint.checkpoint, null, 2)}
                 </pre>
               </div>
             ) : threadId.trim() && !recovery.isPending ? (

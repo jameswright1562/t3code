@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { layerMemory } from "../persistence/Sqlite.ts";
-import { confirmMemory, forgetMemory, listMemory, remember, reviseMemory, saveCheckpoint, recoverCheckpoint } from "./AgentMemory.ts";
+import { confirmMemory, forgetMemory, listMemory, remember, reviseMemory, saveCheckpoint, recoverCheckpoint, listCheckpointHistory } from "./AgentMemory.ts";
 import { checksumMemoryBackup, exportMemoryBackup, importMemoryBackup } from "./MemoryBackup.ts";
 
 const layer = it.layer(layerMemory);
@@ -56,6 +56,40 @@ layer("Lossless project-scoped memory backup", (it) => {
       const checkpoint = yield* recoverCheckpoint({ projectId: scope.scopeId, threadId: "thread-for-backup" });
       assert.equal(checkpoint.checkpoint?.id, "backup-checkpoint");
       assert.deepStrictEqual(yield* listMemory([scope]), []);
+    }),
+  );
+
+  it.effect("lists recent valid scoped recovery points while exposing corrupt/truncated counts", () =>
+    Effect.gen(function* () {
+      const projectId = "project-history-isolation";
+      const threadId = "thread-history-isolation";
+      yield* saveCheckpoint({
+        id: "history-one", projectId, threadId, sequence: 1,
+        checkpoint: { schemaVersion: 1, objective: "Valid first checkpoint" },
+      });
+      yield* saveCheckpoint({
+        id: "history-two", projectId, threadId, sequence: 2,
+        checkpoint: { schemaVersion: 1, objective: "Valid second checkpoint" },
+      });
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`INSERT INTO agent_memory_checkpoints
+        (id, project_id, thread_id, sequence, checkpoint_json, created_at, schema_version)
+        VALUES ('history-invalid', ${projectId}, ${threadId}, 3,
+          '{"schemaVersion":999,"objective":"unsupported"}', '2026-11-10T00:00:00Z', 999)`;
+      yield* saveCheckpoint({
+        id: "history-other-project", projectId: "foreign-history-project",
+        threadId: "other-history-thread", sequence: 1,
+        checkpoint: { schemaVersion: 1, objective: "Do not expose" },
+      });
+      const history = yield* listCheckpointHistory({ projectId, threadId, limit: 2 });
+      assert.deepStrictEqual(history.checkpoints.map((cp) => cp.id), ["history-two"]);
+      assert.equal(history.skippedInvalid, 1);
+      assert.equal(history.truncated, true);
+      const valid = yield* recoverCheckpoint({ projectId, threadId });
+      assert.equal(valid.checkpoint?.id, "history-two");
+      assert.equal(valid.skippedInvalid, 1);
+      const other = yield* listCheckpointHistory({ projectId, threadId: "other-history-thread" });
+      assert.equal(other.checkpoints.length, 0);
     }),
   );
 

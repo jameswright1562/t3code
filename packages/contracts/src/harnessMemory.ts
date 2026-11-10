@@ -91,6 +91,25 @@ export const HarnessCheckpointRecoverInput = Schema.Struct({
   projectId: Schema.String,
   threadId: Schema.String,
 });
+export const HarnessCheckpointHistoryInput = Schema.Struct({
+  projectId: Schema.String,
+  threadId: Schema.String,
+  limit: Schema.optional(Schema.Number),
+});
+export const HarnessCheckpointSavedRecord = Schema.Struct({
+  id: Schema.String,
+  projectId: Schema.String,
+  threadId: Schema.String,
+  taskId: Schema.NullOr(Schema.String),
+  sequence: Schema.Number,
+  createdAt: Schema.String,
+  checkpoint: Schema.Unknown,
+});
+export const HarnessCheckpointHistory = Schema.Struct({
+  checkpoints: Schema.Array(HarnessCheckpointSavedRecord),
+  skippedInvalid: Schema.Number,
+  truncated: Schema.Boolean,
+});
 export const HarnessCheckpointRecovery = Schema.Struct({
   checkpoint: Schema.NullOr(Schema.Struct({
     id: Schema.String,
