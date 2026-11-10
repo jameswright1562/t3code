@@ -1231,6 +1231,10 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:harness:memory:pin",
       tag: WS_METHODS.harnessMemoryPin,
     }),
+    harnessReviseMemory: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:harness:memory:revise",
+      tag: WS_METHODS.harnessMemoryRevise,
+    }),
     harnessExportMemory: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:harness:memory:export",
       tag: WS_METHODS.harnessMemoryExport,
