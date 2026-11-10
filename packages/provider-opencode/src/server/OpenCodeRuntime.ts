@@ -31,6 +31,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import { signalProcessGroup } from "@t3tools/provider-core/server/processGroup";
 import { isWindowsCommandNotFound } from "@t3tools/provider-core/server/snapshotProbe";
+import { resolveOpenCodeLaunchSpec } from "./openCodeLaunch.ts";
 import * as OpenCodeServerLedger from "./OpenCodeServerLedger.ts";
 import { collectStreamAsString } from "@t3tools/provider-core/server/snapshotProbe";
 import * as NetService from "@t3tools/shared/Net";
@@ -429,7 +430,12 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
     "OpenCodeRuntime.runOpenCodeCommand",
   )(
     function* (input) {
-      const spawnCommand = yield* resolveCommand(input.binaryPath, input.args, input.environment);
+      const checkout = resolveOpenCodeLaunchSpec(input.binaryPath);
+      const spawnCommand = yield* resolveCommand(
+        checkout.executable,
+        [...checkout.args, ...input.args],
+        input.environment,
+      );
       const child = yield* spawner.spawn(
         ChildProcess.make(spawnCommand.command, spawnCommand.args, {
           detached: hostPlatform !== "win32",
@@ -511,9 +517,10 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       ));
     const timeoutMs = input.timeoutMs ?? DEFAULT_OPENCODE_SERVER_TIMEOUT_MS;
     const args = ["serve", `--hostname=${hostname}`, `--port=${port}`];
+    const checkout = resolveOpenCodeLaunchSpec(input.binaryPath);
     const launch = yield* agentScope.wrap({
-      command: input.binaryPath,
-      args,
+      command: checkout.executable,
+      args: [...checkout.args, ...args],
       name: "opencode",
       env: input.environment,
       shared: true,
