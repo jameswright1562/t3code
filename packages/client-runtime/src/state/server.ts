@@ -1212,6 +1212,13 @@ export function createServerEnvironmentAtoms<R, E>(
       execute: (input: EnvironmentRpcInput<typeof WS_METHODS.harnessMemoryList>) =>
         requestGuarded(WS_METHODS.harnessMemoryList, input),
     }),
+    harnessVerifyCheckpointGit: createEnvironmentQueryAtomFamily(runtime, {
+      label: "environment-data:harness:checkpoint:git",
+      idleTtlMs: 0,
+      staleTimeMs: 0,
+      execute: (input: EnvironmentRpcInput<typeof WS_METHODS.harnessCheckpointVerifyGit>) =>
+        requestGuarded(WS_METHODS.harnessCheckpointVerifyGit, input),
+    }),
     harnessRecoverCheckpoint: createEnvironmentQueryAtomFamily(runtime, {
       label: "environment-data:harness:checkpoint:recover",
       idleTtlMs: 0,

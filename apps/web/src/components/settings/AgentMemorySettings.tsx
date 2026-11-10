@@ -56,6 +56,19 @@ export function AgentMemorySettings() {
     recovery.data?.checkpoint ??
     null;
 
+  const gitVerification = useEnvironmentQuery(
+    environmentId !== null && projectId !== null && selectedCheckpoint !== null
+      ? serverEnvironment.harnessVerifyCheckpointGit({
+          environmentId,
+          input: {
+            projectId,
+            threadId: threadId.trim(),
+            checkpointId: selectedCheckpoint.id,
+          },
+        })
+      : null,
+  );
+
   const confirm = useAtomCommand(serverEnvironment.harnessConfirmMemory);
   const forget = useAtomCommand(serverEnvironment.harnessForgetMemory);
   const pin = useAtomCommand(serverEnvironment.harnessPinMemory);
@@ -411,9 +424,20 @@ export function AgentMemorySettings() {
                 </p>
                 <p className="text-xs text-muted-foreground">
                   Saved {selectedCheckpoint.createdAt}. This preview does not resume execution.
-                  Git revisions, working-tree changes and external side effects must be checked
-                  before a saved checkpoint can be used to resume an agent.
+                  External side effects and file revisions still require human review.
                 </p>
+                {gitVerification.error ? <p role="alert">{gitVerification.error}</p> : null}
+                {gitVerification.data ? (
+                  <p className="text-xs" role="status">
+                    Git safety: {gitVerification.data.status} — {gitVerification.data.reason}
+                    {gitVerification.data.savedHeadCommit ? (
+                      <> Saved HEAD: {gitVerification.data.savedHeadCommit.slice(0, 12)}.</>
+                    ) : null}
+                    {gitVerification.data.currentHeadCommit ? (
+                      <> Current HEAD: {gitVerification.data.currentHeadCommit.slice(0, 12)}.</>
+                    ) : null}
+                  </p>
+                ) : null}
                 <pre
                   aria-label="Saved checkpoint context JSON"
                   className="max-h-60 overflow-auto rounded-md border bg-muted/40 p-3 text-xs"

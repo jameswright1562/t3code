@@ -4,6 +4,7 @@ import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as AgentHarnessMemory from "./memory/AgentMemory.ts";
 import * as AgentHarnessMemoryBackup from "./memory/MemoryBackup.ts";
+import { assessCheckpointGit } from "./memory/CheckpointGitGuard.ts";
 import { HarnessMemoryError } from "@t3tools/contracts";
 import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
 import * as PeerLinks from "./peer/PeerLinks.ts";
@@ -2432,6 +2433,57 @@ export const layerWsRpc = (
           AgentHarnessMemory.listCheckpointHistory(input).pipe(
             Effect.provideService(SqlClient.SqlClient, sql),
             Effect.mapError(() => new HarnessMemoryError({ message: "Could not load scoped checkpoint history." })),
+          ),
+        [WS_METHODS.harnessCheckpointVerifyGit]: (input) =>
+          Effect.gen(function* () {
+            // The host projection, not the caller-provided scope, is the
+            // authority for which project owns the requested thread.
+            const projection = yield* orchestrationEngine.getThreadProjection(
+              ThreadId.make(input.threadId),
+            );
+            if (projection.thread.projectId !== input.projectId) {
+              return yield* new HarnessMemoryError({
+                message: "Checkpoint does not belong to the selected project.",
+              });
+            }
+            const history = yield* AgentHarnessMemory.listCheckpointHistory({
+              projectId: input.projectId, threadId: input.threadId, limit: 100,
+            }).pipe(Effect.provideService(SqlClient.SqlClient, sql));
+            const checkpoint = input.checkpointId === undefined
+              ? history.checkpoints[0]
+              : history.checkpoints.find((saved) => saved.id === input.checkpointId);
+            const savedHeadCommit = checkpoint?.checkpoint.headCommit ?? null;
+            const savedBranch = checkpoint?.checkpoint.branch ?? null;
+            const unverifiable = (reason: string) => assessCheckpointGit({
+              savedHeadCommit, savedBranch,
+              currentHeadCommit: null, currentBranch: null,
+              hasWorkingTreeChanges: false,
+              unavailableReason: reason,
+            });
+            if (checkpoint === undefined) return unverifiable("No valid checkpoint was selected.");
+            const project = yield* projectStore.get(projection.thread.projectId);
+            if (Option.isNone(project)) return unverifiable("Project workspace is unavailable.");
+            const cwd = projection.thread.worktreePath ?? project.value.workspaceRoot;
+            // Only inspect a canonical project's checked-out path. Never
+            // execute paths, shell commands or instructions from imported backup JSON.
+            return yield* Effect.gen(function* () {
+              const driver = yield* GitVcsDriver.GitVcsDriver;
+              const head = yield* driver.resolveCommit({ cwd, revision: "HEAD" });
+              const status = yield* driver.statusDetailsLocal(cwd);
+              return assessCheckpointGit({
+                savedHeadCommit, savedBranch,
+                currentHeadCommit: head.commitSha,
+                currentBranch: status.branch,
+                hasWorkingTreeChanges: status.hasWorkingTreeChanges,
+              });
+            }).pipe(
+              Effect.provide(GitVcsDriver.layer),
+              Effect.orElseSucceed(() => unverifiable("Current repository status could not be read.")),
+            );
+          }).pipe(
+            Effect.mapError(() => new HarnessMemoryError({
+              message: "Could not verify the checkpoint against the trusted project.",
+            })),
           ),
         [WS_METHODS.harnessCheckpointRecover]: (input) =>
           AgentHarnessMemory.recoverCheckpoint(input).pipe(

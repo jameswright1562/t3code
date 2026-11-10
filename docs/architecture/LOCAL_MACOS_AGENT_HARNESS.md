@@ -629,6 +629,8 @@ The new `feat/macos-harness-release-gates` branch adds a **full memory ledger ba
 
 New tests cover tombstoned/revised history, project checkpoint restoration, scoped checkpoint history browsing with corrupt-entry fallback, repeated import, corruption, and cross-project restore refusal. Memory UI filters now include kind, verification, and pinned status; checkpoint selection is inspection only, not execution resume. CI results and a real macOS application smoke test are necessary before treating these as validated.
 
+A read-only checkpoint inspector now compares the saved HEAD and branch with the current trusted project worktree and marks a mismatch or dirty checkout. It reports unverified state if the saved commit or current Git state cannot be read, and never resumes/replays agent work.
+
 New final-run context checkpoints also record the Git HEAD SHA when the local checkout is readable. This is evidence for a future divergence check, **not** automatic recovery approval or a substitute for changed-file fingerprints.
 
 **Still required:** native macOS Keychain/OAuth MCP support and health checks; pre-handoff checkpoints, event-cursor replay and Git divergence guards; persisted editable dependency plans, scheduling and checkout locks; trustworthy turn budgets and a measured native Claude A/B comparison; full release smoke and security verification. Do not mark these complete just because memory backup has landed.

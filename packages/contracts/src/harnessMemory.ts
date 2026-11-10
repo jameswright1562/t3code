@@ -87,6 +87,20 @@ export const HarnessMemoryRestoreResult = Schema.Struct({
   importedEvents: Schema.Number,
   importedCheckpoints: Schema.Number,
 });
+/** Read-only check against the current trusted project worktree. Never resumes execution. */
+export const HarnessCheckpointVerifyGitInput = Schema.Struct({
+  projectId: Schema.String,
+  threadId: Schema.String,
+  checkpointId: Schema.optional(Schema.String),
+});
+export const HarnessCheckpointGitState = Schema.Struct({
+  status: Schema.Literals(["match", "diverged", "dirty", "unverifiable"]),
+  reason: Schema.String,
+  savedHeadCommit: Schema.NullOr(Schema.String),
+  currentHeadCommit: Schema.NullOr(Schema.String),
+  savedBranch: Schema.NullOr(Schema.String),
+  currentBranch: Schema.NullOr(Schema.String),
+});
 export const HarnessCheckpointRecoverInput = Schema.Struct({
   projectId: Schema.String,
   threadId: Schema.String,
