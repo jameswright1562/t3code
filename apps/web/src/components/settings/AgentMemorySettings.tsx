@@ -26,6 +26,9 @@ export function AgentMemorySettings() {
       : null,
   );
   const [filter, setFilter] = useState("");
+  const [kindFilter, setKindFilter] = useState("all");
+  const [verificationFilter, setVerificationFilter] = useState("all");
+  const [pinnedOnly, setPinnedOnly] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [threadId, setThreadId] = useState("");
@@ -47,7 +50,10 @@ export function AgentMemorySettings() {
   const restoreEntries = useAtomCommand(serverEnvironment.harnessRestoreMemory);
   const revise = useAtomCommand(serverEnvironment.harnessReviseMemory);
   const entries = memories.data?.filter((entry) =>
-    [entry.kind, entry.content, entry.sourceRef, entry.verification]
+    (kindFilter === "all" || entry.kind === kindFilter) &&
+    (verificationFilter === "all" || entry.verification === verificationFilter) &&
+    (!pinnedOnly || entry.pinned) &&
+    [entry.kind, entry.content, entry.sourceRef, entry.sourceActor, entry.verification]
       .some((value) => value.toLowerCase().includes(filter.trim().toLowerCase())),
   ) ?? [];
 
@@ -233,6 +239,49 @@ export function AgentMemorySettings() {
               Full backup
             </Button>
           </div>
+          <div className="flex flex-wrap items-center gap-3" aria-label="Memory filters">
+            <label className="flex items-center gap-2 text-sm">
+              Kind
+              <select
+                aria-label="Filter memories by kind"
+                className="rounded-md border bg-background px-2 py-1"
+                value={kindFilter}
+                onChange={(event) => setKindFilter(event.target.value)}
+              >
+                <option value="all">All kinds</option>
+                {["fact", "decision", "preference", "constraint", "file_reference",
+                  "failed_approach", "open_question", "procedure", "outcome"].map((kind) => (
+                  <option key={kind} value={kind}>{kind.replaceAll("_", " ")}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              Verification
+              <select
+                aria-label="Filter memories by verification"
+                className="rounded-md border bg-background px-2 py-1"
+                value={verificationFilter}
+                onChange={(event) => setVerificationFilter(event.target.value)}
+              >
+                <option value="all">All verification states</option>
+                <option value="proposed">Proposed</option>
+                <option value="verified">Verified</option>
+                <option value="user_confirmed">User confirmed</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={pinnedOnly}
+                onChange={(event) => setPinnedOnly(event.target.checked)}
+              />
+              Pinned only
+            </label>
+            <span aria-live="polite" className="text-xs text-muted-foreground">
+              {entries.length} matching of {memories.data?.length ?? 0} loaded
+              {(memories.data?.length ?? 0) >= 500 ? " (first 500 records)" : ""}
+            </span>
+          </div>
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
             Restore complete memory backup for this project
             <input
@@ -317,10 +366,22 @@ export function AgentMemorySettings() {
               <p role="status">Skipped {recovery.data.skippedInvalid} invalid checkpoint(s).</p>
             ) : null}
             {recovery.data?.checkpoint ? (
-              <p className="text-sm">
-                Latest valid checkpoint #{recovery.data.checkpoint.sequence}:{" "}
-                {JSON.stringify(recovery.data.checkpoint.checkpoint)}
-              </p>
+              <div className="flex flex-col gap-2">
+                <p className="text-sm font-medium">
+                  Latest valid checkpoint #{recovery.data.checkpoint.sequence}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Saved {recovery.data.checkpoint.createdAt}. This preview does not resume execution.
+                  Git revisions, working-tree changes and external side effects must be checked
+                  before a saved checkpoint can be used to resume an agent.
+                </p>
+                <pre
+                  aria-label="Saved checkpoint context JSON"
+                  className="max-h-60 overflow-auto rounded-md border bg-muted/40 p-3 text-xs"
+                >
+                  {JSON.stringify(recovery.data.checkpoint.checkpoint, null, 2)}
+                </pre>
+              </div>
             ) : threadId.trim() && !recovery.isPending ? (
               <p className="text-sm text-muted-foreground">No valid checkpoint for this thread.</p>
             ) : null}
