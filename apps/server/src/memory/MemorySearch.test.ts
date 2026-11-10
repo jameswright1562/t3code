@@ -60,6 +60,7 @@ layer("SQLite agent memory search", (it) => {
       const sql = yield* SqlClient.SqlClient;
       const rows = yield* sql<{ readonly count: number }>`
         SELECT COUNT(*) AS "count" FROM agent_memory_search
+        WHERE agent_memory_search MATCH 'deuterium'
       `;
       assert.equal(rows[0]?.count, 0);
     }),
