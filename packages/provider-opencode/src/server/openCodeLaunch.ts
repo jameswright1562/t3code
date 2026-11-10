@@ -1,4 +1,6 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off - launch-spec resolution is intentionally synchronous at process startup.
 import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
+// @effect-diagnostics-next-line nodeBuiltinImport:off - synchronous checkout path lookup before process spawn.
 import path from "node:path";
 
 export interface OpenCodeLaunchSpec {
