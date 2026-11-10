@@ -393,25 +393,90 @@ export const saveCheckpoint = Effect.fn("AgentMemory.saveCheckpoint")(function* 
     );
   });
 
-export const latestCheckpoint = Effect.fn("AgentMemory.latestCheckpoint")(function* (threadId: string) {
-    const sql = yield* SqlClient.SqlClient;
-    const rows = yield* sql<CheckpointRow>`
-      SELECT id, project_id AS "projectId", thread_id AS "threadId",
-        task_id AS "taskId", sequence, checkpoint_json AS "checkpointJson",
-        created_at AS "createdAt"
-      FROM agent_memory_checkpoints
-      WHERE thread_id = ${threadId}
-      ORDER BY sequence DESC LIMIT 1
-    `;
-    const row = rows[0];
-    if (!row) return null;
+/**
+ * Restore the newest *valid* checkpoint for one canonical project/thread pair.
+ * A newer row may be damaged by a crash or an old unsupported schema: never
+ * let it mask an earlier committed checkpoint. The caller remains responsible
+ * for checking the repository HEAD and replaying later canonical events.
+ */
+export const recoverCheckpoint = Effect.fn("AgentMemory.recoverCheckpoint")(function* (input: {
+  readonly projectId: string;
+  readonly threadId: string;
+}) {
+  if (!input.projectId.trim() || !input.threadId.trim()) {
+    return yield* new AgentMemoryValidationError({ detail: "Project and thread are required" });
+  }
+  const sql = yield* SqlClient.SqlClient;
+  const rows = yield* sql<CheckpointRow>`
+    SELECT id, project_id AS "projectId", thread_id AS "threadId",
+      task_id AS "taskId", sequence, checkpoint_json AS "checkpointJson",
+      created_at AS "createdAt"
+    FROM agent_memory_checkpoints
+    WHERE project_id = ${input.projectId} AND thread_id = ${input.threadId}
+    ORDER BY sequence DESC
+  `;
+  let skippedInvalid = 0;
+  for (const row of rows) {
+    const decoded = yield* Effect.either(decodeJson(row.checkpointJson));
+    if (decoded._tag === "Left") {
+      skippedInvalid++;
+      continue;
+    }
+    const checkpoint = decoded.right;
+    if (
+      typeof checkpoint !== "object" ||
+      checkpoint === null ||
+      Array.isArray(checkpoint) ||
+      !("schemaVersion" in checkpoint) ||
+      checkpoint.schemaVersion !== 1 ||
+      !("objective" in checkpoint) ||
+      typeof checkpoint.objective !== "string" ||
+      checkpoint.objective.trim().length === 0
+    ) {
+      skippedInvalid++;
+      continue;
+    }
     return {
-      id: row.id,
-      projectId: row.projectId,
-      threadId: row.threadId,
-      taskId: row.taskId,
-      sequence: row.sequence,
-      checkpoint: (yield* decodeJson(row.checkpointJson)) as ContextCheckpoint,
-      createdAt: row.createdAt,
-    } satisfies SavedCheckpoint;
-  });
+      checkpoint: {
+        id: row.id,
+        projectId: row.projectId,
+        threadId: row.threadId,
+        taskId: row.taskId,
+        sequence: row.sequence,
+        checkpoint: checkpoint as unknown as ContextCheckpoint,
+        createdAt: row.createdAt,
+      } satisfies SavedCheckpoint,
+      skippedInvalid,
+    };
+  }
+  return { checkpoint: null, skippedInvalid };
+});
+
+/**
+ * Legacy thread-only lookup. Prefer recoverCheckpoint with the canonical
+ * project ID at any user/API boundary to prevent cross-project probing.
+ */
+export const latestCheckpoint = Effect.fn("AgentMemory.latestCheckpoint")(function* (threadId: string) {
+  const sql = yield* SqlClient.SqlClient;
+  const projects = yield* sql<{ readonly projectId: string }>`
+    SELECT project_id AS "projectId" FROM agent_memory_checkpoints
+    WHERE thread_id = ${threadId} ORDER BY sequence DESC LIMIT 1
+  `;
+  if (!projects[0]) return null;
+  const recovered = yield* recoverCheckpoint({ projectId: projects[0].projectId, threadId });
+  return recovered.checkpoint;
+});
+
+/** Export live entries only from caller-authorized exact scopes (no global wildcard). */
+export const exportMemory = Effect.fn("AgentMemory.exportMemory")(function* (
+  scopes: readonly MemoryScope[],
+) {
+  if (scopes.length === 0) {
+    return yield* new AgentMemoryValidationError({ detail: "At least one authorized scope is required" });
+  }
+  const entries = yield* listMemory(scopes, 500);
+  return {
+    schemaVersion: 1 as const,
+    entries,
+  };
+});
