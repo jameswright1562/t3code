@@ -5,7 +5,9 @@
  * prompts or automatically promote model outputs to verified memory.
  * It requires an existing T3 SqlClient and migration 029 to have run.
  */
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
 export type MemoryScopeType = "global" | "workspace" | "project" | "thread" | "task";
@@ -127,15 +129,20 @@ const ensureText = (label: string, value: string) =>
     ? undefined
     : label + " must be non-empty and at most 100,000 characters";
 
-const isoNow = () => new Date().toISOString();
+export class AgentMemoryValidationError extends Schema.TaggedError<AgentMemoryValidationError>()(
+  "AgentMemoryValidationError",
+  { detail: Schema.String },
+) {}
+
+const encodeJson = Schema.encodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
+const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 
 /**
  * Persist one new memory with its provenance and event in one transaction.
  * Existing identical item IDs are safe to retry. Different content with the
  * same ID is rejected; revisions must use explicit supersession instead.
  */
-export const remember = (input: RememberInput) =>
-  Effect.gen(function* () {
+export const remember = Effect.fn("AgentMemory.remember")(function* (input: RememberInput) {
     const validationError = [
       ensureText("id", input.id),
       ensureText("eventId", input.eventId),
@@ -145,16 +152,16 @@ export const remember = (input: RememberInput) =>
       ensureText("sourceActor", input.sourceActor),
     ].find(Boolean);
     if (validationError) {
-      return yield* Effect.fail(new Error(validationError));
+      return yield* Effect.fail(new AgentMemoryValidationError({ detail: validationError }));
     }
     if (
       input.confidence != null &&
       (!Number.isFinite(input.confidence) || input.confidence < 0 || input.confidence > 1)
     ) {
-      return yield* Effect.fail(new Error("confidence must be between 0 and 1"));
+      return yield* Effect.fail(new AgentMemoryValidationError({ detail: "confidence must be between 0 and 1" }));
     }
     const sql = yield* SqlClient.SqlClient;
-    const now = input.occurredAt ?? isoNow();
+    const now = input.occurredAt ?? DateTime.formatIso(yield* DateTime.now);
 
     return yield* sql.withTransaction(
       Effect.gen(function* () {
@@ -177,7 +184,7 @@ export const remember = (input: RememberInput) =>
             previous.kind !== input.kind
           ) {
             return yield* Effect.fail(
-              new Error("Memory ID already exists with different content or provenance"),
+              new AgentMemoryValidationError({ detail: "Memory ID already exists with different content or provenance" }),
             );
           }
           return toEntry(previous);
@@ -199,7 +206,7 @@ export const remember = (input: RememberInput) =>
             event_id, memory_id, operation, payload_json, occurred_at
           ) VALUES (
             ${input.eventId}, ${input.id}, 'created',
-            ${JSON.stringify({
+            ${yield* encodeJson({
               scopeType: input.scopeType,
               scopeId: input.scopeId,
               kind: input.kind,
@@ -232,8 +239,7 @@ export const remember = (input: RememberInput) =>
  * Exact scope matching. No implicit cross-project/global retrieval.
  * The caller must explicitly supply every scope that it is authorized to read.
  */
-export const listMemory = (scopes: readonly MemoryScope[], limitPerScope = 100) =>
-  Effect.gen(function* () {
+export const listMemory = Effect.fn("AgentMemory.listMemory")(function* (scopes: readonly MemoryScope[], limitPerScope = 100) {
     const sql = yield* SqlClient.SqlClient;
     const limit = Math.max(1, Math.min(500, Math.floor(limitPerScope)));
     const result: MemoryEntry[] = [];
@@ -259,15 +265,14 @@ export const listMemory = (scopes: readonly MemoryScope[], limitPerScope = 100) 
  * Tombstone in place; never silently delete the immutable audit event.
  * Scope matching prevents accidentally deleting another project's record.
  */
-export const forgetMemory = (input: {
+export const forgetMemory = Effect.fn("AgentMemory.forgetMemory")(function* (input: {
   readonly id: string;
   readonly scope: MemoryScope;
   readonly eventId: string;
   readonly occurredAt?: string;
-}) =>
-  Effect.gen(function* () {
+}) {
     const sql = yield* SqlClient.SqlClient;
-    const now = input.occurredAt ?? isoNow();
+    const now = input.occurredAt ?? DateTime.formatIso(yield* DateTime.now);
     return yield* sql.withTransaction(
       Effect.gen(function* () {
         const rows = yield* sql<{ readonly id: string; readonly tombstonedAt: string | null }>`
@@ -277,7 +282,7 @@ export const forgetMemory = (input: {
             AND scope_id = ${input.scope.scopeId}
         `;
         if (!rows[0]) {
-          return yield* Effect.fail(new Error("Memory not found in selected scope"));
+          return yield* Effect.fail(new AgentMemoryValidationError({ detail: "Memory not found in selected scope" }));
         }
         if (rows[0].tombstonedAt !== null) return false;
         yield* sql`
@@ -296,8 +301,7 @@ export const forgetMemory = (input: {
   });
 
 /** Context checkpoints are versioned, append-only and scoped by thread. */
-export const saveCheckpoint = (input: SaveCheckpointInput) =>
-  Effect.gen(function* () {
+export const saveCheckpoint = Effect.fn("AgentMemory.saveCheckpoint")(function* (input: SaveCheckpointInput) {
     if (
       !Number.isSafeInteger(input.sequence) ||
       input.sequence < 0 ||
@@ -307,11 +311,11 @@ export const saveCheckpoint = (input: SaveCheckpointInput) =>
       input.checkpoint.schemaVersion !== 1 ||
       !input.checkpoint.objective.trim()
     ) {
-      return yield* Effect.fail(new Error("Invalid memory checkpoint"));
+      return yield* Effect.fail(new AgentMemoryValidationError({ detail: "Invalid memory checkpoint" }));
     }
     const sql = yield* SqlClient.SqlClient;
-    const json = JSON.stringify(input.checkpoint);
-    const createdAt = input.createdAt ?? isoNow();
+    const json = yield* encodeJson(input.checkpoint);
+    const createdAt = input.createdAt ?? DateTime.formatIso(yield* DateTime.now);
     return yield* sql.withTransaction(
       Effect.gen(function* () {
         const rows = yield* sql<CheckpointRow>`
@@ -323,7 +327,7 @@ export const saveCheckpoint = (input: SaveCheckpointInput) =>
         `;
         if (rows[0]) {
           if (rows[0].id !== input.id || rows[0].checkpointJson !== json) {
-            return yield* Effect.fail(new Error("Conflicting checkpoint at this sequence"));
+            return yield* Effect.fail(new AgentMemoryValidationError({ detail: "Conflicting checkpoint at this sequence" }));
           }
           return { ...input, createdAt: rows[0].createdAt } satisfies SavedCheckpoint;
         }
@@ -341,8 +345,7 @@ export const saveCheckpoint = (input: SaveCheckpointInput) =>
     );
   });
 
-export const latestCheckpoint = (threadId: string) =>
-  Effect.gen(function* () {
+export const latestCheckpoint = Effect.fn("AgentMemory.latestCheckpoint")(function* (threadId: string) {
     const sql = yield* SqlClient.SqlClient;
     const rows = yield* sql<CheckpointRow>`
       SELECT id, project_id AS "projectId", thread_id AS "threadId",
@@ -360,7 +363,7 @@ export const latestCheckpoint = (threadId: string) =>
       threadId: row.threadId,
       taskId: row.taskId,
       sequence: row.sequence,
-      checkpoint: JSON.parse(row.checkpointJson) as ContextCheckpoint,
+      checkpoint: (yield* decodeJson(row.checkpointJson)) as ContextCheckpoint,
       createdAt: row.createdAt,
     } satisfies SavedCheckpoint;
   });
