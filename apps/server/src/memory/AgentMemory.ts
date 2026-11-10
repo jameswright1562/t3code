@@ -152,13 +152,13 @@ export const remember = Effect.fn("AgentMemory.remember")(function* (input: Reme
       ensureText("sourceActor", input.sourceActor),
     ].find(Boolean);
     if (validationError) {
-      return yield* Effect.fail(new AgentMemoryValidationError({ detail: validationError }));
+      return yield* new AgentMemoryValidationError({ detail: validationError });
     }
     if (
       input.confidence != null &&
       (!Number.isFinite(input.confidence) || input.confidence < 0 || input.confidence > 1)
     ) {
-      return yield* Effect.fail(new AgentMemoryValidationError({ detail: "confidence must be between 0 and 1" }));
+      return yield* new AgentMemoryValidationError({ detail: "confidence must be between 0 and 1" });
     }
     const sql = yield* SqlClient.SqlClient;
     const now = input.occurredAt ?? DateTime.formatIso(yield* DateTime.now);
@@ -183,9 +183,9 @@ export const remember = Effect.fn("AgentMemory.remember")(function* (input: Reme
             previous.sourceRef !== input.sourceRef ||
             previous.kind !== input.kind
           ) {
-            return yield* Effect.fail(
-              new AgentMemoryValidationError({ detail: "Memory ID already exists with different content or provenance" }),
-            );
+            return yield* new AgentMemoryValidationError({
+              detail: "Memory ID already exists with different content or provenance",
+            });
           }
           return toEntry(previous);
         }
@@ -282,7 +282,7 @@ export const forgetMemory = Effect.fn("AgentMemory.forgetMemory")(function* (inp
             AND scope_id = ${input.scope.scopeId}
         `;
         if (!rows[0]) {
-          return yield* Effect.fail(new AgentMemoryValidationError({ detail: "Memory not found in selected scope" }));
+          return yield* new AgentMemoryValidationError({ detail: "Memory not found in selected scope" });
         }
         if (rows[0].tombstonedAt !== null) return false;
         yield* sql`
@@ -311,7 +311,7 @@ export const saveCheckpoint = Effect.fn("AgentMemory.saveCheckpoint")(function* 
       input.checkpoint.schemaVersion !== 1 ||
       !input.checkpoint.objective.trim()
     ) {
-      return yield* Effect.fail(new AgentMemoryValidationError({ detail: "Invalid memory checkpoint" }));
+      return yield* new AgentMemoryValidationError({ detail: "Invalid memory checkpoint" });
     }
     const sql = yield* SqlClient.SqlClient;
     const json = yield* encodeJson(input.checkpoint);
@@ -327,7 +327,7 @@ export const saveCheckpoint = Effect.fn("AgentMemory.saveCheckpoint")(function* 
         `;
         if (rows[0]) {
           if (rows[0].id !== input.id || rows[0].checkpointJson !== json) {
-            return yield* Effect.fail(new AgentMemoryValidationError({ detail: "Conflicting checkpoint at this sequence" }));
+            return yield* new AgentMemoryValidationError({ detail: "Conflicting checkpoint at this sequence" });
           }
           return { ...input, createdAt: rows[0].createdAt } satisfies SavedCheckpoint;
         }
