@@ -3,7 +3,6 @@ import * as Effect from "effect/Effect";
 
 import { listMemory, remember } from "../../../memory/AgentMemory.ts";
 import { selectMemoryForContext } from "../../../memory/MemoryContext.ts";
-import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { newCommandId, readCaller, unavailable } from "../../threadAccess.ts";
 import { MemoryToolkit } from "./tools.ts";
@@ -65,14 +64,14 @@ export const layer = McpToolAccess.toLayer(MemoryToolkit, {
       }
       const id = yield* newCommandId();
       const saved = yield* remember({
-        id: `mcp:memory:\${id}`,
-        eventId: `mcp:memory:created:\${id}`,
+        id: `mcp:memory:${id}`,
+        eventId: `mcp:memory:created:${id}`,
         scopeType: scope,
         scopeId: scope === "project" ? caller.projectId : caller.threadId,
         kind,
         content,
-        sourceRef: `thread:\${caller.threadId}:session:\${caller.sessionId}`,
-        sourceActor: `agent:\${caller.providerInstanceId}`,
+        sourceRef: `thread:${caller.threadId}:session:${caller.sessionId}`,
+        sourceActor: `agent:${caller.providerInstanceId}`,
         verification: "proposed",
       }).pipe(Effect.mapError(unavailable));
       return { id: saved.id, verification: "proposed" as const };
