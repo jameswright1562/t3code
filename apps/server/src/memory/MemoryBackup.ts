@@ -77,6 +77,9 @@ const invalid = (detail: string) => new AgentMemoryValidationError({ detail });
 export const exportMemoryBackup = Effect.fn("MemoryBackup.export")(function* (scope: MemoryScope) {
   if (!scope.scopeId.trim()) return yield* invalid("A specific memory scope is required");
   const sql = yield* SqlClient.SqlClient;
+  // A backup must use one SQLite snapshot, not three independently racing reads:
+  // a concurrent memory revision or checkpoint save must appear all-or-nothing.
+  return yield* sql.withTransaction(Effect.gen(function* () {
   // No implicit global or cross-project scope. Older revisions and deleted
   // rows are deliberately included; these must not be lost during restore.
   const rows = yield* sql<MemoryRow>`
@@ -122,6 +125,7 @@ export const exportMemoryBackup = Effect.fn("MemoryBackup.export")(function* (sc
     return yield* invalid("Backup exceeds the 16 MiB limit");
   }
   return { ...payload, checksum: yield* checksumMemoryBackup(payload) } satisfies MemoryBackup;
+  }));
 });
 
 export const importMemoryBackup = Effect.fn("MemoryBackup.import")(function* (input: {
