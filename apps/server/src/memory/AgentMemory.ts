@@ -505,6 +505,37 @@ export const reviseMemory = Effect.fn("AgentMemory.reviseMemory")(function* (inp
   );
 });
 
+/** Refuse malformed optional recovery state, not only unsupported schema versions.
+ * Imported backups are integrity-checked but are not authenticated statements
+ * about a native session or repository, so all known fields need validation.
+ */
+export function isValidContextCheckpoint(value: unknown): value is ContextCheckpoint {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const candidate = value as Record<string, unknown>;
+  if (candidate.schemaVersion !== 1 || typeof candidate.objective !== "string" ||
+      !candidate.objective.trim()) return false;
+  for (const key of ["planId", "nativeSessionId", "provider", "branch", "headCommit"]) {
+    if (candidate[key] !== undefined && typeof candidate[key] !== "string") return false;
+  }
+  if (candidate.headCommit !== undefined &&
+      !/^[a-f0-9]{40,64}$/i.test(candidate.headCommit as string)) return false;
+  if (candidate.planRevision !== undefined &&
+      (!Number.isSafeInteger(candidate.planRevision) ||
+        (candidate.planRevision as number) < 0)) return false;
+  for (const key of [
+    "completedStepIds", "pendingStepIds", "activeStepIds",
+    "decisionMemoryIds", "sourceEventRefs", "contextArtifactRefs",
+    "nextActions", "openQuestions",
+  ]) {
+    const field = candidate[key];
+    if (field !== undefined &&
+        (!Array.isArray(field) || !field.every((entry: unknown) => typeof entry === "string"))) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /** Context checkpoints are versioned, append-only and scoped by thread. */
 export const saveCheckpoint = Effect.fn("AgentMemory.saveCheckpoint")(function* (input: SaveCheckpointInput) {
     if (
@@ -513,8 +544,7 @@ export const saveCheckpoint = Effect.fn("AgentMemory.saveCheckpoint")(function* 
       !input.id.trim() ||
       !input.projectId.trim() ||
       !input.threadId.trim() ||
-      input.checkpoint.schemaVersion !== 1 ||
-      !input.checkpoint.objective.trim()
+      !isValidContextCheckpoint(input.checkpoint)
     ) {
       return yield* new AgentMemoryValidationError({ detail: "Invalid memory checkpoint" });
     }
@@ -577,16 +607,7 @@ export const recoverCheckpoint = Effect.fn("AgentMemory.recoverCheckpoint")(func
     const checkpoint = yield* decodeJson(row.checkpointJson).pipe(
       Effect.orElseSucceed(() => null),
     );
-    if (
-      typeof checkpoint !== "object" ||
-      checkpoint === null ||
-      Array.isArray(checkpoint) ||
-      !("schemaVersion" in checkpoint) ||
-      checkpoint.schemaVersion !== 1 ||
-      !("objective" in checkpoint) ||
-      typeof checkpoint.objective !== "string" ||
-      checkpoint.objective.trim().length === 0
-    ) {
+    if (!isValidContextCheckpoint(checkpoint)) {
       skippedInvalid++;
       continue;
     }
@@ -597,7 +618,7 @@ export const recoverCheckpoint = Effect.fn("AgentMemory.recoverCheckpoint")(func
         threadId: row.threadId,
         taskId: row.taskId,
         sequence: row.sequence,
-        checkpoint: checkpoint as unknown as ContextCheckpoint,
+        checkpoint,
         createdAt: row.createdAt,
       } satisfies SavedCheckpoint,
       skippedInvalid,
@@ -633,10 +654,7 @@ export const listCheckpointHistory = Effect.fn("AgentMemory.listCheckpointHistor
   let skippedInvalid = 0;
   for (const row of rows.slice(0, limit)) {
     const decoded = yield* decodeJson(row.checkpointJson).pipe(Effect.orElseSucceed(() => null));
-    if (typeof decoded !== "object" || decoded === null || Array.isArray(decoded) ||
-        !("schemaVersion" in decoded) || decoded.schemaVersion !== 1 ||
-        !("objective" in decoded) || typeof decoded.objective !== "string" ||
-        decoded.objective.trim().length === 0) {
+    if (!isValidContextCheckpoint(decoded)) {
       skippedInvalid++;
       continue;
     }
@@ -646,7 +664,7 @@ export const listCheckpointHistory = Effect.fn("AgentMemory.listCheckpointHistor
       threadId: row.threadId,
       taskId: row.taskId,
       sequence: row.sequence,
-      checkpoint: decoded as unknown as ContextCheckpoint,
+      checkpoint: decoded,
       createdAt: row.createdAt,
     });
   }

@@ -40,9 +40,17 @@ layer("Checkpoint fallback and authorized export", (it) => {
       const sql = yield* SqlClient.SqlClient;
       yield* sql`UPDATE agent_memory_checkpoints
         SET checkpoint_json = '{"schemaVersion":999}' WHERE id = 'checkpoint-bad'`;
+      // A syntactically valid object can still carry unsafe optional fields.
+      yield* saveCheckpoint({
+        id: "checkpoint-invalid-head", threadId, projectId, sequence: 3,
+        checkpoint: { schemaVersion: 1, objective: "Later state" },
+      });
+      yield* sql`UPDATE agent_memory_checkpoints
+        SET checkpoint_json = '{"schemaVersion":1,"objective":"Later state","headCommit":123}'
+        WHERE id = 'checkpoint-invalid-head'`;
       const found = yield* recoverCheckpoint({ threadId, projectId });
       assert.equal(found.checkpoint?.id, "checkpoint-good");
-      assert.equal(found.skippedInvalid, 1);
+      assert.equal(found.skippedInvalid, 2);
       const other = yield* recoverCheckpoint({ threadId, projectId: "other-project" });
       assert.equal(other.checkpoint, null);
       assert.equal(other.skippedInvalid, 0);
