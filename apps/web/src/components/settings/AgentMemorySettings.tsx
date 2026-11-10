@@ -375,7 +375,7 @@ export function AgentMemorySettings() {
               onChange={(event) => {
                 setThreadId(event.target.value);
                 setSelectedCheckpointId("");
-              }
+              }}
               placeholder="Thread ID"
             />
             {recovery.error ? <p role="alert">{recovery.error}</p> : null}
