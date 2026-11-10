@@ -614,7 +614,7 @@ export const recoverCheckpoint = Effect.fn("AgentMemory.recoverCheckpoint")(func
 export const listCheckpointHistory = Effect.fn("AgentMemory.listCheckpointHistory")(function* (input: {
   readonly projectId: string;
   readonly threadId: string;
-  readonly limit?: number;
+  readonly limit?: number | undefined;
 }) {
   if (!input.projectId.trim() || !input.threadId.trim()) {
     return yield* new AgentMemoryValidationError({ detail: "Project and thread are required" });
@@ -629,7 +629,7 @@ export const listCheckpointHistory = Effect.fn("AgentMemory.listCheckpointHistor
     WHERE project_id = ${input.projectId} AND thread_id = ${input.threadId}
     ORDER BY sequence DESC LIMIT ${limit + 1}
   `;
-  const checkpoints: SavedCheckpoint[] = [];
+  const checkpoints: Array<SavedCheckpoint & { readonly taskId: string | null }> = [];
   let skippedInvalid = 0;
   for (const row of rows.slice(0, limit)) {
     const decoded = yield* decodeJson(row.checkpointJson).pipe(Effect.orElseSucceed(() => null));
