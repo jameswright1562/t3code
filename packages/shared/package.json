@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./harnessMcp": {
+      "types": "./src/harnessMcp.ts",
+      "import": "./src/harnessMcp.ts"
+    },
     "./changedFileKind": {
       "types": "./src/changedFileKind.ts",
       "import": "./src/changedFileKind.ts"

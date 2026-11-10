@@ -397,6 +397,8 @@ export function applyServerSettingsPatch(
     backgroundActivityProfile,
     backgroundActivity,
     worktreeCleanup: worktreeCleanupPatch,
+    // MCP server entries merge individually so parallel edits cannot delete unrelated entries.
+    harnessMcpServers: harnessMcpServersPatch,
     // Merged per entry below; its `null` removals must not reach deepMerge.
     usageLimitSources: usageLimitSourcesPatch,
     textGenerators: textGeneratorsPatch,
@@ -608,6 +610,9 @@ export function applyServerSettingsPatch(
       : {}),
     ...(patch.defaultProjectScripts !== undefined
       ? { defaultProjectScripts: patch.defaultProjectScripts }
+      : {}),
+    ...(harnessMcpServersPatch !== undefined
+      ? { harnessMcpServers: mergeSettingsEntries(current.harnessMcpServers, harnessMcpServersPatch) }
       : {}),
     ...(usageLimitSourcesPatch !== undefined
       ? {

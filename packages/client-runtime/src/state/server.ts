@@ -1205,6 +1205,40 @@ export function createServerEnvironmentAtoms<R, E>(
 
   return {
     configValueAtom,
+    harnessMemories: createEnvironmentQueryAtomFamily(runtime, {
+      label: "environment-data:harness:memory:list",
+      idleTtlMs: 0,
+      staleTimeMs: 0,
+      execute: (input: EnvironmentRpcInput<typeof WS_METHODS.harnessMemoryList>) =>
+        requestGuarded(WS_METHODS.harnessMemoryList, input),
+    }),
+    harnessRecoverCheckpoint: createEnvironmentQueryAtomFamily(runtime, {
+      label: "environment-data:harness:checkpoint:recover",
+      idleTtlMs: 0,
+      staleTimeMs: 0,
+      execute: (input: EnvironmentRpcInput<typeof WS_METHODS.harnessCheckpointRecover>) =>
+        requestGuarded(WS_METHODS.harnessCheckpointRecover, input),
+    }),
+    harnessConfirmMemory: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:harness:memory:confirm",
+      tag: WS_METHODS.harnessMemoryConfirm,
+    }),
+    harnessForgetMemory: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:harness:memory:forget",
+      tag: WS_METHODS.harnessMemoryForget,
+    }),
+    harnessPinMemory: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:harness:memory:pin",
+      tag: WS_METHODS.harnessMemoryPin,
+    }),
+    harnessReviseMemory: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:harness:memory:revise",
+      tag: WS_METHODS.harnessMemoryRevise,
+    }),
+    harnessExportMemory: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:harness:memory:export",
+      tag: WS_METHODS.harnessMemoryExport,
+    }),
     runStorageCleanup: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:run-storage-cleanup",
       tag: WS_METHODS.serverRunStorageCleanup,

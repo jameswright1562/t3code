@@ -125,6 +125,8 @@ import { codexAppServerArgs, resolveCodexLaunchArgs } from "../../provider/codex
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import { selectHarnessMcpServers, toCodexHarnessMcpConfig } from "@t3tools/shared/harnessMcp";
+import * as ServerSettings from "../../serverSettings.ts";
 import {
   MCP_APP_EXTENSION_ID,
   MCP_APP_MIME_TYPE,
@@ -1408,6 +1410,7 @@ function codexThreadRuntimeParams(input: {
   readonly mcpSession: McpProviderSession.McpProviderSessionConfig | undefined;
   readonly modelSelection?: { readonly model: string };
   readonly runtimePolicy?: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
+  readonly extraMcpConfig?: Readonly<Record<string, Schema.Json>>;
 }): {
   readonly cwd?: string;
   readonly model?: string;
@@ -1444,6 +1447,7 @@ function codexThreadRuntimeParams(input: {
               omit_tools_from: ["code_mode", "deferred"],
             },
           }),
+      ...(input.extraMcpConfig ?? {}),
     },
   };
 }
@@ -1724,6 +1728,26 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
   adapterOptions: CodexAdapterV2Options,
 ) {
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
+  const settingsOption = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
+  // No provider gets another project's MCP servers. Missing trusted project
+  // metadata disables all custom servers rather than widening access.
+  const sharedMcpConfig = (
+    session: McpProviderSession.McpProviderSessionConfig | undefined,
+  ): Effect.Effect<Readonly<Record<string, Schema.Json>>> =>
+    session?.projectId === undefined || Option.isNone(settingsOption)
+      ? Effect.succeed({})
+      : settingsOption.value.getSettings.pipe(
+          Effect.map((settings) =>
+            toCodexHarnessMcpConfig(
+              selectHarnessMcpServers(
+                settings.harnessMcpServers,
+                session.providerInstanceId,
+                session.projectId!,
+              ),
+            ),
+          ),
+          Effect.orElseSucceed(() => ({})),
+        );
   const readMcpSession = (threadId: ThreadId | null) =>
     threadId === null ? Effect.undefined : mcpSessions.read(threadId);
   const { clientFactory, digest, fileSystem, idAllocator, serverConfig } = adapterOptions;
@@ -7284,14 +7308,17 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             ensureInitialized.pipe(
               Effect.andThen(mcpSessions.read(threadInput.threadId)),
               Effect.flatMap((mcpSession) =>
-                client.request(
-                  "thread/start",
-                  codexThreadRuntimeParams({
-                    threadId: threadInput.threadId,
-                    mcpSession,
-                    modelSelection: threadInput.modelSelection,
-                    runtimePolicy: threadInput.runtimePolicy,
-                  }),
+                Effect.flatMap(sharedMcpConfig(mcpSession), (extraMcpConfig) =>
+                  client.request(
+                    "thread/start",
+                    codexThreadRuntimeParams({
+                      threadId: threadInput.threadId,
+                      mcpSession,
+                      modelSelection: threadInput.modelSelection,
+                      runtimePolicy: threadInput.runtimePolicy,
+                      extraMcpConfig,
+                    }),
+                  ),
                 ),
               ),
               Effect.map((response): OrchestrationV2ProviderThread =>
@@ -7317,11 +7344,14 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             function* (threadInput) {
               const nativeThreadId = yield* getNativeThreadId(threadInput.providerThread);
               const appThreadId = threadInput.threadId ?? threadInput.providerThread.appThreadId;
+              const nativeMcpSession = yield* readMcpSession(appThreadId);
+              const extraMcpConfig = yield* sharedMcpConfig(nativeMcpSession);
               const resume = resumeNativeThread(nativeThreadId, {
                 excludeTurns: true,
                 ...codexThreadRuntimeParams({
                   threadId: appThreadId,
-                  mcpSession: yield* readMcpSession(appThreadId),
+                  mcpSession: nativeMcpSession,
+                  extraMcpConfig,
                   ...(threadInput.modelSelection === undefined
                     ? {}
                     : { modelSelection: threadInput.modelSelection }),
@@ -8091,11 +8121,14 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               }
               // thread/revert requires the thread loaded in this app-server; resume after restart or idle release.
               if (!loaded) {
+                const nativeMcpSession = yield* readMcpSession(threadInput.providerThread.appThreadId);
+                const extraMcpConfig = yield* sharedMcpConfig(nativeMcpSession);
                 yield* resumeNativeThread(threadId, {
                   excludeTurns: true,
                   ...codexThreadRuntimeParams({
                     threadId: threadInput.providerThread.appThreadId,
-                    mcpSession: yield* readMcpSession(threadInput.providerThread.appThreadId),
+                    mcpSession: nativeMcpSession,
+                    extraMcpConfig,
                     modelSelection: input.modelSelection,
                     runtimePolicy: input.runtimePolicy,
                   }),
@@ -8139,12 +8172,15 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             function* (threadInput) {
               const threadId = yield* getNativeThreadId(threadInput.sourceProviderThread);
               const boundary = yield* resolveCodexForkBoundary(threadInput);
+              const nativeMcpSession = yield* mcpSessions.read(threadInput.targetThreadId);
+              const extraMcpConfig = yield* sharedMcpConfig(nativeMcpSession);
               const fork = client.request("thread/fork", {
                 threadId,
                 ...(boundary.lastTurnId === undefined ? {} : { lastTurnId: boundary.lastTurnId }),
                 ...codexThreadRuntimeParams({
                   threadId: threadInput.targetThreadId,
-                  mcpSession: yield* mcpSessions.read(threadInput.targetThreadId),
+                  mcpSession: nativeMcpSession,
+                  extraMcpConfig,
                   ...(threadInput.modelSelection === undefined
                     ? {}
                     : { modelSelection: threadInput.modelSelection }),

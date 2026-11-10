@@ -213,6 +213,7 @@ import {
 } from "@t3tools/provider-core/server/mcpToolPresentation";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import { selectHarnessMcpServers, toClaudeHarnessMcpServers } from "@t3tools/shared/harnessMcp";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import {
   makeProviderFailure,
@@ -10868,7 +10869,33 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               ? {}
               : { allowedTools: queryPolicy.allowedTools }),
           });
-          const queryPolicyKey = claudeEffectiveQueryPolicyKey(queryPolicy, mcpOverrides);
+          // All native providers read the same UI-maintained registry. User
+          // configuration cannot override T3's privileged orchestration MCP.
+          const harnessMcpSettings = Option.isSome(serverSettings)
+            ? yield* serverSettings.value.getSettings.pipe(Effect.orElseSucceed(() => null))
+            : null;
+          const externalMcpServers =
+            harnessMcpSettings === null
+              ? {}
+              : toClaudeHarnessMcpServers(
+                  selectHarnessMcpServers(
+                    harnessMcpSettings.harnessMcpServers,
+                    turnInput.modelSelection.instanceId,
+                    turnInput.appThread.projectId,
+                  ),
+                );
+          const nativeMcpOverrides =
+            Object.keys(externalMcpServers).length === 0
+              ? mcpOverrides
+              : {
+                  ...mcpOverrides,
+                  mcpServers: {
+                    ...(mcpOverrides.mcpServers ?? {}),
+                    ...externalMcpServers,
+                  },
+                };
+
+          const queryPolicyKey = claudeEffectiveQueryPolicyKey(queryPolicy, nativeMcpOverrides);
           const compiledSelection = compileClaudeModelSelection(
             turnInput.modelSelection,
             modelCatalog,
@@ -11009,12 +11036,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 : undefined,
             ),
             tools: queryPolicy.tools ?? CLAUDE_CODE_PRESET_TOOLS,
-            ...(mcpOverrides.allowedTools === undefined
+            ...(nativeMcpOverrides.allowedTools === undefined
               ? {}
-              : { allowedTools: mcpOverrides.allowedTools }),
-            ...(mcpOverrides.mcpServers === undefined
+              : { allowedTools: nativeMcpOverrides.allowedTools }),
+            ...(nativeMcpOverrides.mcpServers === undefined
               ? {}
-              : { mcpServers: mcpOverrides.mcpServers }),
+              : { mcpServers: nativeMcpOverrides.mcpServers }),
             deviceToolsAvailable: mcpSession?.capabilities?.has("device") === true,
             permissionMode: queryPolicy.permissionMode,
             ...(queryPolicy.allowDangerouslySkipPermissions === undefined

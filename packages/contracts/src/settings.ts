@@ -1330,7 +1330,29 @@ export const CloudSpeechCredentials = Schema.Struct({
   openrouter: CloudSpeechCredential,
 });
 
+/**
+ * Shared user-created MCP servers. Secrets are deliberately NOT included here.
+ * HTTP endpoints requiring credentials must use a secret provider separately,
+ * rather than storing headers/tokens in settings.json.
+ */
+export const HarnessMcpServerConfig = Schema.Struct({
+  name: TrimmedNonEmptyString,
+  enabled: Schema.Boolean,
+  transport: Schema.Literals(["http", "stdio"]),
+  url: TrimmedString,
+  command: TrimmedString,
+  args: Schema.Array(Schema.String),
+  cwd: TrimmedString,
+  providerInstanceIds: Schema.Array(ProviderInstanceId),
+  projectIds: Schema.Array(ProjectId),
+  allowedTools: Schema.Array(Schema.String),
+});
+export type HarnessMcpServerConfig = typeof HarnessMcpServerConfig.Type;
+
 export const ServerSettings = Schema.Struct({
+  harnessMcpServers: Schema.Record(Schema.String, HarnessMcpServerConfig).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
   // Null means unmigrated; empty is authoritative and must not resurrect cleared preferences.
   favorites: Schema.NullOr(ModelFavorites).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   providerModelPreferences: Schema.NullOr(ProviderModelPreferences).pipe(
@@ -1909,6 +1931,10 @@ export const ServerSettingsPatch = Schema.Struct({
   sourceControlHosts: Schema.optionalKey(Schema.Record(Schema.String, SourceControlHostSettings)),
   // Replace whole maps to avoid half-merged driver configs.
   providerInstances: Schema.optionalKey(Schema.Record(ProviderInstanceId, ProviderInstanceConfig)),
+  // Shared MCP configuration: null deletes a server; no raw authentication secrets.
+  harnessMcpServers: Schema.optionalKey(
+    Schema.Record(Schema.String, Schema.NullOr(HarnessMcpServerConfig)),
+  ),
   // Merge per source to avoid racing other edits; null removes an entry.
   usageLimitSources: Schema.optionalKey(
     Schema.Record(UsageLimitSourceId, Schema.NullOr(UsageLimitSourceConfig)),

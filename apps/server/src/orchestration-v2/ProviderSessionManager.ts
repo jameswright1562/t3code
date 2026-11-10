@@ -45,6 +45,7 @@ import {
 import { ProviderWorkspaceMissingError } from "../provider/Errors.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import { selectHarnessMcpServers } from "@t3tools/shared/harnessMcp";
 import * as ServerSettings from "../serverSettings.ts";
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import * as EventSink from "./EventSink.ts";
@@ -486,10 +487,11 @@ export const layerWithOptions = (
                 >(["orchestration", "worktree", "pull-requests"]);
                 if (browserToolsAvailable) capabilities.add("preview");
                 if (deviceToolsAvailable) capabilities.add("device");
-                const subagent = yield* projectionStore.getThread(threadId).pipe(
-                  Effect.map((thread) => thread.lineage.relationshipToParent === "subagent"),
-                  Effect.orElseSucceed(() => false),
+                const callingThread = yield* projectionStore.getThread(threadId).pipe(
+                  Effect.orElseSucceed(() => null),
                 );
+                const subagent =
+                  callingThread?.lineage.relationshipToParent === "subagent";
                 const existing = yield* mcpSessions.read(threadId);
                 if (existing !== undefined) {
                   // Reserve before async validation so release cannot revoke between validation and reservation.
@@ -526,7 +528,24 @@ export const layerWithOptions = (
                   capabilities,
                   subagent,
                 });
-                yield* mcpSessions.set(credential.config);
+                const sharedMcpServers =
+                  callingThread === null || Option.isNone(serverSettings)
+                    ? {}
+                    : yield* serverSettings.value.getSettings.pipe(
+                        Effect.map((settings) =>
+                          selectHarnessMcpServers(
+                            settings.harnessMcpServers,
+                            providerInstanceId,
+                            callingThread.projectId,
+                          ),
+                        ),
+                        Effect.orElseSucceed(() => ({})),
+                      );
+                yield* mcpSessions.set({
+                  ...credential.config,
+                  ...(callingThread === null ? {} : { projectId: callingThread.projectId }),
+                  sharedMcpServers,
+                });
                 reserveMcpCredential(threadId, credential.config.providerSessionId);
                 return { mcpCredentialId: credential.config.providerSessionId, issued: true };
               }),

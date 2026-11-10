@@ -2,6 +2,8 @@ import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
+import * as AgentHarnessMemory from "./memory/AgentMemory.ts";
+import { HarnessMemoryError } from "@t3tools/contracts";
 import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
 import * as PeerLinks from "./peer/PeerLinks.ts";
 
@@ -2384,6 +2386,41 @@ export const layerWsRpc = (
         [WS_METHODS.scheduledTasksGetWebhookDelivery]: (input) =>
           Effect.annotateCurrentSpan({ "scheduled_task.id": input.id }).pipe(
             Effect.andThen(scheduledTasks.getWebhookDelivery(input)),
+          ),
+        [WS_METHODS.harnessMemoryList]: ({ scope, limit }) =>
+          AgentHarnessMemory.listMemory([scope], limit).pipe(
+            Effect.provideService(SqlClient.SqlClient, sql),
+            Effect.mapError(() => new HarnessMemoryError({ message: "Could not list memory for this scope." })),
+          ),
+        [WS_METHODS.harnessMemoryConfirm]: (input) =>
+          AgentHarnessMemory.confirmMemory(input).pipe(
+            Effect.provideService(SqlClient.SqlClient, sql),
+            Effect.mapError(() => new HarnessMemoryError({ message: "Could not confirm memory in this scope." })),
+          ),
+        [WS_METHODS.harnessMemoryForget]: (input) =>
+          AgentHarnessMemory.forgetMemory(input).pipe(
+            Effect.provideService(SqlClient.SqlClient, sql),
+            Effect.mapError(() => new HarnessMemoryError({ message: "Could not remove memory in this scope." })),
+          ),
+        [WS_METHODS.harnessMemoryPin]: (input) =>
+          AgentHarnessMemory.pinMemory(input).pipe(
+            Effect.provideService(SqlClient.SqlClient, sql),
+            Effect.mapError(() => new HarnessMemoryError({ message: "Could not change memory pin in this scope." })),
+          ),
+        [WS_METHODS.harnessMemoryRevise]: (input) =>
+          AgentHarnessMemory.reviseMemory(input).pipe(
+            Effect.provideService(SqlClient.SqlClient, sql),
+            Effect.mapError(() => new HarnessMemoryError({ message: "Could not revise memory in this scope." })),
+          ),
+        [WS_METHODS.harnessMemoryExport]: ({ scope }) =>
+          AgentHarnessMemory.exportMemory([scope]).pipe(
+            Effect.provideService(SqlClient.SqlClient, sql),
+            Effect.mapError(() => new HarnessMemoryError({ message: "Could not export memory for this scope." })),
+          ),
+        [WS_METHODS.harnessCheckpointRecover]: (input) =>
+          AgentHarnessMemory.recoverCheckpoint(input).pipe(
+            Effect.provideService(SqlClient.SqlClient, sql),
+            Effect.mapError(() => new HarnessMemoryError({ message: "Could not inspect checkpoints." })),
           ),
         [WS_METHODS.serverProbe]: (_input) => Effect.succeed({}),
         [WS_METHODS.serverGetConfig]: (_input) =>

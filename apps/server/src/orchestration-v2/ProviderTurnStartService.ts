@@ -25,6 +25,7 @@ import * as Path from "effect/Path";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
+import * as AgentMemoryContextService from "../memory/AgentMemoryContextService.ts";
 import * as ServerConfig from "../config.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
@@ -151,6 +152,7 @@ export const layer: Layer.Layer<
     const eventSink = yield* EventSink.EventSinkV2;
     const turnAnalytics = yield* ProviderUsageAnalytics.ProviderTurnAnalytics;
     const contextHandoffService = yield* ContextHandoffService.ContextHandoffServiceV2;
+    const agentMemoryContext = yield* Effect.serviceOption(AgentMemoryContextService.AgentMemoryContextService);
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -1578,6 +1580,15 @@ export const layer: Layer.Layer<
           ],
         });
       });
+      // Attach stored memory once to each fresh native provider session, not to every turn.
+      const savedProjectMemoryContext =
+        runningProviderThread.nativeThreadRef === null && !goalCommand && Option.isSome(agentMemoryContext)
+          ? yield* agentMemoryContext.value.prepare({
+              projectId: projection.thread.projectId,
+              threadId: projection.thread.id,
+              query: userText,
+            })
+          : "";
       const startWithHandoffs = Effect.fn("ProviderTurnStartService.startWithHandoffs")(
         function* (turnInput: Parameters<typeof session.startTurn>[0], compact = false) {
           const delivery = yield* deliverContextHandoffs({
@@ -1604,7 +1615,12 @@ export const layer: Layer.Layer<
             sideChatHandoff === undefined || compact || goalCommand
               ? ""
               : sideChatHandoff.summaryText;
-          const context = [delivery.context, sideChatContext, restartNote]
+          const context = [
+            delivery.context,
+            sideChatContext,
+            restartNote,
+            compact ? "" : savedProjectMemoryContext,
+          ]
             .filter((part) => part !== "")
             .join("\n\n");
           const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;
@@ -1672,7 +1688,8 @@ export const layer: Layer.Layer<
         retryHandoff.length === 0 &&
         sideChatHandoff === undefined &&
         restartNote === "" &&
-        !noteContinuation
+        !noteContinuation &&
+        savedProjectMemoryContext === ""
           ? session
           : makeDeliverySession(session, startWithHandoffs);
       return runExecution.startRootRun({

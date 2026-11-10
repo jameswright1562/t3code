@@ -9,6 +9,7 @@ import type {
   ToolCall,
 } from "@cursor/sdk";
 import { formatReadToolLabel, formatSearchToolLabel } from "@t3tools/shared/toolActivity";
+import { toClaudeHarnessMcpServers } from "@t3tools/shared/harnessMcp";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import {
   isOrchestrationV2WorkActive,
@@ -213,6 +214,7 @@ export function cursorMcpServers(
         Authorization: session.authorizationHeader,
       },
     },
+    ...toClaudeHarnessMcpServers(session.sharedMcpServers ?? {}),
   };
 }
 
