@@ -2407,6 +2407,11 @@ export const layerWsRpc = (
             Effect.provideService(SqlClient.SqlClient, sql),
             Effect.mapError(() => new HarnessMemoryError({ message: "Could not change memory pin in this scope." })),
           ),
+        [WS_METHODS.harnessMemoryRevise]: (input) =>
+          AgentHarnessMemory.reviseMemory(input).pipe(
+            Effect.provideService(SqlClient.SqlClient, sql),
+            Effect.mapError(() => new HarnessMemoryError({ message: "Could not revise memory in this scope." })),
+          ),
         [WS_METHODS.harnessMemoryExport]: ({ scope }) =>
           AgentHarnessMemory.exportMemory([scope]).pipe(
             Effect.provideService(SqlClient.SqlClient, sql),
