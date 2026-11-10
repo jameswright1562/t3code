@@ -134,7 +134,6 @@ export const layer: Layer.Layer<
   never,
   | EventSink.EventSinkV2
   | ContextHandoffService.ContextHandoffServiceV2
-  | AgentMemoryContextService.AgentMemoryContextService
   | IdAllocator.IdAllocatorV2
   | FileSystem.FileSystem
   | Path.Path
@@ -153,7 +152,7 @@ export const layer: Layer.Layer<
     const eventSink = yield* EventSink.EventSinkV2;
     const turnAnalytics = yield* ProviderUsageAnalytics.ProviderTurnAnalytics;
     const contextHandoffService = yield* ContextHandoffService.ContextHandoffServiceV2;
-    const agentMemoryContext = yield* AgentMemoryContextService.AgentMemoryContextService;
+    const agentMemoryContext = yield* Effect.serviceOption(AgentMemoryContextService.AgentMemoryContextService);
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -1583,8 +1582,8 @@ export const layer: Layer.Layer<
       });
       // Attach stored memory once to each fresh native provider session, not to every turn.
       const savedProjectMemoryContext =
-        runningProviderThread.nativeThreadRef === null && !goalCommand
-          ? yield* agentMemoryContext.prepare({
+        runningProviderThread.nativeThreadRef === null && !goalCommand && Option.isSome(agentMemoryContext)
+          ? yield* agentMemoryContext.value.prepare({
               projectId: projection.thread.projectId,
               threadId: projection.thread.id,
               query: userText,
