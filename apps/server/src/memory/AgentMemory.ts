@@ -417,12 +417,12 @@ export const recoverCheckpoint = Effect.fn("AgentMemory.recoverCheckpoint")(func
   `;
   let skippedInvalid = 0;
   for (const row of rows) {
-    const decoded = yield* Effect.either(decodeJson(row.checkpointJson));
-    if (decoded._tag === "Left") {
+    const decoded = yield* Effect.result(decodeJson(row.checkpointJson));
+    if (decoded._tag === "Failure") {
       skippedInvalid++;
       continue;
     }
-    const checkpoint = decoded.right;
+    const checkpoint = decoded.value;
     if (
       typeof checkpoint !== "object" ||
       checkpoint === null ||
