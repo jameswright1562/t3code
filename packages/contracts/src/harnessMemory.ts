@@ -59,11 +59,22 @@ export const HarnessMemoryAuditEvent = Schema.Struct({
   payloadJson: Schema.String,
   occurredAt: Schema.String,
 });
+export const HarnessMemoryCheckpointArchive = Schema.Struct({
+  id: Schema.String,
+  projectId: Schema.String,
+  threadId: Schema.String,
+  taskId: Schema.NullOr(Schema.String),
+  sequence: Schema.Number,
+  checkpointJson: Schema.String,
+  createdAt: Schema.String,
+  schemaVersion: Schema.Number,
+});
 export const HarnessMemoryBackup = Schema.Struct({
-  schemaVersion: Schema.Literal(1),
+  schemaVersion: Schema.Literal(2),
   scope: HarnessMemoryScope,
   entries: Schema.Array(HarnessMemoryEntry),
   events: Schema.Array(HarnessMemoryAuditEvent),
+  checkpoints: Schema.Array(HarnessMemoryCheckpointArchive),
   checksum: Schema.String,
 });
 export type HarnessMemoryBackup = typeof HarnessMemoryBackup.Type;
@@ -74,6 +85,7 @@ export const HarnessMemoryRestoreInput = Schema.Struct({
 export const HarnessMemoryRestoreResult = Schema.Struct({
   importedEntries: Schema.Number,
   importedEvents: Schema.Number,
+  importedCheckpoints: Schema.Number,
 });
 export const HarnessCheckpointRecoverInput = Schema.Struct({
   projectId: Schema.String,

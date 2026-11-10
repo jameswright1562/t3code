@@ -22,16 +22,29 @@ export interface MemoryAuditEvent {
   readonly payloadJson: string;
   readonly occurredAt: string;
 }
+export interface MemoryCheckpointArchive {
+  readonly id: string;
+  readonly projectId: string;
+  readonly threadId: string;
+  readonly taskId: string | null;
+  readonly sequence: number;
+  readonly checkpointJson: string;
+  readonly createdAt: string;
+  readonly schemaVersion: number;
+}
 export interface MemoryBackup {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly scope: MemoryScope;
   readonly entries: readonly MemoryEntry[];
   readonly events: readonly MemoryAuditEvent[];
+  /** Checkpoints are only exported for an exact project scope, never implicitly for a thread/global scope. */
+  readonly checkpoints: readonly MemoryCheckpointArchive[];
   readonly checksum: string;
 }
 export interface MemoryImportResult {
   readonly importedEntries: number;
   readonly importedEvents: number;
+  readonly importedCheckpoints: number;
 }
 type BackupPayload = Omit<MemoryBackup, "checksum">;
 
@@ -41,6 +54,7 @@ interface MemoryRow extends Omit<MemoryEntry, "pinned"> {
 
 const MAX_ITEMS = 10000;
 const MAX_EVENTS = 100000;
+const MAX_CHECKPOINTS = 10000;
 const MAX_JSON_BYTES = 16 * 1024 * 1024;
 const encodeJson = Schema.encodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
@@ -82,14 +96,26 @@ export const exportMemoryBackup = Effect.fn("MemoryBackup.export")(function* (sc
     WHERE m.scope_type = ${scope.scopeType} AND m.scope_id = ${scope.scopeId}
     ORDER BY e.seq
   `;
-  if (rows.length > MAX_ITEMS || events.length > MAX_EVENTS) {
-    return yield* invalid("Backup exceeds the per-scope entry or audit event limit");
+  const checkpoints = scope.scopeType === "project"
+    ? yield* sql<MemoryCheckpointArchive>`
+      SELECT id, project_id AS "projectId", thread_id AS "threadId",
+        task_id AS "taskId", sequence, checkpoint_json AS "checkpointJson",
+        created_at AS "createdAt", schema_version AS "schemaVersion"
+      FROM agent_memory_checkpoints
+      WHERE project_id = ${scope.scopeId}
+      ORDER BY thread_id, sequence
+    `
+    : [];
+  if (rows.length > MAX_ITEMS || events.length > MAX_EVENTS ||
+      checkpoints.length > MAX_CHECKPOINTS) {
+    return yield* invalid("Backup exceeds the per-scope record limit");
   }
   const payload = {
-    schemaVersion: 1 as const,
+    schemaVersion: 2 as const,
     scope,
     entries: rows.map(item),
     events,
+    checkpoints,
   };
   const encoded = yield* encodeJson(payload);
   if (Buffer.byteLength(encoded, "utf8") > MAX_JSON_BYTES) {
@@ -103,7 +129,7 @@ export const importMemoryBackup = Effect.fn("MemoryBackup.import")(function* (in
   readonly backup: MemoryBackup;
 }) {
   const { scope, backup } = input;
-  if (!scope.scopeId.trim() || backup.schemaVersion !== 1 ||
+  if (!scope.scopeId.trim() || backup.schemaVersion !== 2 ||
       backup.scope.scopeType !== scope.scopeType || backup.scope.scopeId !== scope.scopeId) {
     return yield* invalid("Backup does not belong to the selected scope");
   }
@@ -112,9 +138,11 @@ export const importMemoryBackup = Effect.fn("MemoryBackup.import")(function* (in
     scope: backup.scope,
     entries: backup.entries,
     events: backup.events,
+    checkpoints: backup.checkpoints,
   };
   const encoded = yield* encodeJson(payload);
   if (backup.entries.length > MAX_ITEMS || backup.events.length > MAX_EVENTS ||
+      backup.checkpoints.length > MAX_CHECKPOINTS ||
       Buffer.byteLength(encoded, "utf8") > MAX_JSON_BYTES ||
       !/^[a-f0-9]{64}$/.test(backup.checksum) ||
       (yield* checksumMemoryBackup(payload)) !== backup.checksum) {
@@ -141,11 +169,30 @@ export const importMemoryBackup = Effect.fn("MemoryBackup.import")(function* (in
       return yield* invalid("Backup contains malformed audit JSON");
     }
   }
+  const checkpointIds = new Set<string>();
+  const sequenceIds = new Set<string>();
+  for (const checkpoint of backup.checkpoints) {
+    const seqId = checkpoint.threadId + ":" + checkpoint.sequence;
+    if (scope.scopeType !== "project" || checkpoint.projectId !== scope.scopeId ||
+        !checkpoint.id.trim() || !checkpoint.threadId.trim() ||
+        !Number.isSafeInteger(checkpoint.sequence) || checkpoint.sequence < 0 ||
+        checkpoint.schemaVersion !== 1 ||
+        checkpointIds.has(checkpoint.id) || sequenceIds.has(seqId)) {
+      return yield* invalid("Backup contains an invalid, duplicate or out-of-scope checkpoint");
+    }
+    checkpointIds.add(checkpoint.id);
+    sequenceIds.add(seqId);
+    const decoded = yield* Effect.result(decodeJson(checkpoint.checkpointJson));
+    if (decoded._tag === "Failure") {
+      return yield* invalid("Backup contains malformed checkpoint JSON");
+    }
+  }
   const sql = yield* SqlClient.SqlClient;
   return yield* sql.withTransaction(
     Effect.gen(function* () {
       let importedEntries = 0;
       let importedEvents = 0;
+      let importedCheckpoints = 0;
       for (const entry of backup.entries) {
         // Conflicting IDs must abort the ENTIRE restore, never mutate an
         // existing user-confirmed memory or silently resurrect tombstones.
@@ -201,7 +248,35 @@ export const importMemoryBackup = Effect.fn("MemoryBackup.import")(function* (in
         `;
         importedEvents++;
       }
-      return { importedEntries, importedEvents } satisfies MemoryImportResult;
+      for (const checkpoint of backup.checkpoints) {
+        const existing = yield* sql<MemoryCheckpointArchive>`
+          SELECT id, project_id AS "projectId", thread_id AS "threadId",
+            task_id AS "taskId", sequence, checkpoint_json AS "checkpointJson",
+            created_at AS "createdAt", schema_version AS "schemaVersion"
+          FROM agent_memory_checkpoints
+          WHERE id = ${checkpoint.id} OR
+            (thread_id = ${checkpoint.threadId} AND sequence = ${checkpoint.sequence})
+        `;
+        if (existing.length > 0) {
+          if (existing.length !== 1 ||
+              !(Object.keys(checkpoint) as (keyof MemoryCheckpointArchive)[]).every(
+                (key) => existing[0]![key] === checkpoint[key]
+              )) return yield* invalid("Existing checkpoint conflicts with backup: " + checkpoint.id);
+          continue;
+        }
+        yield* sql`
+          INSERT INTO agent_memory_checkpoints
+            (id, project_id, thread_id, task_id, sequence, checkpoint_json,
+              created_at, schema_version)
+          VALUES (
+            ${checkpoint.id}, ${checkpoint.projectId}, ${checkpoint.threadId},
+            ${checkpoint.taskId}, ${checkpoint.sequence}, ${checkpoint.checkpointJson},
+            ${checkpoint.createdAt}, ${checkpoint.schemaVersion}
+          )
+        `;
+        importedCheckpoints++;
+      }
+      return { importedEntries, importedEvents, importedCheckpoints } satisfies MemoryImportResult;
     }),
   );
 });

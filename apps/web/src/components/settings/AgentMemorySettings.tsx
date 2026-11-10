@@ -166,7 +166,7 @@ export function AgentMemorySettings() {
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
-      setMessage("Saved complete scoped memory backup, including tombstones and audit history.");
+      setMessage("Saved complete scoped memory backup, including audit, revisions, tombstones and project checkpoints.");
     } catch {
       setMessage("Full memory backup failed.");
     } finally {
@@ -196,7 +196,7 @@ export function AgentMemorySettings() {
         return;
       }
       memories.refresh();
-      setMessage(`Restored ${result.value.importedEntries} memories and ${result.value.importedEvents} audit events.`);
+      setMessage(`Restored ${result.value.importedEntries} memories, ${result.value.importedEvents} audit events, and ${result.value.importedCheckpoints} checkpoints.`);
     } catch {
       setMessage("Could not read or restore this backup JSON file.");
     } finally {

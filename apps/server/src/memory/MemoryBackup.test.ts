@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { layerMemory } from "../persistence/Sqlite.ts";
-import { confirmMemory, forgetMemory, listMemory, remember, reviseMemory } from "./AgentMemory.ts";
+import { confirmMemory, forgetMemory, listMemory, remember, reviseMemory, saveCheckpoint, recoverCheckpoint } from "./AgentMemory.ts";
 import { checksumMemoryBackup, exportMemoryBackup, importMemoryBackup } from "./MemoryBackup.ts";
 
 const layer = it.layer(layerMemory);
@@ -23,21 +23,38 @@ layer("Lossless project-scoped memory backup", (it) => {
         eventId: "backup-revise", scope, content: "Revised decision",
       });
       yield* forgetMemory({ id: "backup-revision", scope, eventId: "backup-forget" });
+      yield* saveCheckpoint({
+        id: "backup-checkpoint", projectId: scope.scopeId, threadId: "thread-for-backup",
+        sequence: 1, checkpoint: {
+          schemaVersion: 1, objective: "Recover this session", nextActions: ["review diff"],
+        },
+      });
+      yield* saveCheckpoint({
+        id: "backup-foreign-checkpoint", projectId: "different-project",
+        threadId: "different-thread", sequence: 1, checkpoint: {
+          schemaVersion: 1, objective: "Must not export",
+        },
+      });
       const before = yield* exportMemoryBackup(scope);
       assert.equal(before.entries.length, 2);
       assert.equal(before.events.length, 5);
+      assert.equal(before.checkpoints.length, 1);
+      assert.equal(before.checkpoints[0]?.id, "backup-checkpoint");
       assert.equal(before.entries.find((x) => x.id === "backup-revision")?.tombstonedAt !== null, true);
       assert.equal(before.entries.find((x) => x.id === "backup-original")?.supersededBy, "backup-revision");
       const sql = yield* SqlClient.SqlClient;
+      yield* sql`DELETE FROM agent_memory_checkpoints WHERE id = 'backup-checkpoint'`;
       yield* sql`DELETE FROM agent_memory_events WHERE memory_id IN ('backup-original', 'backup-revision')`;
       yield* sql`DELETE FROM agent_memory_items WHERE id IN ('backup-original', 'backup-revision')`;
       const imported = yield* importMemoryBackup({ scope, backup: before });
-      assert.deepStrictEqual(imported, { importedEntries: 2, importedEvents: 5 });
+      assert.deepStrictEqual(imported, { importedEntries: 2, importedEvents: 5, importedCheckpoints: 1 });
       assert.deepStrictEqual(yield* importMemoryBackup({ scope, backup: before }), {
-        importedEntries: 0, importedEvents: 0,
+        importedEntries: 0, importedEvents: 0, importedCheckpoints: 0,
       });
       const after = yield* exportMemoryBackup(scope);
       assert.deepStrictEqual(after, before);
+      const checkpoint = yield* recoverCheckpoint({ projectId: scope.scopeId, threadId: "thread-for-backup" });
+      assert.equal(checkpoint.checkpoint?.id, "backup-checkpoint");
       assert.deepStrictEqual(yield* listMemory([scope]), []);
     }),
   );
@@ -63,7 +80,7 @@ layer("Lossless project-scoped memory backup", (it) => {
       // insert in the SAME transaction, rather than partially restoring it.
       const old = backup.entries[0]!;
       const staged = {
-        schemaVersion: 1 as const, scope,
+        schemaVersion: 2 as const, scope,
         entries: [
           { ...old, id: "backup-rollback-row", content: "Uncommitted record" },
           { ...old, content: "Malicious conflict" },
@@ -75,6 +92,7 @@ layer("Lossless project-scoped memory backup", (it) => {
           },
           ...backup.events,
         ],
+        checkpoints: backup.checkpoints,
       };
       const conflict = {
         ...staged,
