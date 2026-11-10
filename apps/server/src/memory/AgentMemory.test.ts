@@ -7,6 +7,7 @@ import {
   forgetMemory,
   confirmMemory,
   latestCheckpoint,
+  pinMemory,
   recoverCheckpoint,
   exportMemory,
   listMemory,
@@ -75,6 +76,48 @@ layer("Checkpoint fallback and authorized export", (it) => {
 });
 
 layer("AgentMemory persistence", (it) => {
+  it.effect("pin changes are audited and do not cross project scopes", () =>
+    Effect.gen(function* () {
+      const input = {
+        id: "test-memory-pin",
+        eventId: "test-memory-pin-create",
+        scopeType: "project" as const,
+        scopeId: "pin-project-a",
+        kind: "preference" as const,
+        content: "Prefer deterministic tests",
+        sourceRef: "thread:tests:1",
+        sourceActor: "user",
+        verification: "user_confirmed" as const,
+      };
+      yield* remember(input);
+      const scope = { scopeType: input.scopeType, scopeId: input.scopeId };
+      const wrong = yield* Effect.result(
+        pinMemory({
+          id: input.id,
+          eventId: "pin-wrong",
+          scope: { scopeType: "project", scopeId: "pin-project-b" },
+          pinned: true,
+        }),
+      );
+      assert.equal(wrong._tag, "Failure");
+      assert.equal(yield* pinMemory({
+        id: input.id, scope, eventId: "pin-first", pinned: true,
+      }), true);
+      assert.equal(yield* pinMemory({
+        id: input.id, scope, eventId: "pin-retry", pinned: true,
+      }), false);
+      const items = yield* listMemory([scope]);
+      assert.equal(items.find((item) => item.id === input.id)?.pinned, true);
+      const sql = yield* SqlClient.SqlClient;
+      const events = yield* sql<{ count: number }>`
+        SELECT COUNT(*) AS "count" FROM agent_memory_events
+        WHERE memory_id = ${input.id} AND operation = 'pin_changed'
+      `;
+      assert.equal(events[0]?.count, 1);
+    }),
+  );
+
+
   it.effect("persists scoped source-backed memories with idempotent retries", () =>
     Effect.gen(function* () {
       const input = {
