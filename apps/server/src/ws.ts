@@ -3,6 +3,7 @@ import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as AgentHarnessMemory from "./memory/AgentMemory.ts";
+import * as AgentHarnessMemoryBackup from "./memory/MemoryBackup.ts";
 import { HarnessMemoryError } from "@t3tools/contracts";
 import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
 import * as PeerLinks from "./peer/PeerLinks.ts";
@@ -2416,6 +2417,16 @@ export const layerWsRpc = (
           AgentHarnessMemory.exportMemory([scope]).pipe(
             Effect.provideService(SqlClient.SqlClient, sql),
             Effect.mapError(() => new HarnessMemoryError({ message: "Could not export memory for this scope." })),
+          ),
+        [WS_METHODS.harnessMemoryBackup]: ({ scope }) =>
+          AgentHarnessMemoryBackup.exportMemoryBackup(scope).pipe(
+            Effect.provideService(SqlClient.SqlClient, sql),
+            Effect.mapError(() => new HarnessMemoryError({ message: "Could not back up memory for this scope." })),
+          ),
+        [WS_METHODS.harnessMemoryRestore]: (input) =>
+          AgentHarnessMemoryBackup.importMemoryBackup(input).pipe(
+            Effect.provideService(SqlClient.SqlClient, sql),
+            Effect.mapError(() => new HarnessMemoryError({ message: "Could not restore backup: invalid, conflicting or out of scope." })),
           ),
         [WS_METHODS.harnessCheckpointRecover]: (input) =>
           AgentHarnessMemory.recoverCheckpoint(input).pipe(

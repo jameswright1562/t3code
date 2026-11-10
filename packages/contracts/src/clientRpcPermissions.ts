@@ -23,6 +23,8 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.previewStopLocalServer]: AuthTerminalOperateScope,
   [WS_METHODS.harnessMemoryList]: AuthSettingsWriteScope,
   [WS_METHODS.harnessMemoryExport]: AuthSettingsWriteScope,
+  [WS_METHODS.harnessMemoryBackup]: AuthSettingsWriteScope,
+  [WS_METHODS.harnessMemoryRestore]: AuthSettingsWriteScope,
   [WS_METHODS.harnessCheckpointRecover]: AuthSettingsWriteScope,
   [WS_METHODS.harnessMemoryConfirm]: AuthSettingsWriteScope,
   [WS_METHODS.harnessMemoryForget]: AuthSettingsWriteScope,

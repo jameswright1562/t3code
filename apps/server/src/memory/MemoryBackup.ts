@@ -24,8 +24,8 @@ export interface MemoryAuditEvent {
 export interface MemoryBackup {
   readonly schemaVersion: 1;
   readonly scope: MemoryScope;
-  readonly entries: readonly MemoryEntry[];
-  readonly events: readonly MemoryAuditEvent[];
+  readonly entries: MemoryEntry[];
+  readonly events: MemoryAuditEvent[];
   readonly checksum: string;
 }
 export interface MemoryImportResult {

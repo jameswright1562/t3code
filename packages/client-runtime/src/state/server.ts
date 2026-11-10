@@ -1235,6 +1235,14 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:harness:memory:revise",
       tag: WS_METHODS.harnessMemoryRevise,
     }),
+    harnessBackupMemory: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:harness:memory:backup",
+      tag: WS_METHODS.harnessMemoryBackup,
+    }),
+    harnessRestoreMemory: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:harness:memory:restore",
+      tag: WS_METHODS.harnessMemoryRestore,
+    }),
     harnessExportMemory: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:harness:memory:export",
       tag: WS_METHODS.harnessMemoryExport,

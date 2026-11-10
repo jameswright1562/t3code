@@ -51,6 +51,30 @@ export const HarnessMemoryExport = Schema.Struct({
   schemaVersion: Schema.Literal(1),
   entries: Schema.Array(HarnessMemoryEntry),
 });
+/** Full audited memory backup, distinct from live-only export. */
+export const HarnessMemoryAuditEvent = Schema.Struct({
+  eventId: Schema.String,
+  memoryId: Schema.String,
+  operation: Schema.String,
+  payloadJson: Schema.String,
+  occurredAt: Schema.String,
+});
+export const HarnessMemoryBackup = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  scope: HarnessMemoryScope,
+  entries: Schema.Array(HarnessMemoryEntry),
+  events: Schema.Array(HarnessMemoryAuditEvent),
+  checksum: Schema.String,
+});
+export type HarnessMemoryBackup = typeof HarnessMemoryBackup.Type;
+export const HarnessMemoryRestoreInput = Schema.Struct({
+  scope: HarnessMemoryScope,
+  backup: HarnessMemoryBackup,
+});
+export const HarnessMemoryRestoreResult = Schema.Struct({
+  importedEntries: Schema.Number,
+  importedEvents: Schema.Number,
+});
 export const HarnessCheckpointRecoverInput = Schema.Struct({
   projectId: Schema.String,
   threadId: Schema.String,

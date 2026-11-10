@@ -32,7 +32,7 @@ on:
       - ".github/workflows/fork-memory-checks.yml"
   push:
     branches:
-      - "feat/macos-orchestrator-upstream-base"
+      - "feat/macos-harness-release-gates"
   workflow_dispatch:
 
 permissions:
@@ -58,6 +58,7 @@ jobs:
         run: |
           vp test run \
             apps/server/src/memory/AgentMemory.test.ts \
+            apps/server/src/memory/MemoryBackup.test.ts \
             apps/server/src/memory/MemoryContext.test.ts \
             packages/provider-opencode/src/server/openCodeLaunch.test.ts \
             apps/server/src/mcp/toolkits/core.test.ts \
