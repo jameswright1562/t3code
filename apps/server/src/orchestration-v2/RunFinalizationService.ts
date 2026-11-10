@@ -3,6 +3,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FiberMap from "effect/FiberMap";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
@@ -53,7 +54,7 @@ export class RunFinalizationService extends Context.Service<
 
 const make = Effect.gen(function* () {
   const checkpointCapture = yield* CheckpointCapture.CheckpointCaptureServiceV2;
-  const sql = yield* SqlClient.SqlClient;
+  const sqlOption = yield* Effect.serviceOption(SqlClient.SqlClient);
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const observer = yield* RunFinalizationObserver;
 
@@ -77,6 +78,7 @@ const make = Effect.gen(function* () {
     // T3's Git checkpoint is already durable at this point. Add an independent
     // task-context checkpoint with source references, without making a model call.
     // This is deliberately idempotent for effect retries after a crash.
+    if (Option.isSome(sqlOption)) {
     yield* Effect.gen(function* () {
       const run = projection.runs.find((candidate) => candidate.id === input.runId);
       if (!run) return;
@@ -95,7 +97,7 @@ const make = Effect.gen(function* () {
         checkpoint: {
           schemaVersion: 1,
           objective: thread.title || "Coding task",
-          branch: thread.branch ?? undefined,
+          ...(thread.branch === null ? {} : { branch: thread.branch }),
           sourceEventRefs: [`t3:run:${input.runId}`],
           decisionMemoryIds: memory
             .filter((entry) => entry.verification !== "proposed" && entry.kind === "decision")
@@ -103,7 +105,7 @@ const make = Effect.gen(function* () {
         },
       });
     }).pipe(
-      Effect.provideService(SqlClient.SqlClient, sql),
+      Effect.provideService(SqlClient.SqlClient, sqlOption.value),
       Effect.catchCause((cause) =>
         Effect.logWarning("Could not persist durable task-context checkpoint", {
           threadId: input.threadId,
@@ -112,6 +114,7 @@ const make = Effect.gen(function* () {
         }),
       ),
     );
+    }
     const cwd = projection.checkpointScopes.find((scope) => scope.id === input.scopeId)?.cwd;
     if (cwd !== undefined) {
       // Retrying a display refresh after the checkpoint is durable blocks the next turn.
