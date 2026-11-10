@@ -29,6 +29,7 @@ export function AgentMemorySettings() {
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [threadId, setThreadId] = useState("");
+  const [editing, setEditing] = useState<{ id: string; content: string } | null>(null);
   const recovery = useEnvironmentQuery(
     environmentId !== null && projectId !== null && threadId.trim().length > 0
       ? serverEnvironment.harnessRecoverCheckpoint({
@@ -42,6 +43,7 @@ export function AgentMemorySettings() {
   const forget = useAtomCommand(serverEnvironment.harnessForgetMemory);
   const pin = useAtomCommand(serverEnvironment.harnessPinMemory);
   const exportEntries = useAtomCommand(serverEnvironment.harnessExportMemory);
+  const revise = useAtomCommand(serverEnvironment.harnessReviseMemory);
   const entries = memories.data?.filter((entry) =>
     [entry.kind, entry.content, entry.sourceRef, entry.verification]
       .some((value) => value.toLowerCase().includes(filter.trim().toLowerCase())),
@@ -75,6 +77,40 @@ export function AgentMemorySettings() {
       }
     } catch {
       setMessage("The memory operation failed.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function saveRevision(): Promise<void> {
+    if (environmentId === null || scope === null || editing === null) return;
+    const content = editing.content.trim();
+    if (!content || content.length > 100_000) {
+      setMessage("Revision must contain 1–100,000 characters.");
+      return;
+    }
+    setBusy(editing.id);
+    setMessage(null);
+    try {
+      const result = await revise({
+        environmentId,
+        input: {
+          id: editing.id,
+          replacementId: randomUUID(),
+          eventId: randomUUID(),
+          scope,
+          content,
+        },
+      });
+      if (result._tag !== "Success") {
+        setMessage("Revision not saved. Refresh and check for a newer revision.");
+      } else {
+        setEditing(null);
+        memories.refresh();
+        setMessage("Saved a verified revision. Original source and audit history are retained.");
+      }
+    } catch {
+      setMessage("Memory revision failed.");
     } finally {
       setBusy(null);
     }
@@ -153,6 +189,10 @@ export function AgentMemorySettings() {
                         Approve
                       </Button>
                     ) : null}
+                    <Button size="xs" variant="outline" disabled={busy !== null}
+                      onClick={() => setEditing({ id: entry.id, content: entry.content })}>
+                      Edit
+                    </Button>
                     <Button size="xs" variant="outline" disabled={busy !== null} onClick={() => void mutate(entry, "pin")}>
                       {entry.pinned ? "Unpin" : "Pin"}
                     </Button>
@@ -161,7 +201,29 @@ export function AgentMemorySettings() {
                     </Button>
                   </div>
                 </div>
-                <p className="whitespace-pre-wrap break-words text-sm">{entry.content}</p>
+                {editing?.id === entry.id ? (
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs" htmlFor={`edit-memory-${entry.id}`}>New memory revision</label>
+                    <textarea
+                      id={`edit-memory-${entry.id}`}
+                      className="min-h-24 w-full rounded-md border bg-background p-2 text-sm"
+                      value={editing.content}
+                      maxLength={100_000}
+                      onChange={(event) => setEditing({ id: entry.id, content: event.target.value })}
+                    />
+                    <div className="flex gap-2">
+                      <Button size="xs" disabled={busy !== null} onClick={() => void saveRevision()}>
+                        Save revision
+                      </Button>
+                      <Button size="xs" variant="outline" disabled={busy !== null}
+                        onClick={() => setEditing(null)}>
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="whitespace-pre-wrap break-words text-sm">{entry.content}</p>
+                )}
                 <p className="mt-1 break-all text-xs text-muted-foreground">
                   Source: {entry.sourceRef} · {entry.sourceActor}
                 </p>
