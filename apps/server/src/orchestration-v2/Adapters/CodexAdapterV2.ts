@@ -7344,11 +7344,14 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             function* (threadInput) {
               const nativeThreadId = yield* getNativeThreadId(threadInput.providerThread);
               const appThreadId = threadInput.threadId ?? threadInput.providerThread.appThreadId;
+              const nativeMcpSession = yield* readMcpSession(appThreadId);
+              const extraMcpConfig = yield* sharedMcpConfig(nativeMcpSession);
               const resume = resumeNativeThread(nativeThreadId, {
                 excludeTurns: true,
                 ...codexThreadRuntimeParams({
                   threadId: appThreadId,
-                  mcpSession: yield* readMcpSession(appThreadId),
+                  mcpSession: nativeMcpSession,
+                  extraMcpConfig,
                   ...(threadInput.modelSelection === undefined
                     ? {}
                     : { modelSelection: threadInput.modelSelection }),
@@ -8118,11 +8121,14 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               }
               // thread/revert requires the thread loaded in this app-server; resume after restart or idle release.
               if (!loaded) {
+                const nativeMcpSession = yield* readMcpSession(threadInput.providerThread.appThreadId);
+                const extraMcpConfig = yield* sharedMcpConfig(nativeMcpSession);
                 yield* resumeNativeThread(threadId, {
                   excludeTurns: true,
                   ...codexThreadRuntimeParams({
                     threadId: threadInput.providerThread.appThreadId,
-                    mcpSession: yield* readMcpSession(threadInput.providerThread.appThreadId),
+                    mcpSession: nativeMcpSession,
+                    extraMcpConfig,
                     modelSelection: input.modelSelection,
                     runtimePolicy: input.runtimePolicy,
                   }),
@@ -8166,12 +8172,15 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             function* (threadInput) {
               const threadId = yield* getNativeThreadId(threadInput.sourceProviderThread);
               const boundary = yield* resolveCodexForkBoundary(threadInput);
+              const nativeMcpSession = yield* mcpSessions.read(threadInput.targetThreadId);
+              const extraMcpConfig = yield* sharedMcpConfig(nativeMcpSession);
               const fork = client.request("thread/fork", {
                 threadId,
                 ...(boundary.lastTurnId === undefined ? {} : { lastTurnId: boundary.lastTurnId }),
                 ...codexThreadRuntimeParams({
                   threadId: threadInput.targetThreadId,
-                  mcpSession: yield* mcpSessions.read(threadInput.targetThreadId),
+                  mcpSession: nativeMcpSession,
+                  extraMcpConfig,
                   ...(threadInput.modelSelection === undefined
                     ? {}
                     : { modelSelection: threadInput.modelSelection }),
