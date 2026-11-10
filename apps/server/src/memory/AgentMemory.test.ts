@@ -5,6 +5,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { layerMemory } from "../persistence/Sqlite.ts";
 import {
   forgetMemory,
+  confirmMemory,
   latestCheckpoint,
   listMemory,
   remember,
@@ -131,4 +132,46 @@ layer("AgentMemory persistence", (it) => {
       assert.equal(conflict._tag, "Failure");
     }),
   );
+  it.effect("requires explicit user confirmation before a proposed memory is trusted", () =>
+    Effect.gen(function* () {
+      const proposal = {
+        id: "memory-awaiting-confirmation",
+        eventId: "memory-proposal-event",
+        scopeType: "project" as const,
+        scopeId: "project-proposals",
+        kind: "decision" as const,
+        content: "Use durable source-backed memory",
+        sourceRef: "thread:t3-proposal:session:abc",
+        sourceActor: "agent:claude",
+        verification: "proposed" as const,
+      };
+      yield* remember(proposal);
+      const scope = { scopeType: proposal.scopeType, scopeId: proposal.scopeId };
+      const before = yield* listMemory([scope]);
+      assert.equal(before.find((item) => item.id === proposal.id)?.verification, "proposed");
+      assert.equal(
+        yield* confirmMemory({
+          id: proposal.id,
+          scope,
+          eventId: "memory-user-confirmed-event",
+        }),
+        true,
+      );
+      assert.equal(
+        yield* confirmMemory({
+          id: proposal.id,
+          scope,
+          eventId: "memory-user-confirmed-event",
+        }),
+        false,
+      );
+      const after = yield* listMemory([scope]);
+      assert.equal(after.find((item) => item.id === proposal.id)?.verification, "user_confirmed");
+      const sql = yield* SqlClient.SqlClient;
+      const events = yield* sql<{ count: number }>`SELECT COUNT(*) AS "count"
+        FROM agent_memory_events WHERE memory_id = ${proposal.id}`;
+      assert.equal(events[0]?.count, 2);
+    }),
+  );
+
 });
