@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
 import path from "node:path";
 
 export interface OpenCodeLaunchSpec {
@@ -30,11 +30,16 @@ function executableForScript(filename: string): string | undefined {
 
   // Do not send native binaries named "opencode" to Node.
   let header: string;
+  let fd: number | undefined;
   try {
-    const fd = readFileSync(filename);
-    header = fd.subarray(0, 256).toString("utf8").split("\n", 1)[0] ?? "";
+    fd = openSync(filename, "r");
+    const bytes = Buffer.alloc(256);
+    const count = readSync(fd, bytes, 0, bytes.length, 0);
+    header = bytes.subarray(0, count).toString("utf8").split("\n", 1)[0] ?? "";
   } catch {
     return undefined;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
   if (!header.startsWith("#!")) return undefined;
   if (/(\b|\/)bun(\s|$)/.test(header)) return "bun";
