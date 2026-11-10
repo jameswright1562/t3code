@@ -1205,6 +1205,34 @@ export function createServerEnvironmentAtoms<R, E>(
 
   return {
     configValueAtom,
+    harnessMemories: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:harness:memory:list",
+      tag: WS_METHODS.harnessMemoryList,
+      idleTtlMs: 0,
+      staleTimeMs: 0,
+    }),
+    harnessRecoverCheckpoint: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:harness:checkpoint:recover",
+      tag: WS_METHODS.harnessCheckpointRecover,
+      idleTtlMs: 0,
+      staleTimeMs: 0,
+    }),
+    harnessConfirmMemory: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:harness:memory:confirm",
+      tag: WS_METHODS.harnessMemoryConfirm,
+    }),
+    harnessForgetMemory: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:harness:memory:forget",
+      tag: WS_METHODS.harnessMemoryForget,
+    }),
+    harnessPinMemory: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:harness:memory:pin",
+      tag: WS_METHODS.harnessMemoryPin,
+    }),
+    harnessExportMemory: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:harness:memory:export",
+      tag: WS_METHODS.harnessMemoryExport,
+    }),
     runStorageCleanup: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:run-storage-cleanup",
       tag: WS_METHODS.serverRunStorageCleanup,
