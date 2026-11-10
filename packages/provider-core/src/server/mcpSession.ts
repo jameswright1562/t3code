@@ -1,10 +1,12 @@
-import type { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, HarnessMcpServerConfig, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 
 export interface McpProviderSessionConfig {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
   /** Trusted origin, derived from host projection when the credential is issued. */
   readonly projectId?: ProjectId;
+  /** Authoritative selected servers, never raw tokens or env variables. */
+  readonly sharedMcpServers?: Readonly<Record<string, HarnessMcpServerConfig>>;
   readonly providerSessionId: string;
   readonly providerInstanceId: ProviderInstanceId;
   readonly endpoint: string;
