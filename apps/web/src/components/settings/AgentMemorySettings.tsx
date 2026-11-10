@@ -203,7 +203,7 @@ export function AgentMemorySettings() {
       return;
     }
     const approved = await (requestConfirmDialog(
-      "Restore this project memory backup? This imports its original provenance, deletions and audit history. Conflicting records will be rejected; no existing memory will be overwritten.",
+      "Restore this trusted project memory backup? Approved memories can enter future agent prompts. The import includes original provenance, deletions, checkpoints and audit history. Conflicts are rejected; existing records will not be overwritten.",
     ) ?? Promise.resolve(false));
     if (!approved) return;
     setBusy("restore");
