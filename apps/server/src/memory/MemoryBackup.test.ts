@@ -1,11 +1,10 @@
-import { createHash } from "node:crypto";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { layerMemory } from "../persistence/Sqlite.ts";
 import { confirmMemory, forgetMemory, listMemory, remember, reviseMemory } from "./AgentMemory.ts";
-import { exportMemoryBackup, importMemoryBackup } from "./MemoryBackup.ts";
+import { checksumMemoryBackup, exportMemoryBackup, importMemoryBackup } from "./MemoryBackup.ts";
 
 const layer = it.layer(layerMemory);
 
@@ -79,7 +78,7 @@ layer("Lossless project-scoped memory backup", (it) => {
       };
       const conflict = {
         ...staged,
-        checksum: createHash("sha256").update(JSON.stringify(staged), "utf8").digest("hex"),
+        checksum: yield* checksumMemoryBackup(staged),
       };
       const attempted = yield* Effect.result(importMemoryBackup({ scope, backup: conflict }));
       assert.equal(attempted._tag, "Failure");

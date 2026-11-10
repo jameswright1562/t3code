@@ -1,4 +1,5 @@
-import { createHash } from "node:crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
@@ -24,8 +25,8 @@ export interface MemoryAuditEvent {
 export interface MemoryBackup {
   readonly schemaVersion: 1;
   readonly scope: MemoryScope;
-  readonly entries: MemoryEntry[];
-  readonly events: MemoryAuditEvent[];
+  readonly entries: readonly MemoryEntry[];
+  readonly events: readonly MemoryAuditEvent[];
   readonly checksum: string;
 }
 export interface MemoryImportResult {
@@ -41,8 +42,18 @@ interface MemoryRow extends Omit<MemoryEntry, "pinned"> {
 const MAX_ITEMS = 10000;
 const MAX_EVENTS = 100000;
 const MAX_JSON_BYTES = 16 * 1024 * 1024;
-const digest = (payload: BackupPayload): string =>
-  createHash("sha256").update(JSON.stringify(payload), "utf8").digest("hex");
+const encodeJson = Schema.encodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
+const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
+
+/** Deterministic digest over the exact serialized scope, records and audit ledger. */
+export const checksumMemoryBackup = Effect.fn("MemoryBackup.checksum")(function* (payload: BackupPayload) {
+  const serialized = yield* encodeJson(payload);
+  return yield* Digest.Digest.pipe(
+    Effect.flatMap((service) =>
+      service.digestHex(Digest.sha256, new TextEncoder().encode(serialized))),
+    Effect.provide(Digest.layerWebCrypto),
+  );
+});
 const item = (row: MemoryRow): MemoryEntry => ({
   ...row,
   pinned: row.pinned === 1,
@@ -80,10 +91,11 @@ export const exportMemoryBackup = Effect.fn("MemoryBackup.export")(function* (sc
     entries: rows.map(item),
     events,
   };
-  if (Buffer.byteLength(JSON.stringify(payload), "utf8") > MAX_JSON_BYTES) {
+  const encoded = yield* encodeJson(payload);
+  if (Buffer.byteLength(encoded, "utf8") > MAX_JSON_BYTES) {
     return yield* invalid("Backup exceeds the 16 MiB limit");
   }
-  return { ...payload, checksum: digest(payload) } satisfies MemoryBackup;
+  return { ...payload, checksum: yield* checksumMemoryBackup(payload) } satisfies MemoryBackup;
 });
 
 export const importMemoryBackup = Effect.fn("MemoryBackup.import")(function* (input: {
@@ -101,9 +113,11 @@ export const importMemoryBackup = Effect.fn("MemoryBackup.import")(function* (in
     entries: backup.entries,
     events: backup.events,
   };
+  const encoded = yield* encodeJson(payload);
   if (backup.entries.length > MAX_ITEMS || backup.events.length > MAX_EVENTS ||
-      Buffer.byteLength(JSON.stringify(payload), "utf8") > MAX_JSON_BYTES ||
-      !/^[a-f0-9]{64}$/.test(backup.checksum) || digest(payload) !== backup.checksum) {
+      Buffer.byteLength(encoded, "utf8") > MAX_JSON_BYTES ||
+      !/^[a-f0-9]{64}$/.test(backup.checksum) ||
+      (yield* checksumMemoryBackup(payload)) !== backup.checksum) {
     return yield* invalid("Backup checksum, size or format is invalid");
   }
   const ids = new Set<string>();
@@ -122,9 +136,8 @@ export const importMemoryBackup = Effect.fn("MemoryBackup.import")(function* (in
       return yield* invalid("Backup contains duplicate or unscoped audit events");
     }
     eventIds.add(event.eventId);
-    try {
-      JSON.parse(event.payloadJson);
-    } catch {
+    const decoded = yield* Effect.result(decodeJson(event.payloadJson));
+    if (decoded._tag === "Failure") {
       return yield* invalid("Backup contains malformed audit JSON");
     }
   }
