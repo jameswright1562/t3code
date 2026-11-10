@@ -6,9 +6,9 @@ import { McpProviderSessions } from "@t3tools/provider-core/server/McpProviderSe
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { McpServer } from "effect/ai";
-import * as SqlClient from "effect/sql/SqlClient";
 
 import { AssetSigner } from "../assets/AssetSigner.ts";
+import { layerMemory } from "../persistence/Sqlite.ts";
 import { ServerSecretStore } from "../auth/ServerSecretStore.ts";
 import { ServerConfig } from "../config.ts";
 import { DeviceService } from "../device/DeviceService.ts";
@@ -50,8 +50,8 @@ import budget from "./agentContextBudget.json" with { type: "json" };
 // Registration only stores tool definitions, so the handlers' services are never called.
 const toolHandlerServices = Layer.mergeAll(
   Layer.mock(AssetSigner)({}),
-  // MCP tool registration does not execute SQL handlers; satisfy their dependency only.
-  Layer.mock(SqlClient.SqlClient)({}),
+  // Memory-backed MCP tool registration requires the SQLite service.
+  layerMemory,
   Layer.mock(DeviceService)({}),
   Layer.mock(DocumentText)({}),
   Layer.mock(GitVcsDriver)({}),
