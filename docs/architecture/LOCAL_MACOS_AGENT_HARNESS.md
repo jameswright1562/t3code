@@ -1,12 +1,39 @@
 # Local macOS Agent Harness — Architecture, Durable Memory, Context & Implementation Plan
 
-**Status:** Living implementation specification — Phase 0 in progress  
+**Status:** Living implementation specification — upstream integration and memory runtime underway; not production-ready  
 **Base:** fork of [T3 Code](https://github.com/pingdotgg/t3code)  
 **Target:** macOS-first, local execution while the Mac is awake  
 **Owner repo:** [jameswright1562/t3code](https://github.com/jameswright1562/t3code)  
 **Priority order:** durable memory and context → subscription/token efficiency → visible multi-step orchestration → first-class MCP management → native agent interoperability.
 
 > This is a specification and implementation plan, not a claim that every feature below is already implemented. The original fork main was last updated in May 2026. This integration branch is based on upstream commit d756fed (Nov 2026), preserving the old branch and porting the memory work. The May fork's custom OpenCode options must be reconciled before finishing. Keep the fork's earlier OpenCode work intact during that reconciliation.
+
+## Implementation snapshot — 10 November 2026
+
+**Active integration branch:** `feat/macos-orchestrator-upstream-base`, draft [PR #3](https://github.com/jameswright1562/t3code/pull/3), based on upstream `d756fed7`. The older May 2026 fork main and draft PR #2 are preserved, not overwritten.
+
+**Committed, subject to validation:**
+
+- Additive SQLite migration **081**, registered against upstream migrations 1–80, with memory records, auditable changes and context checkpoints.
+- Typed operations for memory creation, scoped retrieval, tombstone and explicit user confirmation. Agent proposals have verification=`proposed` and are **not** added to model prompts before user confirmation.
+- Agent-facing `t3_memory_search` and `t3_memory_propose` MCP tools; only the canonical calling thread/project scope is used, without agent-supplied project IDs.
+- Context builder selects relevant verified project/thread memories under an estimated 800-token default; injects them only when starting a fresh native provider session.
+- Run finalization persists a small, sequenced checkpoint after T3's durable Git checkpoint capture.
+- Ported OpenCode source-checkout launch support and T3 UI custom JSONC injection.
+- A dedicated public-runner GitHub Actions workflow runs focused tests and typechecks for memory and OpenCode.
+
+**Incomplete and required before daily use:**
+
+- A graphical Memory Browser to inspect, confirm, edit, export, purge and pin memory; no production UI currently invokes the privileged confirmation operation.
+- Full context checkpoint capture **before** a crash or compaction, semantic extraction of durable decisions, artifact references and exact message-level provenance.
+- Resumption UI with validation and restart recovery, not simply a checkpoint row in SQLite.
+- First-class Settings UI for adding shared stdio and HTTP MCP servers, OAuth and credential storage; current MCP tools are T3's own agent memory tools, not user-configurable external MCP servers.
+- Verified task budgets, model routing, quota-drain A/B testing, and fully visible/editable plan execution UX beyond what upstream already supplies.
+- Complete monorepo build/lint/test and macOS smoke tests; targeted CI is a preliminary gate only.
+
+No new background triggers, cloud workers, mandatory isolation sandboxes, PostgreSQL, Temporal or NATS are introduced.
+
+---
 
 ## 1. Product contract
 
@@ -467,26 +494,26 @@ Memory and context data should always be exportable into a versioned JSON/Markdo
 - [x] Check in this end-to-end architecture specification.
 - [x] Add additive SQLite memory/checkpoint/audit migration.
 - [x] Add typed memory interfaces and initial persistence functions.
-- [x] Add tests for durable write/read, project scope and checkpoint ordering (written, not yet executed).
+- [x] Add tests for durable write/read, project scope and checkpoint ordering (focused tests passed in CI; typecheck and wider regressions still under validation).
 - [x] Add documentation on the exact current implementation status (see fork README).
-- [ ] Run a test pass on macOS or CI.
+- [x] Run focused memory and OpenCode tests in GitHub Actions (typecheck validation is a separate pending gate).
 
 ### Phase 1 — reconcile upstream safely
 
 - [x] Compare fork's May 2026 base to current upstream and establish a separate integration branch from upstream commit d756fed.
-- [ ] Preserve user-specific OpenCode OpenAI-compatible configuration and checkout launch.
-- [ ] Port or reconcile modern Orchestration V2 and provider adapters.
-- [ ] Include merged Claude entrypoint and cache TTL fixes.
+- [x] Port custom OpenCode JSONC UI injection and safe checkout launches to packages/provider-opencode.
+- [x] Start from upstream T3 Orchestration V2 at pinned base d756fed instead of trying to replay incompatible May migrations.
+- [x] Include upstream's merged Claude entrypoint and cache TTL fixes by basing this work on post-merge upstream; A/B quota benchmark pending.
 - [ ] Run existing upstream and fork regression tests.
 
 ### Phase 2 — memory/context end-to-end
 
-- [ ] Wire memory service into T3 server runtime and event projections.
+- [x] Wire bounded verified project/thread memories into fresh provider sessions and checkpoint IDs into run finalization; broader capture/recovery still pending.
 - [ ] Persist checkpoint before context compaction, agent delegation and provider switch.
 - [ ] Build scoped memory browser with review/confirm/pin/edit/delete/export.
 - [ ] Introduce FTS5 retrieval with source-backed relevance and staleness checks.
 - [ ] Add robust checkpoint restore and provider-session handoff UI.
-- [ ] Add encrypted/Keychain-backed settings when they contain credentials.
+- [ ] Add encrypted/Keychain-backed settings when they contain credentials (current memory schema stores no tool secrets).
 
 ### Phase 3 — MCP management
 
