@@ -1,7 +1,8 @@
 import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
-import { listMemory, remember } from "../../../memory/AgentMemory.ts";
+import { remember } from "../../../memory/AgentMemory.ts";
+import { searchMemoryCandidates } from "../../../memory/MemorySearch.ts";
 import { selectMemoryForContext } from "../../../memory/MemoryContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { newCommandId, readCaller, unavailable } from "../../threadAccess.ts";
@@ -33,7 +34,7 @@ export const layer = McpToolAccess.toLayer(MemoryToolkit, {
         { scopeType: "project" as const, scopeId: caller.projectId },
         { scopeType: "thread" as const, scopeId: caller.threadId },
       ];
-      const stored = yield* listMemory(scopes, 100).pipe(Effect.mapError(unavailable));
+      const stored = yield* searchMemoryCandidates({ scopes, query, limitPerScope: 250 }).pipe(Effect.mapError(unavailable));
       const selected = selectMemoryForContext(stored, {
         query,
         allowedScopes: scopes,
