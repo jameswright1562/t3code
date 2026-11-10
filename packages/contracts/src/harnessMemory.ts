@@ -38,6 +38,11 @@ export const HarnessMemoryMutationInput = Schema.Struct({
   id: Schema.String,
   eventId: Schema.String,
 });
+export const HarnessMemoryReviseInput = Schema.Struct({
+  ...HarnessMemoryMutationInput.fields,
+  replacementId: Schema.String,
+  content: Schema.String,
+});
 export const HarnessMemoryPinInput = Schema.Struct({
   ...HarnessMemoryMutationInput.fields,
   pinned: Schema.Boolean,
