@@ -1,0 +1,46 @@
+name: Fork memory and OpenCode validation
+
+on:
+  pull_request:
+    paths:
+      - "apps/server/src/memory/**"
+      - "apps/server/src/persistence/**"
+      - "apps/server/src/orchestration-v2/ProviderTurnStartService.ts"
+      - "apps/server/src/orchestration-v2/RunFinalizationService.ts"
+      - "apps/server/src/orchestration-v2/runtimeLayer.ts"
+      - "packages/provider-opencode/**"
+      - ".github/workflows/fork-memory-checks.yml"
+  push:
+    branches:
+      - "feat/macos-orchestrator-upstream-base"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  focused:
+    name: Memory/OpenCode tests and typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - name: Setup workspace
+        uses: ./.github/actions/setup-ci-deps
+        with:
+          save-pnpm-store: "false"
+      - name: Run memory and launch tests
+        run: |
+          vp test run \
+            apps/server/src/memory/AgentMemory.test.ts \
+            apps/server/src/memory/MemoryContext.test.ts \
+            packages/provider-opencode/src/server/openCodeLaunch.test.ts
+      - name: Typecheck server and OpenCode provider
+        run: |
+          vp run --filter t3 typecheck
+          vp run --filter @t3tools/provider-opencode typecheck
