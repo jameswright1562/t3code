@@ -129,14 +129,6 @@ const ensureText = (label: string, value: string) =>
 
 const isoNow = () => new Date().toISOString();
 
-const memoryColumns = String.raw`
-  id, scope_type AS "scopeType", scope_id AS "scopeId", kind, content,
-  source_ref AS "sourceRef", source_actor AS "sourceActor", verification,
-  confidence, pinned, created_at AS "createdAt", updated_at AS "updatedAt",
-  last_verified_at AS "lastVerifiedAt", superseded_by AS "supersededBy",
-  tombstoned_at AS "tombstonedAt"
-`;
-
 /**
  * Persist one new memory with its provenance and event in one transaction.
  * Existing identical item IDs are safe to retry. Different content with the
