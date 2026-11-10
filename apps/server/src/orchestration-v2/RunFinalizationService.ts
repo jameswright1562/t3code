@@ -8,6 +8,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { listMemory, saveCheckpoint } from "../memory/AgentMemory.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
 import * as WorkspaceEntries from "../workspace/WorkspaceEntries.ts";
@@ -55,6 +56,7 @@ export class RunFinalizationService extends Context.Service<
 const make = Effect.gen(function* () {
   const checkpointCapture = yield* CheckpointCapture.CheckpointCaptureServiceV2;
   const sqlOption = yield* Effect.serviceOption(SqlClient.SqlClient);
+  const gitOption = yield* Effect.serviceOption(GitVcsDriver.GitVcsDriver);
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const observer = yield* RunFinalizationObserver;
 
@@ -88,6 +90,16 @@ const make = Effect.gen(function* () {
         { scopeType: "thread" as const, scopeId: input.threadId },
       ];
       const memory = yield* listMemory(scopes, 50);
+      // Git is the authoritative worktree state, not a model-generated note.
+      // Save a concrete HEAD fingerprint for later divergence verification.
+      // Bare/uninitialized/non-Git workspaces retain a checkpoint without HEAD.
+      const cwd = projection.checkpointScopes.find((scope) => scope.id === input.scopeId)?.cwd;
+      const headCommit = cwd !== undefined && Option.isSome(gitOption)
+        ? yield* gitOption.value.resolveCommit({ cwd, revision: "HEAD" }).pipe(
+            Effect.map((value) => value.commitSha),
+            Effect.orElseSucceed(() => null),
+          )
+        : null;
       yield* saveCheckpoint({
         id: `t3-memory:${input.threadId}:${run.ordinal}`,
         projectId: thread.projectId,
@@ -98,6 +110,7 @@ const make = Effect.gen(function* () {
           schemaVersion: 1,
           objective: thread.title || "Coding task",
           ...(thread.branch === null ? {} : { branch: thread.branch }),
+          ...(headCommit === null ? {} : { headCommit }),
           sourceEventRefs: [`t3:run:${input.runId}`],
           decisionMemoryIds: memory
             .filter((entry) => entry.verification !== "proposed" && entry.kind === "decision")
