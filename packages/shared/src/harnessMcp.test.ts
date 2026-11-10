@@ -33,7 +33,7 @@ describe("shared MCP provider routing", () => {
       local: server({ url: "http://127.0.0.1:8765/mcp" }),
     };
     expect(Object.keys(selectHarnessMcpServers(registry, "claudeAgent" as ProviderInstanceId, "alpha" as ProjectId))).toEqual(["allowed", "local"]);
-    expect(selectHarnessMcpServers(registry, "claudeAgent" as ProviderInstanceId, "beta" as ProjectId)).toEqual({});
+    expect(Object.keys(selectHarnessMcpServers(registry, "claudeAgent" as ProviderInstanceId, "beta" as ProjectId))).toEqual(["otherProject"]);
   });
 
   it("serializes HTTP and stdio servers to native runtime formats", () => {
