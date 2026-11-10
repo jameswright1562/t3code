@@ -300,6 +300,54 @@ export const forgetMemory = Effect.fn("AgentMemory.forgetMemory")(function* (inp
     );
   });
 
+
+/**
+ * Confirmation is a privileged host/UI action, never exposed as an agent MCP
+ * tool. A proposed item is not injected into model context before this succeeds.
+ */
+export const confirmMemory = Effect.fn("AgentMemory.confirmMemory")(function* (input: {
+  readonly id: string;
+  readonly scope: MemoryScope;
+  readonly eventId: string;
+  readonly occurredAt?: string;
+}) {
+  const sql = yield* SqlClient.SqlClient;
+  const now = input.occurredAt ?? DateTime.formatIso(yield* DateTime.now);
+  return yield* sql.withTransaction(
+    Effect.gen(function* () {
+      const rows = yield* sql<{
+        readonly verification: VerificationState;
+        readonly tombstonedAt: string | null;
+      }>`
+        SELECT verification, tombstoned_at AS "tombstonedAt"
+        FROM agent_memory_items
+        WHERE id = ${input.id} AND scope_type = ${input.scope.scopeType}
+          AND scope_id = ${input.scope.scopeId}
+      `;
+      const row = rows[0];
+      if (!row || row.tombstonedAt !== null) {
+        return yield* new AgentMemoryValidationError({
+          detail: "Memory is missing or was deleted in this scope",
+        });
+      }
+      if (row.verification === "user_confirmed") return false;
+      yield* sql`
+        UPDATE agent_memory_items
+        SET verification = 'user_confirmed',
+          last_verified_at = ${now}, updated_at = ${now}
+        WHERE id = ${input.id} AND scope_type = ${input.scope.scopeType}
+          AND scope_id = ${input.scope.scopeId} AND tombstoned_at IS NULL
+      `;
+      yield* sql`
+        INSERT INTO agent_memory_events (
+          event_id, memory_id, operation, payload_json, occurred_at
+        ) VALUES (${input.eventId}, ${input.id}, 'user_confirmed', '{}', ${now})
+      `;
+      return true;
+    }),
+  );
+});
+
 /** Context checkpoints are versioned, append-only and scoped by thread. */
 export const saveCheckpoint = Effect.fn("AgentMemory.saveCheckpoint")(function* (input: SaveCheckpointInput) {
     if (
