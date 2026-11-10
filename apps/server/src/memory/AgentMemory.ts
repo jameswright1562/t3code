@@ -135,6 +135,7 @@ export class AgentMemoryValidationError extends Schema.TaggedError<AgentMemoryVa
 ) {}
 
 const encodeJson = Schema.encodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
+const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 
 /**
  * Persist one new memory with its provenance and event in one transaction.
@@ -453,13 +454,9 @@ export const recoverCheckpoint = Effect.fn("AgentMemory.recoverCheckpoint")(func
   `;
   let skippedInvalid = 0;
   for (const row of rows) {
-    let checkpoint: unknown;
-    try {
-      checkpoint = JSON.parse(row.checkpointJson) as unknown;
-    } catch {
-      skippedInvalid++;
-      continue;
-    }
+    const checkpoint = yield* decodeJson(row.checkpointJson).pipe(
+      Effect.orElseSucceed(() => null),
+    );
     if (
       typeof checkpoint !== "object" ||
       checkpoint === null ||
