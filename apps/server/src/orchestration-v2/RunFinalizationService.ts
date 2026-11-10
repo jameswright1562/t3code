@@ -90,6 +90,7 @@ const make = Effect.gen(function* () {
         id: `t3-memory:${input.threadId}:${run.ordinal}`,
         projectId: thread.projectId,
         threadId: input.threadId,
+        // Indexed by the thread's run ordinal; event replay needs a separate cursor.
         sequence: run.ordinal,
         checkpoint: {
           schemaVersion: 1,
