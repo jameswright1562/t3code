@@ -1,0 +1,542 @@
+# Local macOS Agent Harness — Architecture, Durable Memory, Context & Implementation Plan
+
+**Status:** Living implementation specification — Phase 0 in progress  
+**Base:** fork of [T3 Code](https://github.com/pingdotgg/t3code)  
+**Target:** macOS-first, local execution while the Mac is awake  
+**Owner repo:** [jameswright1562/t3code](https://github.com/jameswright1562/t3code)  
+**Priority order:** durable memory and context → subscription/token efficiency → visible multi-step orchestration → first-class MCP management → native agent interoperability.
+
+> This is a specification and implementation plan, not a claim that every feature below is already implemented. The original fork main was last updated in May 2026. This integration branch is based on upstream commit d756fed (Nov 2026), preserving the old branch and porting the memory work. The May fork's custom OpenCode options must be reconciled before finishing. Keep the fork's earlier OpenCode work intact during that reconciliation.
+
+## 1. Product contract
+
+Build a reliable macOS coding-agent workspace on top of T3 Code. The app coordinates Claude Code, Codex, Cursor, and custom OpenAI-compatible models, with OpenCode as an optional model-flexible runtime. A user must be able to hand off a request, inspect or edit a real plan, watch multiple agents complete dependent steps, choose local worktree or direct checkout execution, and return to the exact saved state later.
+
+It runs only while the Mac is active. **No cloud orchestrator, no webhook trigger engine, no security sandbox or container requirement**. External services such as GitHub, Figma, and Slack can be tools that the user invokes, not automatic initiators.
+
+Product promises:
+
+1. **Never lose a committed step** merely because the app crashes, restarts, or a provider session stops.
+2. **Memory survives model windows and provider changes**. Never rely solely on an LLM's current conversation context.
+3. **Source-backed context**: every factual/project memory links to the file, conversation event, tool result, or user instruction that supports it.
+4. **No silent memory invention**: proposed memory derived by an LLM is distinguishable from verified evidence and user-confirmed facts.
+5. **Predictable agent spending**: token and quota visibility plus configurable hard limits on the harness's own activity.
+6. **Native subscriptions first**: Claude Code, Codex, Cursor use their respective native execution/authentication paths; custom APIs use an appropriate compatible runtime.
+7. **User-editable plans**: steps, dependencies, assignees, status, approvals, and artifacts visible in the UI.
+8. **Configurable shared MCP servers** through the T3 UI, including HTTP and local stdio.
+9. **No unapproved shared-checkout races**: serialized writes to the same path or isolation via optional worktrees.
+10. **Reproducibility**: transitions, inputs, and tool effects have durable identifiers and can be audited.
+
+## 2. What to reuse from T3 Code
+
+Do not rebuild T3's Electron app, provider adapters, git UX, conversation projections, or event-oriented storage. Favor extending existing service contracts, SQLite migrations, UI settings patterns, and message/event projections.
+
+Upstream already has newer Orchestration V2, cross-harness delegation, session adapters and quota presentation. This fork currently predates much of that work. **The first integration task is to compare fork main to upstream main** and rebase or selectively port while preserving the fork's OpenCode configuration injection and checkout-launch changes. Keep the fork's current main branch untouched until reviewed.
+
+Upstream references worth reviewing and cherry-picking or reproducing:
+
+- T3 Orchestration V2: task delegation, child threads, status, cancellation, task messages and graph.
+- T3 Claude entrypoint fix: [PR #28410](https://github.com/pingdotgg/t3code/pull/28410), merged 2026-11-02.
+- T3 Claude subagent cache TTL: [PR #22841](https://github.com/pingdotgg/t3code/pull/22841).
+- T3 shared MCP proposal: [PR #16466](https://github.com/pingdotgg/t3code/pull/16466), **closed without merging**. Reference only; do not uncritically copy its credential or authorization design.
+
+Our new modules should remain orthogonal to the provider runner, so they can be rebased onto newer upstream abstractions.
+
+## 3. Architecture
+
+~~~text
+T3 Code macOS Desktop
+  ├─ Thread UI / plan board / usage dashboard
+  ├─ Settings / MCP registry / memory browser
+  └─ Agent coordinator
+       ├─ plan state machine and dependency scheduler
+       ├─ execution leases and checkout/worktree mode
+       ├─ budget controller and task cancellation
+       ├─ context builder and memory checkpoint manager
+       ├─ provider adapters
+       │    ├─ Claude Code (native subscription runtime)
+       │    ├─ Codex (native app-server/CLI runtime)
+       │    ├─ Cursor (native agent runtime)
+       │    └─ OpenCode/custom compatible API runtime
+       └─ tool router / MCP gateway
+            ├─ remote HTTP MCP servers
+            ├─ local stdio MCP servers
+            └─ optional GitHub, Slack, Figma tools
+
+Local durable persistence (SQLite, WAL)
+  ├─ existing orchestration events and projections
+  ├─ structured agent/task/plan state
+  ├─ durable memory facts and provenance
+  ├─ context checkpoints and retrieval records
+  ├─ token allocations/usage observations
+  ├─ MCP server metadata (not plaintext secrets)
+  └─ idempotency records for actions
+Local artifact store (files, diffs, large transcripts, hashes)
+macOS Keychain (tokens/credentials)
+~~~
+
+Single-user local deployment first. A future team/cloud edition can introduce separate workers, Temporal or a server database, but none are needed for this scope.
+
+## 4. Memory is not one thing
+
+**Four separate layers are required.**
+
+### 4.1 Immutable conversation/event history
+
+Keep the raw user messages, tool call metadata, significant tool results, agent replies and task transitions in an append-only event stream. Retention must be explicit and configurable. Do not substitute a summary for event history.
+
+### 4.2 Durable structured memory
+
+Facts, decisions, user preferences, project conventions, file references, constraints, failed approaches and unresolved questions are individually queryable records with scope, source, validity, confidence and revision history. A model may *propose* a memory; it cannot silently mark a proposal as verified.
+
+### 4.3 Context checkpoints
+
+Persist a compact machine-readable snapshot of the task before compaction, provider switch, application shutdown, model failure or agent handoff. Checkpoints contain state references, not wholesale duplicated histories.
+
+### 4.4 Ephemeral execution context
+
+The current model's messages, prompt cache, tool exposure, speculative reasoning and local working buffer are ephemeral. Rebuild these from durable state when needed. Never treat cache hits as an integrity guarantee.
+
+**Core rule:** the authoritative repository working tree, event log, plan state, and source-backed memories win over summaries if they disagree.
+
+## 5. Memory taxonomy and scope
+
+Types:
+
+| Kind | Examples | Typical retention |
+| --- | --- | --- |
+| fact | A service is written in C#; a repository contains a component | Until contradicted or expired |
+| decision | The team chose a provider adapter and why | Durable with supersession |
+| preference | Coding conventions, preferred review style | User/project scoped, editable |
+| constraint | Do not modify production resources | Task/project until revoked |
+| file_reference | Path, symbol, commit, design frame | Verify staleness before reuse |
+| failed_approach | A migration strategy failed and its failure mode | Durable until obsolete |
+| open_question | A design decision is unresolved | Until answered |
+| procedure | Verified command or workflow | Versioned; never assume universal |
+| outcome | Tests passed at commit X | Immutable evidence scoped to X |
+
+Scopes, in order of isolation:
+
+- **Global**: explicit user-level preferences, never automatically derived from a private work project.
+- **Workspace**: a configured repository set or organization/workspace identifier.
+- **Project**: one repository or project root, using a stable project ID.
+- **Thread**: one conversation.
+- **Task**: one orchestration task and its child agents.
+
+A memory is visible only when its scope is explicitly in the current retrieval context. Project A must never leak into Project B because names happen to match. Global promotion requires a conscious user action.
+
+Each memory requires: stable ID, kind, text or structured value, scope type and ID, provenance refs, source actor, verification state, confidence (where meaningful), creation time, last verification time, supersession/tombstone status and schema version.
+
+**Security and privacy policy** still apply even though user-requested sandboxing does not. Memory protection is separate from process sandboxing: store secrets in Keychain and never in memory/context, exclude credential material and optionally redact sensitive content. The app should expose memory deletion and export.
+
+## 6. Memory lifecycle
+
+### Capture
+
+Capture from explicit user instructions, accepted plan changes, verified tool output, reviewed code changes and significant agent outcomes. Before an agent-proposed memory is saved, deduplicate by source identity or semantic similarity and check for scope conflicts.
+
+### Verification
+
+A tool-observed file path is not automatically a permanent fact. Store commit hash, file mtime or source version. On retrieval, mark it potentially stale if the source changes. User-confirmed preferences and project decisions are higher authority than model guesses.
+
+### Retrieval
+
+Use a deterministic candidate filter first:
+
+1. match authorized scope(s);
+2. remove tombstoned/superseded and expired records;
+3. prefer exact source/project/file matches;
+4. rank by relevance to the task, verification, recency and explicit user pinning;
+5. account for token budget and deduplicate;
+6. attach IDs and source links to the retrieved context.
+
+A local SQLite FTS5 index is a good first retrieval method. Optional embeddings can improve semantic recall later, but the system must work offline without them. Avoid a large vector database at this scale.
+
+### Contradiction handling
+
+Conflicting facts should not silently overwrite each other. Supersede with an explicit replacement relationship, preserve history, and show conflicts in the memory browser. New tool output supersedes old source snapshots only after verification.
+
+### Compaction
+
+At milestone boundaries or projected context exhaustion, write a checkpoint first; verify it can be read; only then trim active context. Do not discard source event history because a summary was generated.
+
+### Forget/delete
+
+Users can inspect, pin, edit, delete and export memories. Deletion marks the item tombstoned and removes it from all retrieval paths. Physical purge of local memory, backups and derived indexes must be a separate explicit operation with clear effects. No auto-resurrection from old transcripts without a new capture event.
+
+## 7. Checkpoint contract
+
+A checkpoint is a versioned, durable snapshot of sufficient state to safely resume.
+
+~~~json
+{
+  "checkpointId": "cp_...",
+  "schemaVersion": 1,
+  "workspaceId": "workspace_...",
+  "projectId": "project_...",
+  "threadId": "thread_...",
+  "taskId": "task_...",
+  "agentRunId": "run_...",
+  "eventSequence": 418,
+  "savedAt": "2026-11-10T19:00:00Z",
+  "objective": "Implement the change with tests",
+  "plan": {
+    "planId": "plan_...",
+    "revision": 5,
+    "completedStepIds": ["step_1"],
+    "runningStepIds": ["step_2"],
+    "pendingStepIds": ["step_3"]
+  },
+  "state": {
+    "done": ["Inspect existing implementation"],
+    "next": ["Implement patch", "Run tests"],
+    "blocked": [],
+    "openQuestions": []
+  },
+  "workingTree": {
+    "mode": "checkout",
+    "repoId": "repo_...",
+    "branch": "feat/example",
+    "baseCommit": "abc...",
+    "diffArtifactRef": "artifact://..."
+  },
+  "decisionMemoryIds": ["mem_..."],
+  "contextArtifactRefs": ["artifact://..."],
+  "sourceEventRefs": ["evt_..."],
+  "provider": {
+    "runtime": "claude",
+    "nativeSessionId": "opaque-provider-session-id"
+  },
+  "tokenLedger": {
+    "taskBudget": null,
+    "spentKnown": 18342,
+    "spentEstimated": 0
+  }
+}
+~~~
+
+Checkpoint writes must be atomic: either the old checkpoint remains valid or a complete new checkpoint appears. Append-only checkpoints are preferable. The latest is determined by sequence/revision, not solely timestamps. Recover from the last valid checkpoint and replay later events.
+
+**On restart:** open database → check schema → replay any unapplied events → restore the plan graph and pending steps → inspect Git state → reattach provider sessions if supported → offer a visible Resume action. Never automatically repeat a potentially side-effecting operation without verifying its prior result.
+
+## 8. Context-builder contract
+
+The coordinator builds provider-neutral context in ordered layers:
+
+1. immutable agent/task policy and tool boundaries;
+2. user-approved objective and current plan revision;
+3. minimal authoritative task state, scoped workspace/repository context;
+4. verified memories with source refs;
+5. current checkpoint and unresolved questions;
+6. freshly retrieved files or external artifacts;
+7. high-fidelity recent messages;
+8. immediate user request.
+
+Do not paste the full shared transcript into every child agent. Delegate only relevant context plus references that the child can query. A child should return a concise result with changed files, artifact refs, tests, decisions and unresolved issues, not a giant transcript.
+
+Track:
+
+- projected next-call context size versus model usable limit;
+- tokens allocated to plan, implementation, review and memory;
+- source refs actually retrieved;
+- checkpoint age / last successful recovery;
+- truncation and compaction events;
+- provider-native and harness-generated token usage separately.
+
+**Budget policy:** honor a per-call context limit, per-agent task budget and global task budget. A software spending cap must not be labeled hard if the provider does not expose timely usage or may bill in opaque subscription units. In that case stop conservatively by turn count, estimated tokens and concurrency.
+
+## 9. Multi-step orchestration and visible plans
+
+A task is a graph of steps with explicit dependencies. The plan belongs to the app, not to a transient prompt.
+
+Each step has: id, title, acceptance criteria, state (proposed / approved / ready / running / blocked / complete / failed / canceled), dependencies, assigned provider/model, execution mode, context refs, artifacts, estimated and observed token usage, and attempts.
+
+The UI must show:
+
+- a plan board with checkboxes, dependencies and progress;
+- ability to edit, reorder or approve plan steps;
+- which agent/model is running and why;
+- thread activity, delegation and messages;
+- files changed, diffs, tests, errors, and completed artifacts;
+- task budget and provider quota indicators;
+- Pause, Resume, Cancel and Retry, each with clear semantics.
+
+Default scheduler: sequential unless steps are provably independent. Run a reviewer when a risk or change-size policy asks for one. Execute deterministic checks (tests/lint/types) before spending model tokens on a second agent. When two agents may edit the same checkout, acquire a per-repo write lease or use separate Git worktrees.
+
+No autonomous Slack events or recurring triggers. User explicitly starts a task, and its approved steps run while T3 is active.
+
+## 10. Native provider and subscription adapters
+
+Keep native execution modes distinct from raw API calls. A subscription-authenticated Claude/Codex/Cursor execution is **not** interchangeable with an Anthropic/OpenAI API-key call. Model name equality does not imply quota, capabilities, pricing or prompt semantics equality.
+
+Suggested adapter contract:
+
+~~~ts
+interface NativeAgentAdapter {
+  start(run: AgentRunRequest): Promise<AgentSession>;
+  resume(nativeSessionId: string, input: AgentInput): Promise<AgentResult>;
+  cancel(nativeSessionId: string): Promise<void>;
+  getCapabilities(): Promise<AgentCapabilities>;
+  getUsage?(nativeSessionId: string): Promise<ObservedUsage | undefined>;
+}
+~~~
+
+For providers without reliable native session export, store a durable harness-owned handoff packet. Label imported summaries clearly; do not claim lossless resumption.
+
+Custom OpenAI-compatible APIs should use OpenCode or a purpose-built runtime. Keep model catalog, base URL, context window, tool calling, cost, thinking flags and reasoning models configurable. Never force custom models into the Claude or Cursor subscription path.
+
+## 11. Token and quota efficiency — release blocker
+
+A historical T3 issue caused significantly greater consumption of Claude's five-hour quota through its Agent SDK invocation compared with interactive Claude Code on equivalent workloads. Upstream merged entrypoint labeling changes in Nov 2026. Carry that fix into this fork and benchmark it on the target setup before declaring it solved.
+
+Metrics to surface separately:
+
+- observed input/output/cache-read/cache-write tokens;
+- requests and tools per agent and task;
+- native five-hour/weekly subscription quota utilization, if provider exposes it;
+- API monetary costs, where actual billing data is available;
+- estimated costs when actual values are not exposed, explicitly labeled;
+- planning/review/delegation overhead versus useful coding activity.
+
+Never make an inference call solely to refresh a quota meter without the user opting in.
+
+**Benchmark gate**: A/B test T3 and native interactive Claude Code with the same model, effort, cached context and comparable prompts. Run multiple alternating trials and record pre/post 5h and weekly utilization. The result must be close enough to native for user acceptance; don't publish an invented universal threshold.
+
+Efficiency features:
+
+- avoid default duplicate planners/reviewers;
+- reuse native provider sessions when viable;
+- lazy-load MCP tool schemas rather than listing all tools in every turn;
+- don't feed every child the whole task transcript;
+- avoid auto retrying model calls on malformed results more than a bounded number;
+- expose cache TTL controls rather than enforcing one globally;
+- require explicit consent to exceed task budget.
+
+## 12. Shared MCP management through the UI
+
+This is a core feature, not manual JSON editing.
+
+**Settings → Integrations → MCP Servers**:
+
+- Add local stdio command/arguments/working directory/environment references.
+- Add remote Streamable HTTP MCP endpoint (with compatibility fallback if appropriate).
+- Name/description, enable/disable, edit, remove, duplicate.
+- Test connection, protocol version and discovered tools.
+- OAuth sign-in and refresh; API token/header options; never display stored secrets.
+- Agent enablement matrix: Claude, Codex, Cursor, OpenCode/custom.
+- Global/project/thread scopes and tool allowlists/denylists.
+- Show connection health and errors without leaking credentials.
+- Prevent duplicate registrations and accidental injection on reconnect.
+- OAuth identity must be visible: an environment-shared credential cannot be misrepresented as the individual user running a thread.
+- Clearly distinguish T3's own orchestration MCP from user-installed MCP servers.
+
+For stdio, use direct managed child-process lifecycle with timeouts and clean shutdown. For HTTP, a local proxy is acceptable when an agent runtime cannot accept the user's endpoint directly; scope each proxy credential to a thread and tool permissions.
+
+PR #16466 is a useful reference implementation, **not merged**; its review raised correctness and credential-behavior concerns. Implement tests around credential redaction, OAuth callbacks, tool routing, reconnect and per-agent permissions.
+
+## 13. Durable storage design
+
+Use T3's SQLite database with WAL and migrations. Large artifacts go on disk with checksums and stable references, not into giant database rows. Use transactions for committed memory changes, checkpoint updates, event/audit append and task-state changes.
+
+Initial proposed tables:
+
+~~~sql
+CREATE TABLE agent_memory_items (
+  id TEXT PRIMARY KEY,
+  scope_type TEXT NOT NULL,
+  scope_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  content TEXT NOT NULL,
+  source_ref TEXT NOT NULL,
+  source_actor TEXT NOT NULL,
+  verification TEXT NOT NULL,
+  confidence REAL,
+  pinned INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  last_verified_at TEXT,
+  superseded_by TEXT,
+  tombstoned_at TEXT,
+  schema_version INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE agent_memory_checkpoints (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  thread_id TEXT NOT NULL,
+  task_id TEXT,
+  sequence INTEGER NOT NULL,
+  checkpoint_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  schema_version INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE agent_memory_events (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id TEXT NOT NULL UNIQUE,
+  memory_id TEXT NOT NULL,
+  operation TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  occurred_at TEXT NOT NULL
+);
+~~~
+
+Add scope, status, chronological and checkpoint indexes. Use FTS5 in a follow-up migration if the bundled SQLite build supports it; retain non-FTS fallback.
+
+The initial migration is intentionally additive and does not rewrite T3's core orchestration tables. Provider/session integration occurs through a service API, never direct ad-hoc SQL from UI components.
+
+## 14. Repository and task memory
+
+When opening a project, the context-builder should be able to read a **versioned workspace profile**:
+
+- repository name/root, language and framework;
+- instructions from AGENTS.md/CLAUDE.md and user-approved conventions;
+- build/test/lint commands and required tools;
+- recent relevant commits or changed files;
+- verified architectural decisions and known failure modes;
+- index of important symbols/files;
+- active plan and latest valid checkpoint.
+
+Do not store entire repository files as permanent memories. Store file references with revisions and retrieve current content on demand. Provide a per-project **Memory** screen where the user can inspect, correct, pin and remove records.
+
+The system should learn useful context during actual work, not continuously crawl every private repository without the user asking.
+
+## 15. Recovery semantics and idempotency
+
+Failures to test:
+
+- app killed before checkpoint write;
+- app killed immediately after checkpoint commit;
+- provider responds then connection drops;
+- tool write succeeds but acknowledgment times out;
+- half-completed plan step;
+- duplicate callback or user Retry;
+- changed Git HEAD during a paused task;
+- stale memory from a previous branch;
+- canceled agent continues producing output;
+- unreadable provider-native session;
+- corrupted or unsupported checkpoint schema.
+
+Every side-effecting operation gets an operation ID and durable status. Before retrying a write, verify whether the effect already happened. A resumption prompts for review when the filesystem or Git base has diverged.
+
+Memory and context data should always be exportable into a versioned JSON/Markdown bundle and restorable with clear scope mapping. Include backup checksums and restoration tests.
+
+## 16. Acceptance tests
+
+**Memory:**
+- Save a verified project decision, restart T3, retrieve the same ID and provenance.
+- Save two conflicting candidate facts; neither silently deletes the other.
+- A task for Project B cannot retrieve Project A facts without an explicit shared scope.
+- Delete a memory and verify it is excluded from retrieval, checkpoint assembly and UI.
+- Checkpoint twice, crash, recover the later complete checkpoint.
+- Simulate corrupted checkpoint JSON; fall back to last valid checkpoint.
+- Export/reimport and verify content IDs, provenance and tombstones.
+- Save large raw tool artifacts externally and retrieve by checksum.
+
+**Context:**
+- A delegated agent gets a bounded context payload, not the full history.
+- Provider change preserves plan, decisions and unresolved issues.
+- Relevance ordering, pinning and budget limits are deterministic for given inputs.
+- Compaction preserves source refs and task outcome.
+
+**MCP:**
+- stdio and HTTP connections can be configured from UI without manual JSON.
+- Enabled server reaches selected providers only.
+- OAuth/header credentials never enter logs or prompt text.
+- Bad server/expired token does not crash unrelated agent sessions.
+- Reconnection removes stale registrations.
+
+**Orchestration:**
+- Plan edit increments revision and invalidates stale scheduled steps.
+- Dependent step never runs before prerequisites complete.
+- Concurrent same-checkout writers serialize or require worktrees.
+- Cancel prevents new work and marks in-flight work accurately.
+- Closed/reopened app displays the exact durable plan state.
+
+**Quota:**
+- Monitor probes do not silently consume inference tokens.
+- Task budget prevents unbounded child spawning.
+- Claude 5h usage is benchmarked against native CLI with the merged fix.
+- Actual versus estimated token numbers are clearly distinguished.
+
+## 17. Incremental implementation phases
+
+### Phase 0 — current branch: spec and memory persistence foundation
+
+- [x] Create isolated feature branch in the owner's T3 fork.
+- [x] Check in this end-to-end architecture specification.
+- [x] Add additive SQLite memory/checkpoint/audit migration.
+- [x] Add typed memory interfaces and initial persistence functions.
+- [x] Add tests for durable write/read, project scope and checkpoint ordering (written, not yet executed).
+- [x] Add documentation on the exact current implementation status (see fork README).
+- [ ] Run a test pass on macOS or CI.
+
+### Phase 1 — reconcile upstream safely
+
+- [x] Compare fork's May 2026 base to current upstream and establish a separate integration branch from upstream commit d756fed.
+- [ ] Preserve user-specific OpenCode OpenAI-compatible configuration and checkout launch.
+- [ ] Port or reconcile modern Orchestration V2 and provider adapters.
+- [ ] Include merged Claude entrypoint and cache TTL fixes.
+- [ ] Run existing upstream and fork regression tests.
+
+### Phase 2 — memory/context end-to-end
+
+- [ ] Wire memory service into T3 server runtime and event projections.
+- [ ] Persist checkpoint before context compaction, agent delegation and provider switch.
+- [ ] Build scoped memory browser with review/confirm/pin/edit/delete/export.
+- [ ] Introduce FTS5 retrieval with source-backed relevance and staleness checks.
+- [ ] Add robust checkpoint restore and provider-session handoff UI.
+- [ ] Add encrypted/Keychain-backed settings when they contain credentials.
+
+### Phase 3 — MCP management
+
+- [ ] MCP registry UI for HTTP and stdio.
+- [ ] Local MCP process supervision and remote proxy.
+- [ ] OAuth and secret handling.
+- [ ] Per-provider and per-project selection, tool search/filters.
+- [ ] Cross-provider reconnect and failure tests.
+
+### Phase 4 — orchestration UX and budgets
+
+- [ ] Editable plan graph, dependency scheduler and step artifacts.
+- [ ] Step and task budget control with subscription-aware reporting.
+- [ ] Native/direct checkout versus Git worktree selection.
+- [ ] Agent routing defaults, optional review and deterministic verification.
+- [ ] Performance A/B benchmark suite and usage dashboard improvements.
+
+### Phase 5 — hardening
+
+- [ ] Crash/restart/duplicate retry matrix.
+- [ ] Upstream upgrade compatibility tests.
+- [ ] Full local backup, export/import and deletion verification.
+- [ ] Load tests for long tasks, MCP catalogs and large memory.
+- [ ] One-click macOS developer setup/build instructions.
+
+## 18. Non-goals
+
+- Mandatory OCI sandboxes for local coding agents.
+- Multi-user SaaS, remote always-on orchestrator, webhook-triggered tasks.
+- Kubernetes, Temporal, PostgreSQL, NATS or Redis for a single Mac.
+- Silent scraping of unrelated private projects.
+- Invisible automatic cross-project memory sharing.
+- Claiming a complete native provider conversation can always be reconstructed.
+- Treating subscription quota as a monetary API balance.
+
+## 19. Engineering guidance
+
+1. Prefer a thin vertical slice with persistence, tests and UI over speculative large frameworks.
+2. Treat provider-specific behavior as explicit capabilities, not hidden assumptions.
+3. Keep migrations additive and idempotent; do not rename T3 tables without a data migration.
+4. Never write a model-generated statement to verified memory without evidence or confirmation.
+5. Keep checkpoints small, structured, versioned, replayable and independent of model format.
+6. Store source references and actual runtime identity for every agent action.
+7. Use visible errors for uncertainty, stale context and unverifiable quota.
+8. Do not merge an old fork with upstream without reviewing the diff and resolving custom changes.
+9. Maintain at least one test for each lost-context or quota-drain regression.
+10. Update this document after shipping each vertical slice: specification boxes are not implementation evidence.
+
+## 20. Definition of done
+
+The first usable release must let the user start a multi-step task in T3 on macOS, edit the plan, select Claude/Codex/Cursor/custom models, choose direct checkout or worktree, configure MCP servers via UI, and pause/restart/recover with intact approved plan, source-backed memories, selected files and task status. It must expose accurate token/quota measurements where available and not knowingly reproduce the historical accelerated Claude five-hour drain.
+
+**Memory durability and context recovery are release blockers.** A pretty plan board without those guarantees is not a finished harness.
