@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "@effect/vitest";
+// @effect-diagnostics-next-line nodeBuiltinImport:off - synchronous temporary fixture files in a unit test.
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+// @effect-diagnostics-next-line nodeBuiltinImport:off - test fixture paths.
 import path from "node:path";
 
 import { buildOpenCodeProcessEnvironment, resolveOpenCodeLaunchSpec } from "./openCodeLaunch.ts";
