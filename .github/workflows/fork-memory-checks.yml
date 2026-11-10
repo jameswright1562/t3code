@@ -19,6 +19,16 @@ on:
       - "apps/server/src/observability/RpcInstrumentation.ts"
       - "apps/web/src/components/settings/AgentMemorySettings.tsx"
       - "apps/web/src/components/settings/SettingsPanels.tsx"
+      - "apps/web/src/components/settings/HarnessMcpSettings.tsx"
+      - "packages/shared/src/harnessMcp.ts"
+      - "packages/shared/src/harnessMcp.test.ts"
+      - "packages/shared/src/serverSettings.ts"
+      - "packages/shared/package.json"
+      - "packages/contracts/src/settings.ts"
+      - "packages/provider-core/src/server/mcpSession.ts"
+      - "apps/server/src/orchestration-v2/ProviderSessionManager.ts"
+      - "apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts"
+      - "apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts"
       - ".github/workflows/fork-memory-checks.yml"
   push:
     branches:
@@ -50,14 +60,18 @@ jobs:
             apps/server/src/memory/AgentMemory.test.ts \
             apps/server/src/memory/MemoryContext.test.ts \
             packages/provider-opencode/src/server/openCodeLaunch.test.ts \
-            apps/server/src/mcp/toolkits/core.test.ts
+            apps/server/src/mcp/toolkits/core.test.ts \
+            packages/shared/src/harnessMcp.test.ts \
+            packages/contracts/src/settings.test.ts
       - name: Typecheck OpenCode provider
         run: vp run --filter @t3tools/provider-opencode typecheck
       - name: Typecheck contracts and client runtime
         run: |
           vp run --filter @t3tools/contracts typecheck
           vp run --filter @t3tools/client-runtime typecheck
-      - name: Typecheck server
-        run: vp run --filter t3 typecheck
       - name: Build web UI
         run: vp run --filter @t3tools/web build
+      - name: Typecheck shared MCP contracts
+        run: vp run --filter @t3tools/shared typecheck
+      - name: Typecheck server
+        run: vp run --filter t3 typecheck
