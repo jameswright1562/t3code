@@ -19,7 +19,7 @@ export const OpenCodeSettings = makeProviderSettingsSchema(
     binaryPath: makeBinaryPathSetting("opencode").pipe(
       Schema.annotateKey({
         title: "Binary path",
-        description: "Path to the OpenCode binary.",
+        description: "Path to the installed OpenCode binary or a local OpenCode checkout root.",
         providerSettingsForm: {
           placeholder: "opencode",
           clearWhenEmpty: "omit",
@@ -50,13 +50,25 @@ export const OpenCodeSettings = makeProviderSettingsSchema(
         },
       }),
     ),
+    configJsonc: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "OpenCode config (JSONC)",
+        description:
+          "Applied to OPENCODE_CONFIG_CONTENT for T3-launched OpenCode. Use environment variables or the secret manager for credentials, not inline API keys.",
+        providerSettingsForm: {
+          control: "textarea",
+          placeholder: '{\n  "provider": {\n    "my-provider": { "options": { "baseURL": "http://127.0.0.1:8000/v1" } }\n  }\n}',
+        },
+      }),
+    ),
     customModels: Schema.Array(CustomModelSetting).pipe(
       Schema.withDecodingDefault(Effect.succeed([])),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
   },
   {
-    order: ["binaryPath", "serverUrl", "serverPassword"],
+    order: ["binaryPath", "serverUrl", "serverPassword", "configJsonc"],
   },
 );
 export type OpenCodeSettings = typeof OpenCodeSettings.Type;
