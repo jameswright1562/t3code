@@ -7,12 +7,72 @@ import {
   forgetMemory,
   confirmMemory,
   latestCheckpoint,
+  recoverCheckpoint,
+  exportMemory,
   listMemory,
   remember,
   saveCheckpoint,
 } from "./AgentMemory.ts";
 
 const layer = it.layer(layerMemory);
+
+layer("Checkpoint fallback and authorized export", (it) => {
+  it.effect("skips a corrupt newer checkpoint without crossing project scopes", () =>
+    Effect.gen(function* () {
+      const threadId = "thread-recovery-invalid";
+      const projectId = "project-recovery-valid";
+      yield* saveCheckpoint({
+        id: "checkpoint-good",
+        threadId,
+        projectId,
+        sequence: 1,
+        checkpoint: { schemaVersion: 1, objective: "Resume safely", nextActions: ["review diff"] },
+      });
+      yield* saveCheckpoint({
+        id: "checkpoint-bad",
+        threadId,
+        projectId,
+        sequence: 2,
+        checkpoint: { schemaVersion: 1, objective: "Later run" },
+      });
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`UPDATE agent_memory_checkpoints
+        SET checkpoint_json = '{"schemaVersion":999}' WHERE id = 'checkpoint-bad'`;
+      const found = yield* recoverCheckpoint({ threadId, projectId });
+      assert.equal(found.checkpoint?.id, "checkpoint-good");
+      assert.equal(found.skippedInvalid, 1);
+      const other = yield* recoverCheckpoint({ threadId, projectId: "other-project" });
+      assert.equal(other.checkpoint, null);
+      assert.equal(other.skippedInvalid, 0);
+    }),
+  );
+
+  it.effect("exports only selected live memories with provenance", () =>
+    Effect.gen(function* () {
+      const common = {
+        kind: "fact" as const,
+        sourceRef: "file:README.md@abc",
+        sourceActor: "user",
+        verification: "user_confirmed" as const,
+      };
+      yield* remember({
+        ...common, id: "export-allowed", eventId: "export-allowed-event",
+        scopeType: "project", scopeId: "export-project-a", content: "Allowed item",
+      });
+      yield* remember({
+        ...common, id: "export-denied", eventId: "export-denied-event",
+        scopeType: "project", scopeId: "export-project-b", content: "Another project",
+      });
+      const snapshot = yield* exportMemory([{ scopeType: "project", scopeId: "export-project-a" }]);
+      assert.equal(snapshot.schemaVersion, 1);
+      assert.ok(snapshot.entries.some((entry) => entry.id === "export-allowed"));
+      assert.ok(snapshot.entries.every((entry) => entry.id !== "export-denied"));
+      assert.equal(snapshot.entries[0]?.sourceRef, common.sourceRef);
+      const empty = yield* Effect.result(exportMemory([]));
+      assert.equal(empty._tag, "Failure");
+    }),
+  );
+});
 
 layer("AgentMemory persistence", (it) => {
   it.effect("persists scoped source-backed memories with idempotent retries", () =>
