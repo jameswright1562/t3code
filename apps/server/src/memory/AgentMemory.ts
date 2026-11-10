@@ -347,6 +347,43 @@ export const confirmMemory = Effect.fn("AgentMemory.confirmMemory")(function* (i
   );
 });
 
+/** Update a memory pin in the selected scope with an append-only audit event. */
+export const pinMemory = Effect.fn("AgentMemory.pinMemory")(function* (input: {
+  readonly id: string;
+  readonly scope: MemoryScope;
+  readonly eventId: string;
+  readonly pinned: boolean;
+  readonly occurredAt?: string;
+}) {
+  if ([input.id, input.scope.scopeId, input.eventId].some((value) => ensureText("identifier", value))) {
+    return yield* new AgentMemoryValidationError({ detail: "Memory ID, scope and event ID are required" });
+  }
+  const sql = yield* SqlClient.SqlClient;
+  const now = input.occurredAt ?? DateTime.formatIso(yield* DateTime.now);
+  return yield* sql.withTransaction(
+    Effect.gen(function* () {
+      const rows = yield* sql<{ pinned: number }>`
+        SELECT pinned FROM agent_memory_items WHERE id = ${input.id}
+          AND scope_type = ${input.scope.scopeType} AND scope_id = ${input.scope.scopeId}
+          AND tombstoned_at IS NULL AND superseded_by IS NULL
+      `;
+      const row = rows[0];
+      if (!row) return yield* new AgentMemoryValidationError({ detail: "Memory not found in selected scope" });
+      if ((row.pinned === 1) === input.pinned) return false;
+      yield* sql`
+        UPDATE agent_memory_items SET pinned = ${input.pinned ? 1 : 0}, updated_at = ${now}
+        WHERE id = ${input.id} AND scope_type = ${input.scope.scopeType}
+          AND scope_id = ${input.scope.scopeId} AND tombstoned_at IS NULL
+      `;
+      yield* sql`
+        INSERT INTO agent_memory_events (event_id, memory_id, operation, payload_json, occurred_at)
+        VALUES (${input.eventId}, ${input.id}, 'pin_changed', ${yield* encodeJson({ pinned: input.pinned })}, ${now})
+      `;
+      return true;
+    }),
+  );
+});
+
 /** Context checkpoints are versioned, append-only and scoped by thread. */
 export const saveCheckpoint = Effect.fn("AgentMemory.saveCheckpoint")(function* (input: SaveCheckpointInput) {
     if (
