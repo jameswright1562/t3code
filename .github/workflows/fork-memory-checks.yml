@@ -6,6 +6,9 @@ on:
       - "apps/server/src/memory/**"
       - "apps/server/src/persistence/**"
       - "apps/server/src/orchestration-v2/ProviderTurnStartService.ts"
+      - "apps/server/src/orchestration-v2/HarnessRunBudget.ts"
+      - "apps/server/src/orchestration-v2/HarnessRunBudget.test.ts"
+      - "apps/web/src/components/settings/HarnessRunBudgetSettings.tsx"
       - "apps/server/src/orchestration-v2/RunFinalizationService.ts"
       - "apps/server/src/orchestration-v2/runtimeLayer.ts"
       - "packages/provider-opencode/**"
@@ -62,6 +65,7 @@ jobs:
             apps/server/src/memory/MemoryContext.test.ts \
             apps/server/src/memory/MemorySearch.test.ts \
             apps/server/src/memory/MemorySecrets.test.ts \
+            apps/server/src/orchestration-v2/HarnessRunBudget.test.ts \
             apps/server/src/memory/CheckpointGitGuard.test.ts \
             packages/provider-opencode/src/server/openCodeLaunch.test.ts \
             apps/server/src/mcp/toolkits/core.test.ts \

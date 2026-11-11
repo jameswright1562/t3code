@@ -32,6 +32,7 @@ import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import { evaluateThreadRunBudget } from "./HarnessRunBudget.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
 import * as EventSink from "./EventSink.ts";
 import * as ProviderUsageAnalytics from "../telemetry/ProviderUsageAnalytics.ts";
@@ -159,6 +160,7 @@ export const layer: Layer.Layer<
     const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
     const projects = yield* ProjectService.ProjectService;
     const providerAuth = yield* ProviderAuthService.ProviderAuthService;
+    const harnessSettings = yield* ServerSettings.ServerSettingsService;
     const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
     const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
     const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
@@ -634,6 +636,19 @@ export const layer: Layer.Layer<
           });
           return;
         }
+      }
+      const { harnessMaxRunsPerThread } = yield* harnessSettings.getSettings;
+      const budget = evaluateThreadRunBudget({
+        runOrdinal: run.ordinal, maxRuns: harnessMaxRunsPerThread,
+      });
+      if (!budget.allowed) {
+        yield* settleStartFailure({
+          signal: "harness-thread-run-budget",
+          title: "Thread run budget reached",
+          error: new Error(budget.reason),
+          message: budget.reason,
+        });
+        return;
       }
       const { worktreePath, branch } = projection.thread;
       if (worktreePath !== null && branch !== null) {

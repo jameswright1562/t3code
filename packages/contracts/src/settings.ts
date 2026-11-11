@@ -1349,7 +1349,16 @@ export const HarnessMcpServerConfig = Schema.Struct({
 });
 export type HarnessMcpServerConfig = typeof HarnessMcpServerConfig.Type;
 
+export const HarnessMaxRunsPerThread = Schema.Int.check(
+  Schema.isBetween({ minimum: 0, maximum: 1000 }),
+);
+export type HarnessMaxRunsPerThread = typeof HarnessMaxRunsPerThread.Type;
+
 export const ServerSettings = Schema.Struct({
+  // Zero disables the cap; counted against the canonical thread run ordinal.
+  harnessMaxRunsPerThread: HarnessMaxRunsPerThread.pipe(
+    Schema.withDecodingDefault(Effect.succeed(0)),
+  ),
   harnessMcpServers: Schema.Record(Schema.String, HarnessMcpServerConfig).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
@@ -1931,6 +1940,7 @@ export const ServerSettingsPatch = Schema.Struct({
   sourceControlHosts: Schema.optionalKey(Schema.Record(Schema.String, SourceControlHostSettings)),
   // Replace whole maps to avoid half-merged driver configs.
   providerInstances: Schema.optionalKey(Schema.Record(ProviderInstanceId, ProviderInstanceConfig)),
+  harnessMaxRunsPerThread: Schema.optionalKey(HarnessMaxRunsPerThread),
   // Shared MCP configuration: null deletes a server; no raw authentication secrets.
   harnessMcpServers: Schema.optionalKey(
     Schema.Record(Schema.String, Schema.NullOr(HarnessMcpServerConfig)),

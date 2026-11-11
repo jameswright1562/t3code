@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { NotificationSettings } from "./NotificationSettings";
 import { AgentMemorySettings } from "./AgentMemorySettings";
 import { HarnessMcpSettings } from "./HarnessMcpSettings";
+import { HarnessRunBudgetSettings } from "./HarnessRunBudgetSettings";
 import { PRIVACY_POLICY_URL } from "../../legalLinks";
 import { CheckIcon } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -766,6 +767,7 @@ export function GeneralSettingsPanel() {
   return (
     <SettingsPageContainer>
       <AgentMemorySettings />
+      <HarnessRunBudgetSettings />
       <HarnessMcpSettings />
       <SettingsSection id="notifications" title="Notifications">
         <NotificationSettings />
