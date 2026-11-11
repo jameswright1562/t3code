@@ -97,6 +97,18 @@ automatically; a missing lease or moved checkout fails closed for manual review.
 external tool executions are not yet covered by this gate. The UI still marks
 steps manually and does not dispatch agents or prove a provider has stopped.
 
+
+### Upstream native merge diagnostic (11 November 2026)
+
+The full three-way Git-tree comparison from common upstream `3a8c250` to
+upstream `6700cf6` found **453 upstream-only path changes** and **13 paths
+edited independently in the fork** (all other paths are already identical or
+fork-only). The new `.github/workflows/fork-upstream-merge-probe.yml` runs an
+actual `git merge --no-commit` on a public runner, prints and uploads any
+unresolved hunks, then aborts. It never rewrites fork `main` or pushes an
+untested merge. A successful probe only demonstrates mechanical mergeability;
+all migrations, MCP behavior, native adapters and full CI must still be checked.
+
 ## Historical implementation snapshot — 10 November 2026
 
 **Historical integration branch (since merged):** `feat/macos-orchestrator-upstream-base`, [PR #3](https://github.com/jameswright1562/t3code/pull/3), based on upstream `d756fed7`. The older May 2026 fork main and draft PR #2 are preserved, not overwritten.

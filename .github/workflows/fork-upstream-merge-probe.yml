@@ -1,0 +1,71 @@
+name: Fork upstream merge feasibility
+
+on:
+  push:
+    branches:
+      - "feat/macos-harness-release-gates"
+    paths:
+      - ".github/workflows/fork-upstream-merge-probe.yml"
+      - "apps/server/src/persistence/Migrations.ts"
+      - "apps/server/src/orchestration-v2/Adapters/**"
+      - "apps/server/src/mcp/McpHttpServer.ts"
+      - "apps/server/src/ws.ts"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-upstream-merge-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  detect-merge-conflicts:
+    name: Upstream Git merge check (does not mutate repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout complete integration branch history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Try a native three-way Git merge
+        shell: bash
+        env:
+          GIT_MERGE_AUTOEDIT: "no"
+        run: |
+          set -euo pipefail
+          mkdir -p upstream-merge-probe
+          git remote add t3-upstream https://github.com/pingdotgg/t3code.git
+          git fetch --no-tags t3-upstream main
+          git rev-parse HEAD > upstream-merge-probe/fork-head.txt
+          git rev-parse FETCH_HEAD > upstream-merge-probe/upstream-head.txt
+          git merge-base HEAD FETCH_HEAD > upstream-merge-probe/common-ancestor.txt
+          set +e
+          git -c user.name='T3 upstream probe' \
+            -c user.email='upstream-probe@users.noreply.github.com' \
+            merge --no-commit --no-ff FETCH_HEAD \
+            > upstream-merge-probe/merge-output.txt 2>&1
+          code=$?
+          set -e
+          cat upstream-merge-probe/merge-output.txt
+          if test "$code" -ne 0; then
+            git diff --name-only --diff-filter=U | tee upstream-merge-probe/conflicting-files.txt
+            git diff --cc > upstream-merge-probe/conflict-hunks.patch || true
+            echo "Manual conflict resolution is required; no upstream changes were pushed."
+            git merge --abort || true
+            exit 1
+          fi
+          git diff --cached --stat > upstream-merge-probe/staged-summary.txt
+          cat upstream-merge-probe/staged-summary.txt
+          echo "Merge feasibility confirmed. This was a DRY RUN: nothing was pushed."
+          git merge --abort || true
+
+      - name: Upload diagnostic merge report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fork-upstream-merge-probe
+          path: upstream-merge-probe
+          if-no-files-found: warn
