@@ -1,6 +1,7 @@
 /** Offline native Claude/T3 A/B: compare observed quota meters, never token-derived estimates.
  * Requires paired, identical model/effort/prompt/context with alternating run order.
  */
+// @effect-diagnostics-next-line nodeBuiltinImport:off - standalone offline CLI reads an explicit local JSON file.
 import * as NodeFSP from "node:fs/promises";
 import * as NodeURL from "node:url";
 
