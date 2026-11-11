@@ -638,15 +638,15 @@ export const layer: Layer.Layer<
         }
       }
       const { harnessMaxRunsPerThread } = yield* harnessSettings.getSettings;
-      const budget = evaluateThreadRunBudget({
+      const runBudgetDecision = evaluateThreadRunBudget({
         runOrdinal: run.ordinal, maxRuns: harnessMaxRunsPerThread,
       });
-      if (!budget.allowed) {
+      if (!runBudgetDecision.allowed) {
         yield* settleStartFailure({
           signal: "harness-thread-run-budget",
           title: "Thread run budget reached",
-          error: new Error(budget.reason),
-          message: budget.reason,
+          error: new Error(runBudgetDecision.reason),
+          message: runBudgetDecision.reason,
         });
         return;
       }
