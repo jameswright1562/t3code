@@ -1,0 +1,55 @@
+name: Fork macOS desktop build smoke
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/fork-macos-smoke.yml"
+      - "apps/desktop/**"
+      - "apps/server/**"
+      - "apps/web/**"
+      - "packages/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-macos-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos-desktop:
+    name: Build macOS desktop and verify preload
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v6
+
+      - name: Setup workspace
+        uses: ./.github/actions/setup-ci-deps
+        with:
+          save-pnpm-store: "false"
+
+      - name: Install Electron runtime
+        run: vp run --filter @t3tools/desktop ensure:electron
+
+      - name: Build desktop
+        run: vp run build:desktop
+
+      - name: Verify preload bundle
+        run: node apps/desktop/scripts/verify-preload-bundle.mjs
+
+      - name: Harness state and migration regressions
+        run: |
+          vp test run \
+            apps/server/src/orchestration-v2/HarnessPlan.test.ts \
+            apps/server/src/persistence/ProjectionMessageSearchUpgrade.test.ts \
+            apps/server/src/memory/MemoryBackup.test.ts
+
+      # No signing identities or live subscription credentials are present on CI.
+      # This verifies a macOS build only; it is NOT packaged signing,
+      # crash/relaunch recovery, native provider auth or Claude A/B validation.

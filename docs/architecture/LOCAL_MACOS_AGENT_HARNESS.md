@@ -702,3 +702,12 @@ This is **manual plan tracking**, not automatic provider execution or native
 subagent delegation. No on-launch auto-run, automatic triggers, or background
 agent is introduced. Real agent scheduler integration and crash-safe resume
 remain release blockers.
+
+## 27. Hosted macOS build gate (11 November 2026)
+
+A dedicated `.github/workflows/fork-macos-smoke.yml` workflow compiles the
+desktop using a GitHub-hosted macOS runner and validates its preload bundle
+plus plan/migration/memory regressions. This requires no credentials and does
+not call paid agents. Passing this workflow is **not** equivalent to a signed
+macOS package, real Keychain/OAuth tests, provider sessions, crash/restart E2E
+or an actual Claude subscription quota benchmark. Those release gates remain.
