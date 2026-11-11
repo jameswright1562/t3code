@@ -284,6 +284,7 @@ layer("AgentMemory persistence", (it) => {
           schemaVersion: 1 as const,
           objective: "Edit a plan",
           planRevision: 2,
+          eventCursor: 219,
           decisionMemoryIds: ["memory-create-1"],
         },
       };
@@ -293,6 +294,7 @@ layer("AgentMemory persistence", (it) => {
       assert.equal(latest?.id, second.id);
       assert.equal(latest?.sequence, 12);
       assert.equal(latest?.checkpoint.planRevision, 2);
+      assert.equal(latest?.checkpoint.eventCursor, 219);
 
       const retry = yield* saveCheckpoint(second);
       assert.equal(retry.id, second.id);

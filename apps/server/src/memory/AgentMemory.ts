@@ -63,6 +63,8 @@ export interface ContextCheckpoint {
   readonly objective: string;
   readonly planId?: string;
   readonly planRevision?: number;
+  /** Last committed canonical thread event (not the ordinal of a run). */
+  readonly eventCursor?: number;
   readonly completedStepIds?: readonly string[];
   readonly pendingStepIds?: readonly string[];
   readonly activeStepIds?: readonly string[];
@@ -519,6 +521,9 @@ export function isValidContextCheckpoint(value: unknown): value is ContextCheckp
   }
   if (candidate.headCommit !== undefined &&
       !/^[a-f0-9]{40,64}$/i.test(candidate.headCommit as string)) return false;
+  if (candidate.eventCursor !== undefined &&
+      (!Number.isSafeInteger(candidate.eventCursor) ||
+        (candidate.eventCursor as number) < 0)) return false;
   if (candidate.planRevision !== undefined &&
       (!Number.isSafeInteger(candidate.planRevision) ||
         (candidate.planRevision as number) < 0)) return false;

@@ -90,6 +90,17 @@ const make = Effect.gen(function* () {
         { scopeType: "thread" as const, scopeId: input.threadId },
       ];
       const memory = yield* listMemory(scopes, 50);
+      // Unlike run.ordinal, this is a canonical committed event sequence.
+      // Capture before saving the checkpoint so future recovery can replay
+      // events strictly newer than this high-water mark.
+      const eventRows = yield* sqlOption.value<{ readonly eventCursor: number | null }>`
+        SELECT MAX(sequence) AS "eventCursor"
+        FROM orchestration_events
+        WHERE application_event_version = 2
+          AND aggregate_kind = 'thread'
+          AND stream_id = ${input.threadId}
+      `;
+      const eventCursor = eventRows[0]?.eventCursor ?? 0;
       // Git is the authoritative worktree state, not a model-generated note.
       // Save a concrete HEAD fingerprint for later divergence verification.
       // Bare/uninitialized/non-Git workspaces retain a checkpoint without HEAD.
@@ -104,11 +115,12 @@ const make = Effect.gen(function* () {
         id: `t3-memory:${input.threadId}:${run.ordinal}`,
         projectId: thread.projectId,
         threadId: input.threadId,
-        // Indexed by the thread's run ordinal; event replay needs a separate cursor.
+        // Per-thread checkpoint ordering uses run ordinal; replay uses eventCursor.
         sequence: run.ordinal,
         checkpoint: {
           schemaVersion: 1,
           objective: thread.title || "Coding task",
+          eventCursor,
           ...(thread.branch === null ? {} : { branch: thread.branch }),
           ...(headCommit === null ? {} : { headCommit }),
           sourceEventRefs: [`t3:run:${input.runId}`],
