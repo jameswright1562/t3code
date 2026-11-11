@@ -542,7 +542,7 @@ export function AgentMemorySettings() {
                 {gitVerification.error ? <p role="alert">{gitVerification.error}</p> : null}
                 {gitVerification.data ? (
                   <p className="text-xs" role="status">
-                    Git safety: {gitVerification.data.status} — {gitVerification.data.reason}
+                    Git safety: {gitVerification.data.status}: {gitVerification.data.reason}
                     {gitVerification.data.savedHeadCommit ? (
                       <> Saved HEAD: {gitVerification.data.savedHeadCommit.slice(0, 12)}.</>
                     ) : null}

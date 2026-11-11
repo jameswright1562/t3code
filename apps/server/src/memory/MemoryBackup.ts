@@ -6,13 +6,8 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { potentialSecretCategory } from "./MemorySecrets.ts";
 import { AgentMemoryValidationError, type MemoryEntry, type MemoryScope } from "./AgentMemory.ts";
 
-/**
- * A scoped, audited backup of the memory ledger for ONE explicitly selected scope.
- * Unlike the older live-memory export this includes tombstones, superseded
- * revisions, original timestamps, provenance and all corresponding events.
- * The digest detects accidental corruption, not malicious alteration.
- * Audit event IDs and order are retained; SQLite AUTOINCREMENT row numbers
- * may be different when restoring into an existing database.
+/** Scoped backup preserves tombstones, revisions, provenance and audit events.
+ * SHA-256 detects corruption, not hostile changes. SQLite row sequences can differ on restore.
  */
 export interface MemoryAuditEvent {
   readonly eventId: string;

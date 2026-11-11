@@ -2457,6 +2457,7 @@ export const layerWsRpc = (
                 new HarnessMemoryError({ message: "Could not load scoped checkpoint history." }),
             ),
           ),
+        // oxlint-disable-next-line t3code/prefer-effect-fn -- Single-use RPC handler receives contextual types from RpcGroup, not a reusable Effect function.
         [WS_METHODS.harnessCheckpointVerifyGit]: (input) =>
           Effect.gen(function* () {
             // The host projection, not the caller-provided scope, is the

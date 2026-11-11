@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { Button } from "../ui/button";
@@ -11,10 +11,11 @@ export function HarnessRunBudgetSettings() {
   const { target } = useSettingsScope();
   const save = useAtomCommand(serverEnvironment.updateSettings);
   const saved = target?.settings?.harnessMaxRunsPerThread ?? 0;
-  const [draft, setDraft] = useState(String(saved));
+  const [edit, setEdit] = useState<{ environmentId: string; value: string } | null>(null);
+  const draft =
+    edit?.environmentId === target?.environmentId ? edit.value : String(saved);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  useEffect(() => setDraft(String(saved)), [saved]);
   async function update(): Promise<void> {
     if (target === null) return;
     const cap = Number(draft);
@@ -29,6 +30,7 @@ export function HarnessRunBudgetSettings() {
         environmentId: target.environmentId,
         input: { patch: { harnessMaxRunsPerThread: cap } },
       });
+      if (result._tag === "Success") setEdit(null);
       setMessage(result._tag === "Success" ? "Run limit saved." : "Could not save run limit.");
     } catch {
       setMessage("Could not save run limit.");
@@ -60,7 +62,9 @@ export function HarnessRunBudgetSettings() {
             step={1}
             value={draft}
             disabled={busy}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) =>
+              setEdit({ environmentId: target.environmentId, value: event.target.value })
+            }
           />
           <Button disabled={busy} onClick={() => void update()}>
             {busy ? "Saving…" : "Save limit"}

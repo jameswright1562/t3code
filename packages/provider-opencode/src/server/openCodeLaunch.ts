@@ -1,7 +1,7 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off - launch-spec resolution is intentionally synchronous at process startup.
-import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
+import * as NodeFS from "node:fs";
 // @effect-diagnostics-next-line nodeBuiltinImport:off - synchronous checkout path lookup before process spawn.
-import path from "node:path";
+import * as NodePath from "node:path";
 
 export interface OpenCodeLaunchSpec {
   readonly executable: string;
@@ -11,7 +11,7 @@ export interface OpenCodeLaunchSpec {
 
 function safeIsFile(filename: string): boolean {
   try {
-    return statSync(filename).isFile();
+    return NodeFS.statSync(filename).isFile();
   } catch {
     return false;
   }
@@ -19,14 +19,14 @@ function safeIsFile(filename: string): boolean {
 
 function safeIsDirectory(filename: string): boolean {
   try {
-    return statSync(filename).isDirectory();
+    return NodeFS.statSync(filename).isDirectory();
   } catch {
     return false;
   }
 }
 
 function executableForScript(filename: string): string | undefined {
-  const extension = path.extname(filename).toLowerCase();
+  const extension = NodePath.extname(filename).toLowerCase();
   if ([".js", ".mjs", ".cjs"].includes(extension)) return process.execPath;
   if (!safeIsFile(filename)) return undefined;
 
@@ -34,14 +34,14 @@ function executableForScript(filename: string): string | undefined {
   let header: string;
   let fd: number | undefined;
   try {
-    fd = openSync(filename, "r");
+    fd = NodeFS.openSync(filename, "r");
     const bytes = Buffer.alloc(256);
-    const count = readSync(fd, bytes, 0, bytes.length, 0);
+    const count = NodeFS.readSync(fd, bytes, 0, bytes.length, 0);
     header = bytes.subarray(0, count).toString("utf8").split("\n", 1)[0] ?? "";
   } catch {
     return undefined;
   } finally {
-    if (fd !== undefined) closeSync(fd);
+    if (fd !== undefined) NodeFS.closeSync(fd);
   }
   if (!header.startsWith("#!")) return undefined;
   if (/(\b|\/)bun(\s|$)/.test(header)) return "bun";
@@ -58,9 +58,9 @@ export function resolveOpenCodeLaunchSpec(binaryPath: string): OpenCodeLaunchSpe
   let filename: string | undefined;
   if (safeIsDirectory(normalized)) {
     filename = [
-      path.join(normalized, "packages", "opencode", "bin", "opencode"),
-      path.join(normalized, "bin", "opencode"),
-    ].find((candidate) => existsSync(candidate) && safeIsFile(candidate));
+      NodePath.join(normalized, "packages", "opencode", "bin", "opencode"),
+      NodePath.join(normalized, "bin", "opencode"),
+    ].find((candidate) => NodeFS.existsSync(candidate) && safeIsFile(candidate));
   } else if (safeIsFile(normalized)) {
     filename = normalized;
   }

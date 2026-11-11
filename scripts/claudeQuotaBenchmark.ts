@@ -1,11 +1,8 @@
-/** Offline Claude subscription A/B. This file NEVER invokes a model or estimates quota from tokens.
- * Collect before/after 5h and weekly percent remaining from the subscription UI,
- * and provider-reported input/output/cache counters for equivalent native vs T3 runs.
- * Alternate native-first and T3-first pairs, same model, effort, prompt and context.
- * Run: node --experimental-strip-types scripts/claudeQuotaBenchmark.ts samples.json
+/** Offline native Claude/T3 A/B: compare observed quota meters, never token-derived estimates.
+ * Requires paired, identical model/effort/prompt/context with alternating run order.
  */
-import { readFile } from "node:fs/promises";
-import { pathToFileURL } from "node:url";
+import * as NodeFSP from "node:fs/promises";
+import * as NodeURL from "node:url";
 
 export interface Sample {
   pair: string;
@@ -115,14 +112,14 @@ export function reportQuota(input: ReturnType<typeof analyzeQuota>): string {
     "Rounded meters, resets or concurrent usage can make small samples inconclusive.",
   ].join("\n");
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === NodeURL.pathToFileURL(process.argv[1]).href) {
   if (!process.argv[2]) {
     process.stderr.write(
       "Usage: node --experimental-strip-types scripts/claudeQuotaBenchmark.ts samples.json\n",
     );
     process.exitCode = 2;
   } else {
-    readFile(process.argv[2], "utf8")
+    NodeFSP.readFile(process.argv[2], "utf8")
       .then((data) => reportQuota(analyzeQuota(JSON.parse(data))))
       .then((report) => process.stdout.write(report + "\n"))
       .catch((error: unknown) => {

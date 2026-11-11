@@ -537,7 +537,7 @@ export const reviseMemory = Effect.fn("AgentMemory.reviseMemory")(function* (inp
  * Imported backups are integrity-checked but are not authenticated statements
  * about a native session or repository, so all known fields need validation.
  */
-export function isValidContextCheckpoint(value: unknown): value is ContextCheckpoint {
+function isValidContextCheckpoint(value: unknown): value is ContextCheckpoint {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const candidate = value as Record<string, unknown>;
   if (

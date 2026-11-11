@@ -30,7 +30,7 @@ export default Effect.gen(function* () {
       "ON agent_memory_items(scope_type, scope_id, tombstoned_at, kind, updated_at)",
   );
   yield* sql.unsafe(
-    "CREATE INDEX IF NOT EXISTS idx_agent_memory_source " + "ON agent_memory_items(source_ref)",
+    "CREATE INDEX IF NOT EXISTS idx_agent_memory_source ON agent_memory_items(source_ref)",
   );
 
   yield* sql.unsafe(
