@@ -47,7 +47,9 @@ describe("harness native run cap settings", () => {
     expect(decodeServerSettingsPatch({ harnessMaxRunsPerThread: 20 })).toEqual({
       harnessMaxRunsPerThread: 20,
     });
-    expect(decodeServerSettings({ harnessMaxRunsPerThread: 1000 }).harnessMaxRunsPerThread).toBe(1000);
+    expect(decodeServerSettings({ harnessMaxRunsPerThread: 1000 }).harnessMaxRunsPerThread).toBe(
+      1000,
+    );
     expect(() => decodeServerSettingsPatch({ harnessMaxRunsPerThread: -1 })).toThrow();
     expect(() => decodeServerSettingsPatch({ harnessMaxRunsPerThread: 1.25 })).toThrow();
     expect(() => decodeServerSettingsPatch({ harnessMaxRunsPerThread: 1001 })).toThrow();

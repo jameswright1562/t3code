@@ -1,12 +1,29 @@
 import * as Schema from "effect/Schema";
 
 /** Wire contracts for host-authorized, source-backed memory management. */
-export const HarnessMemoryScopeType = Schema.Literals(["global", "workspace", "project", "thread", "task"]);
-export const HarnessMemoryKind = Schema.Literals([
-  "fact", "decision", "preference", "constraint", "file_reference",
-  "failed_approach", "open_question", "procedure", "outcome",
+export const HarnessMemoryScopeType = Schema.Literals([
+  "global",
+  "workspace",
+  "project",
+  "thread",
+  "task",
 ]);
-export const HarnessMemoryVerification = Schema.Literals(["proposed", "verified", "user_confirmed"]);
+export const HarnessMemoryKind = Schema.Literals([
+  "fact",
+  "decision",
+  "preference",
+  "constraint",
+  "file_reference",
+  "failed_approach",
+  "open_question",
+  "procedure",
+  "outcome",
+]);
+export const HarnessMemoryVerification = Schema.Literals([
+  "proposed",
+  "verified",
+  "user_confirmed",
+]);
 export const HarnessMemoryScope = Schema.Struct({
   scopeType: HarnessMemoryScopeType,
   scopeId: Schema.String,
@@ -125,15 +142,17 @@ export const HarnessCheckpointHistory = Schema.Struct({
   truncated: Schema.Boolean,
 });
 export const HarnessCheckpointRecovery = Schema.Struct({
-  checkpoint: Schema.NullOr(Schema.Struct({
-    id: Schema.String,
-    projectId: Schema.String,
-    threadId: Schema.String,
-    taskId: Schema.optional(Schema.NullOr(Schema.String)),
-    sequence: Schema.Number,
-    createdAt: Schema.String,
-    checkpoint: Schema.Unknown,
-  })),
+  checkpoint: Schema.NullOr(
+    Schema.Struct({
+      id: Schema.String,
+      projectId: Schema.String,
+      threadId: Schema.String,
+      taskId: Schema.optional(Schema.NullOr(Schema.String)),
+      sequence: Schema.Number,
+      createdAt: Schema.String,
+      checkpoint: Schema.Unknown,
+    }),
+  ),
   skippedInvalid: Schema.Number,
 });
 export class HarnessMemoryError extends Schema.TaggedError<HarnessMemoryError>()(

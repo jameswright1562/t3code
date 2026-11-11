@@ -22,24 +22,44 @@ layer("Checkpoint fallback and authorized export", (it) => {
   it.effect("refuses credential-bearing memory proposals and revisions", () =>
     Effect.gen(function* () {
       const scope = { scopeType: "project" as const, scopeId: "memory-credential-guard" };
-      const proposed = yield* Effect.result(remember({
-        ...scope, id: "redacted-secret", eventId: "redacted-secret-event",
-        kind: "fact", content: "Authorization: Bearer abcdefghijklmnopqrstuvwxyz1234567890",
-        sourceRef: "test:secrets", sourceActor: "agent", verification: "proposed",
-      }));
+      const proposed = yield* Effect.result(
+        remember({
+          ...scope,
+          id: "redacted-secret",
+          eventId: "redacted-secret-event",
+          kind: "fact",
+          content: "Authorization: Bearer abcdefghijklmnopqrstuvwxyz1234567890",
+          sourceRef: "test:secrets",
+          sourceActor: "agent",
+          verification: "proposed",
+        }),
+      );
       assert.equal(proposed._tag, "Failure");
       yield* remember({
-        ...scope, id: "clean-memory", eventId: "clean-memory-event",
-        kind: "fact", content: "Use environment variables for deployment credentials",
-        sourceRef: "test:secrets", sourceActor: "user", verification: "verified",
+        ...scope,
+        id: "clean-memory",
+        eventId: "clean-memory-event",
+        kind: "fact",
+        content: "Use environment variables for deployment credentials",
+        sourceRef: "test:secrets",
+        sourceActor: "user",
+        verification: "verified",
       });
-      const revised = yield* Effect.result(reviseMemory({
-        scope, id: "clean-memory", replacementId: "bad-revision",
-        eventId: "bad-revision-event", content: "secret=abcdefghijklmnopqrstuvwxyz123456",
-      }));
+      const revised = yield* Effect.result(
+        reviseMemory({
+          scope,
+          id: "clean-memory",
+          replacementId: "bad-revision",
+          eventId: "bad-revision-event",
+          content: "secret=abcdefghijklmnopqrstuvwxyz123456",
+        }),
+      );
       assert.equal(revised._tag, "Failure");
       const stored = yield* listMemory([scope]);
-      assert.deepStrictEqual(stored.map((x) => x.id), ["clean-memory"]);
+      assert.deepStrictEqual(
+        stored.map((x) => x.id),
+        ["clean-memory"],
+      );
     }),
   );
   it.effect("skips a corrupt newer checkpoint without crossing project scopes", () =>
@@ -65,7 +85,10 @@ layer("Checkpoint fallback and authorized export", (it) => {
         SET checkpoint_json = '{"schemaVersion":999}' WHERE id = 'checkpoint-bad'`;
       // A syntactically valid object can still carry unsafe optional fields.
       yield* saveCheckpoint({
-        id: "checkpoint-invalid-head", threadId, projectId, sequence: 3,
+        id: "checkpoint-invalid-head",
+        threadId,
+        projectId,
+        sequence: 3,
         checkpoint: { schemaVersion: 1, objective: "Later state" },
       });
       yield* sql`UPDATE agent_memory_checkpoints
@@ -89,12 +112,20 @@ layer("Checkpoint fallback and authorized export", (it) => {
         verification: "user_confirmed" as const,
       };
       yield* remember({
-        ...common, id: "export-allowed", eventId: "export-allowed-event",
-        scopeType: "project", scopeId: "export-project-a", content: "Allowed item",
+        ...common,
+        id: "export-allowed",
+        eventId: "export-allowed-event",
+        scopeType: "project",
+        scopeId: "export-project-a",
+        content: "Allowed item",
       });
       yield* remember({
-        ...common, id: "export-denied", eventId: "export-denied-event",
-        scopeType: "project", scopeId: "export-project-b", content: "Another project",
+        ...common,
+        id: "export-denied",
+        eventId: "export-denied-event",
+        scopeType: "project",
+        scopeId: "export-project-b",
+        content: "Another project",
       });
       const snapshot = yield* exportMemory([{ scopeType: "project", scopeId: "export-project-a" }]);
       assert.equal(snapshot.schemaVersion, 1);
@@ -190,12 +221,24 @@ layer("AgentMemory persistence", (it) => {
         }),
       );
       assert.equal(wrong._tag, "Failure");
-      assert.equal(yield* pinMemory({
-        id: input.id, scope, eventId: "pin-first", pinned: true,
-      }), true);
-      assert.equal(yield* pinMemory({
-        id: input.id, scope, eventId: "pin-retry", pinned: true,
-      }), false);
+      assert.equal(
+        yield* pinMemory({
+          id: input.id,
+          scope,
+          eventId: "pin-first",
+          pinned: true,
+        }),
+        true,
+      );
+      assert.equal(
+        yield* pinMemory({
+          id: input.id,
+          scope,
+          eventId: "pin-retry",
+          pinned: true,
+        }),
+        false,
+      );
       const items = yield* listMemory([scope]);
       assert.equal(items.find((item) => item.id === input.id)?.pinned, true);
       const sql = yield* SqlClient.SqlClient;
@@ -206,7 +249,6 @@ layer("AgentMemory persistence", (it) => {
       assert.equal(events[0]?.count, 1);
     }),
   );
-
 
   it.effect("persists scoped source-backed memories with idempotent retries", () =>
     Effect.gen(function* () {
@@ -368,5 +410,4 @@ layer("AgentMemory persistence", (it) => {
       assert.equal(events[0]?.count, 2);
     }),
   );
-
 });

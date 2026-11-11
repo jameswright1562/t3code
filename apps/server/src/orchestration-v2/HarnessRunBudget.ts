@@ -6,11 +6,17 @@
 export function evaluateThreadRunBudget(input: {
   readonly runOrdinal: number;
   readonly maxRuns: number;
-}): { readonly allowed: true; readonly reason: "" } |
-  { readonly allowed: false; readonly reason: string } {
+}):
+  | { readonly allowed: true; readonly reason: "" }
+  | { readonly allowed: false; readonly reason: string } {
   const { runOrdinal, maxRuns } = input;
-  if (!Number.isSafeInteger(maxRuns) || maxRuns < 0 || maxRuns > 1000 ||
-      !Number.isSafeInteger(runOrdinal) || runOrdinal < 1) {
+  if (
+    !Number.isSafeInteger(maxRuns) ||
+    maxRuns < 0 ||
+    maxRuns > 1000 ||
+    !Number.isSafeInteger(runOrdinal) ||
+    runOrdinal < 1
+  ) {
     return { allowed: false, reason: "Invalid per-thread run budget configuration." };
   }
   if (maxRuns !== 0 && runOrdinal > maxRuns) {

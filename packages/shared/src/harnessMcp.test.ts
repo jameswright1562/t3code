@@ -33,8 +33,20 @@ describe("shared MCP provider routing", () => {
       malformed: server({ url: "invalid" }),
       local: server({ url: "http://127.0.0.1:8765/mcp" }),
     };
-    expect(Object.keys(selectHarnessMcpServers(registry, "claudeAgent" as ProviderInstanceId, "alpha" as ProjectId))).toEqual(["allowed", "local"]);
-    expect(Object.keys(selectHarnessMcpServers(registry, "claudeAgent" as ProviderInstanceId, "beta" as ProjectId))).toEqual(["otherProject"]);
+    expect(
+      Object.keys(
+        selectHarnessMcpServers(
+          registry,
+          "claudeAgent" as ProviderInstanceId,
+          "alpha" as ProjectId,
+        ),
+      ),
+    ).toEqual(["allowed", "local"]);
+    expect(
+      Object.keys(
+        selectHarnessMcpServers(registry, "claudeAgent" as ProviderInstanceId, "beta" as ProjectId),
+      ),
+    ).toEqual(["otherProject"]);
   });
 
   it("refuses inline credentials and invalid stdio arguments before native injection", () => {
@@ -44,13 +56,22 @@ describe("shared MCP provider routing", () => {
       tokenQuery: server({ url: "https://mcp.example.org/mcp?access_token=secret" }),
       fragment: server({ url: "https://mcp.example.org/mcp#secret" }),
       unsafeArg: server({
-        transport: "stdio", url: "", command: "npx", args: ["--api-key", "secret"],
+        transport: "stdio",
+        url: "",
+        command: "npx",
+        args: ["--api-key", "secret"],
       }),
       unsafeCwd: server({ transport: "stdio", url: "", command: "npx", cwd: "bad\npath" }),
     };
-    expect(Object.keys(selectHarnessMcpServers(
-      registry, "claudeAgent" as ProviderInstanceId, "alpha" as ProjectId,
-    ))).toEqual(["clean"]);
+    expect(
+      Object.keys(
+        selectHarnessMcpServers(
+          registry,
+          "claudeAgent" as ProviderInstanceId,
+          "alpha" as ProjectId,
+        ),
+      ),
+    ).toEqual(["clean"]);
     expect(validateHarnessMcpServer("userinfo", registry.userinfo)).toMatch(/credentials/);
     expect(validateHarnessMcpServer("unsafeArg", registry.unsafeArg)).toMatch(/tokens/);
   });
@@ -59,7 +80,10 @@ describe("shared MCP provider routing", () => {
     const selected = {
       external: server({ projectIds: [] }),
       compiler: server({
-        transport: "stdio", url: "", command: "npx", args: ["-y", "mcp-test"],
+        transport: "stdio",
+        url: "",
+        command: "npx",
+        args: ["-y", "mcp-test"],
         allowedTools: ["search"],
       }),
     };
@@ -69,7 +93,11 @@ describe("shared MCP provider routing", () => {
     });
     expect(toCodexHarnessMcpConfig(selected)).toMatchObject({
       "mcp_servers.external": { url: "https://mcp.example.org/mcp" },
-      "mcp_servers.compiler": { command: "npx", args: ["-y", "mcp-test"], enabled_tools: ["search"] },
+      "mcp_servers.compiler": {
+        command: "npx",
+        args: ["-y", "mcp-test"],
+        enabled_tools: ["search"],
+      },
     });
   });
 });

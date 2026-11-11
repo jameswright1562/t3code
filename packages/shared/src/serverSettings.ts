@@ -612,7 +612,12 @@ export function applyServerSettingsPatch(
       ? { defaultProjectScripts: patch.defaultProjectScripts }
       : {}),
     ...(harnessMcpServersPatch !== undefined
-      ? { harnessMcpServers: mergeSettingsEntries(current.harnessMcpServers, harnessMcpServersPatch) }
+      ? {
+          harnessMcpServers: mergeSettingsEntries(
+            current.harnessMcpServers,
+            harnessMcpServersPatch,
+          ),
+        }
       : {}),
     ...(usageLimitSourcesPatch !== undefined
       ? {

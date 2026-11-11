@@ -22,16 +22,15 @@ export default Effect.gen(function* () {
       "pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0,1)), " +
       "created_at TEXT NOT NULL, updated_at TEXT NOT NULL, " +
       "last_verified_at TEXT, superseded_by TEXT, tombstoned_at TEXT, " +
-      "schema_version INTEGER NOT NULL DEFAULT 1)"
+      "schema_version INTEGER NOT NULL DEFAULT 1)",
   );
 
   yield* sql.unsafe(
     "CREATE INDEX IF NOT EXISTS idx_agent_memory_scope " +
-      "ON agent_memory_items(scope_type, scope_id, tombstoned_at, kind, updated_at)"
+      "ON agent_memory_items(scope_type, scope_id, tombstoned_at, kind, updated_at)",
   );
   yield* sql.unsafe(
-    "CREATE INDEX IF NOT EXISTS idx_agent_memory_source " +
-      "ON agent_memory_items(source_ref)"
+    "CREATE INDEX IF NOT EXISTS idx_agent_memory_source " + "ON agent_memory_items(source_ref)",
   );
 
   yield* sql.unsafe(
@@ -40,11 +39,11 @@ export default Effect.gen(function* () {
       "task_id TEXT, sequence INTEGER NOT NULL CHECK (sequence >= 0), " +
       "checkpoint_json TEXT NOT NULL CHECK (json_valid(checkpoint_json)), " +
       "created_at TEXT NOT NULL, schema_version INTEGER NOT NULL DEFAULT 1, " +
-      "UNIQUE(thread_id, sequence))"
+      "UNIQUE(thread_id, sequence))",
   );
   yield* sql.unsafe(
     "CREATE INDEX IF NOT EXISTS idx_agent_memory_checkpoints_latest " +
-      "ON agent_memory_checkpoints(thread_id, sequence DESC)"
+      "ON agent_memory_checkpoints(thread_id, sequence DESC)",
   );
 
   yield* sql.unsafe(
@@ -52,10 +51,10 @@ export default Effect.gen(function* () {
       "seq INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT NOT NULL UNIQUE, " +
       "memory_id TEXT NOT NULL, operation TEXT NOT NULL, " +
       "payload_json TEXT NOT NULL CHECK (json_valid(payload_json)), " +
-      "occurred_at TEXT NOT NULL)"
+      "occurred_at TEXT NOT NULL)",
   );
   yield* sql.unsafe(
     "CREATE INDEX IF NOT EXISTS idx_agent_memory_events_memory " +
-      "ON agent_memory_events(memory_id, seq)"
+      "ON agent_memory_events(memory_id, seq)",
   );
 });

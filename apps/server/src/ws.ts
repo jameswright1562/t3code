@@ -2392,47 +2392,70 @@ export const layerWsRpc = (
         [WS_METHODS.harnessMemoryList]: ({ scope, limit }) =>
           AgentHarnessMemory.listMemory([scope], limit).pipe(
             Effect.provideService(SqlClient.SqlClient, sql),
-            Effect.mapError(() => new HarnessMemoryError({ message: "Could not list memory for this scope." })),
+            Effect.mapError(
+              () => new HarnessMemoryError({ message: "Could not list memory for this scope." }),
+            ),
           ),
         [WS_METHODS.harnessMemoryConfirm]: (input) =>
           AgentHarnessMemory.confirmMemory(input).pipe(
             Effect.provideService(SqlClient.SqlClient, sql),
-            Effect.mapError(() => new HarnessMemoryError({ message: "Could not confirm memory in this scope." })),
+            Effect.mapError(
+              () => new HarnessMemoryError({ message: "Could not confirm memory in this scope." }),
+            ),
           ),
         [WS_METHODS.harnessMemoryForget]: (input) =>
           AgentHarnessMemory.forgetMemory(input).pipe(
             Effect.provideService(SqlClient.SqlClient, sql),
-            Effect.mapError(() => new HarnessMemoryError({ message: "Could not remove memory in this scope." })),
+            Effect.mapError(
+              () => new HarnessMemoryError({ message: "Could not remove memory in this scope." }),
+            ),
           ),
         [WS_METHODS.harnessMemoryPin]: (input) =>
           AgentHarnessMemory.pinMemory(input).pipe(
             Effect.provideService(SqlClient.SqlClient, sql),
-            Effect.mapError(() => new HarnessMemoryError({ message: "Could not change memory pin in this scope." })),
+            Effect.mapError(
+              () =>
+                new HarnessMemoryError({ message: "Could not change memory pin in this scope." }),
+            ),
           ),
         [WS_METHODS.harnessMemoryRevise]: (input) =>
           AgentHarnessMemory.reviseMemory(input).pipe(
             Effect.provideService(SqlClient.SqlClient, sql),
-            Effect.mapError(() => new HarnessMemoryError({ message: "Could not revise memory in this scope." })),
+            Effect.mapError(
+              () => new HarnessMemoryError({ message: "Could not revise memory in this scope." }),
+            ),
           ),
         [WS_METHODS.harnessMemoryExport]: ({ scope }) =>
           AgentHarnessMemory.exportMemory([scope]).pipe(
             Effect.provideService(SqlClient.SqlClient, sql),
-            Effect.mapError(() => new HarnessMemoryError({ message: "Could not export memory for this scope." })),
+            Effect.mapError(
+              () => new HarnessMemoryError({ message: "Could not export memory for this scope." }),
+            ),
           ),
         [WS_METHODS.harnessMemoryBackup]: ({ scope }) =>
           AgentHarnessMemoryBackup.exportMemoryBackup(scope).pipe(
             Effect.provideService(SqlClient.SqlClient, sql),
-            Effect.mapError(() => new HarnessMemoryError({ message: "Could not back up memory for this scope." })),
+            Effect.mapError(
+              () => new HarnessMemoryError({ message: "Could not back up memory for this scope." }),
+            ),
           ),
         [WS_METHODS.harnessMemoryRestore]: (input) =>
           AgentHarnessMemoryBackup.importMemoryBackup(input).pipe(
             Effect.provideService(SqlClient.SqlClient, sql),
-            Effect.mapError(() => new HarnessMemoryError({ message: "Could not restore backup: invalid, conflicting or out of scope." })),
+            Effect.mapError(
+              () =>
+                new HarnessMemoryError({
+                  message: "Could not restore backup: invalid, conflicting or out of scope.",
+                }),
+            ),
           ),
         [WS_METHODS.harnessCheckpointHistory]: (input) =>
           AgentHarnessMemory.listCheckpointHistory(input).pipe(
             Effect.provideService(SqlClient.SqlClient, sql),
-            Effect.mapError(() => new HarnessMemoryError({ message: "Could not load scoped checkpoint history." })),
+            Effect.mapError(
+              () =>
+                new HarnessMemoryError({ message: "Could not load scoped checkpoint history." }),
+            ),
           ),
         [WS_METHODS.harnessCheckpointVerifyGit]: (input) =>
           Effect.gen(function* () {
@@ -2447,19 +2470,25 @@ export const layerWsRpc = (
               });
             }
             const history = yield* AgentHarnessMemory.listCheckpointHistory({
-              projectId: input.projectId, threadId: input.threadId, limit: 100,
+              projectId: input.projectId,
+              threadId: input.threadId,
+              limit: 100,
             }).pipe(Effect.provideService(SqlClient.SqlClient, sql));
-            const checkpoint = input.checkpointId === undefined
-              ? history.checkpoints[0]
-              : history.checkpoints.find((saved) => saved.id === input.checkpointId);
+            const checkpoint =
+              input.checkpointId === undefined
+                ? history.checkpoints[0]
+                : history.checkpoints.find((saved) => saved.id === input.checkpointId);
             const savedHeadCommit = checkpoint?.checkpoint.headCommit ?? null;
             const savedBranch = checkpoint?.checkpoint.branch ?? null;
-            const unverifiable = (reason: string) => assessCheckpointGit({
-              savedHeadCommit, savedBranch,
-              currentHeadCommit: null, currentBranch: null,
-              hasWorkingTreeChanges: false,
-              unavailableReason: reason,
-            });
+            const unverifiable = (reason: string) =>
+              assessCheckpointGit({
+                savedHeadCommit,
+                savedBranch,
+                currentHeadCommit: null,
+                currentBranch: null,
+                hasWorkingTreeChanges: false,
+                unavailableReason: reason,
+              });
             if (checkpoint === undefined) return unverifiable("No valid checkpoint was selected.");
             const project = yield* projectStore.get(projection.thread.projectId);
             if (Option.isNone(project)) return unverifiable("Project workspace is unavailable.");
@@ -2471,24 +2500,32 @@ export const layerWsRpc = (
               const head = yield* driver.resolveCommit({ cwd, revision: "HEAD" });
               const status = yield* driver.statusDetailsLocal(cwd);
               return assessCheckpointGit({
-                savedHeadCommit, savedBranch,
+                savedHeadCommit,
+                savedBranch,
                 currentHeadCommit: head.commitSha,
                 currentBranch: status.branch,
                 hasWorkingTreeChanges: status.hasWorkingTreeChanges,
               });
             }).pipe(
               Effect.provide(GitVcsDriver.layer),
-              Effect.orElseSucceed(() => unverifiable("Current repository status could not be read.")),
+              Effect.orElseSucceed(() =>
+                unverifiable("Current repository status could not be read."),
+              ),
             );
           }).pipe(
-            Effect.mapError(() => new HarnessMemoryError({
-              message: "Could not verify the checkpoint against the trusted project.",
-            })),
+            Effect.mapError(
+              () =>
+                new HarnessMemoryError({
+                  message: "Could not verify the checkpoint against the trusted project.",
+                }),
+            ),
           ),
         [WS_METHODS.harnessCheckpointRecover]: (input) =>
           AgentHarnessMemory.recoverCheckpoint(input).pipe(
             Effect.provideService(SqlClient.SqlClient, sql),
-            Effect.mapError(() => new HarnessMemoryError({ message: "Could not inspect checkpoints." })),
+            Effect.mapError(
+              () => new HarnessMemoryError({ message: "Could not inspect checkpoints." }),
+            ),
           ),
         [WS_METHODS.serverProbe]: (_input) => Effect.succeed({}),
         [WS_METHODS.serverGetConfig]: (_input) =>

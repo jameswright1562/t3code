@@ -39,18 +39,29 @@ export function HarnessRunBudgetSettings() {
   return (
     <SettingsSection id="harness-run-budget" title="Agent run budgets">
       <p className="text-sm text-muted-foreground">
-        Limit how many native provider runs may start in one thread. The limit also applies
-        after app restarts. When reached, T3 records a failed run instead of launching another
-        provider session. This does not yet cap native subagents or token usage within a run.
+        Limit how many native provider runs may start in one thread. The limit also applies after
+        app restarts. When reached, T3 records a failed run instead of launching another provider
+        session. This does not yet cap native subagents or token usage within a run.
       </p>
       {target === null ? (
-        <p className="text-sm text-muted-foreground">Select an environment to edit its run budget.</p>
+        <p className="text-sm text-muted-foreground">
+          Select an environment to edit its run budget.
+        </p>
       ) : (
         <div className="flex items-center gap-3">
-          <label className="text-sm" htmlFor="harness-max-runs">Maximum runs per thread</label>
-          <Input id="harness-max-runs" type="number" min={0} max={1000} step={1}
-            value={draft} disabled={busy}
-            onChange={(event) => setDraft(event.target.value)} />
+          <label className="text-sm" htmlFor="harness-max-runs">
+            Maximum runs per thread
+          </label>
+          <Input
+            id="harness-max-runs"
+            type="number"
+            min={0}
+            max={1000}
+            step={1}
+            value={draft}
+            disabled={busy}
+            onChange={(event) => setDraft(event.target.value)}
+          />
           <Button disabled={busy} onClick={() => void update()}>
             {busy ? "Saving…" : "Save limit"}
           </Button>
@@ -59,7 +70,11 @@ export function HarnessRunBudgetSettings() {
       <p className="text-xs text-muted-foreground">
         0 disables the cap; a value of 20 allows up to 20 runs on each thread.
       </p>
-      {message ? <p role="status" className="text-sm">{message}</p> : null}
+      {message ? (
+        <p role="status" className="text-sm">
+          {message}
+        </p>
+      ) : null}
     </SettingsSection>
   );
 }

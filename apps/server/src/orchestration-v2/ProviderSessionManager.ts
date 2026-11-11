@@ -487,11 +487,10 @@ export const layerWithOptions = (
                 >(["orchestration", "worktree", "pull-requests"]);
                 if (browserToolsAvailable) capabilities.add("preview");
                 if (deviceToolsAvailable) capabilities.add("device");
-                const callingThread = yield* projectionStore.getThread(threadId).pipe(
-                  Effect.orElseSucceed(() => null),
-                );
-                const subagent =
-                  callingThread?.lineage.relationshipToParent === "subagent";
+                const callingThread = yield* projectionStore
+                  .getThread(threadId)
+                  .pipe(Effect.orElseSucceed(() => null));
+                const subagent = callingThread?.lineage.relationshipToParent === "subagent";
                 const existing = yield* mcpSessions.read(threadId);
                 if (existing !== undefined) {
                   // Reserve before async validation so release cannot revoke between validation and reservation.

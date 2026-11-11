@@ -71,7 +71,7 @@ Our new modules should remain orthogonal to the provider runner, so they can be 
 
 ## 3. Architecture
 
-~~~text
+```text
 T3 Code macOS Desktop
   ├─ Thread UI / plan board / usage dashboard
   ├─ Settings / MCP registry / memory browser
@@ -100,7 +100,7 @@ Local durable persistence (SQLite, WAL)
   └─ idempotency records for actions
 Local artifact store (files, diffs, large transcripts, hashes)
 macOS Keychain (tokens/credentials)
-~~~
+```
 
 Single-user local deployment first. A future team/cloud edition can introduce separate workers, Temporal or a server database, but none are needed for this scope.
 
@@ -114,7 +114,7 @@ Keep the raw user messages, tool call metadata, significant tool results, agent 
 
 ### 4.2 Durable structured memory
 
-Facts, decisions, user preferences, project conventions, file references, constraints, failed approaches and unresolved questions are individually queryable records with scope, source, validity, confidence and revision history. A model may *propose* a memory; it cannot silently mark a proposal as verified.
+Facts, decisions, user preferences, project conventions, file references, constraints, failed approaches and unresolved questions are individually queryable records with scope, source, validity, confidence and revision history. A model may _propose_ a memory; it cannot silently mark a proposal as verified.
 
 ### 4.3 Context checkpoints
 
@@ -130,17 +130,17 @@ The current model's messages, prompt cache, tool exposure, speculative reasoning
 
 Types:
 
-| Kind | Examples | Typical retention |
-| --- | --- | --- |
-| fact | A service is written in C#; a repository contains a component | Until contradicted or expired |
-| decision | The team chose a provider adapter and why | Durable with supersession |
-| preference | Coding conventions, preferred review style | User/project scoped, editable |
-| constraint | Do not modify production resources | Task/project until revoked |
-| file_reference | Path, symbol, commit, design frame | Verify staleness before reuse |
-| failed_approach | A migration strategy failed and its failure mode | Durable until obsolete |
-| open_question | A design decision is unresolved | Until answered |
-| procedure | Verified command or workflow | Versioned; never assume universal |
-| outcome | Tests passed at commit X | Immutable evidence scoped to X |
+| Kind            | Examples                                                      | Typical retention                 |
+| --------------- | ------------------------------------------------------------- | --------------------------------- |
+| fact            | A service is written in C#; a repository contains a component | Until contradicted or expired     |
+| decision        | The team chose a provider adapter and why                     | Durable with supersession         |
+| preference      | Coding conventions, preferred review style                    | User/project scoped, editable     |
+| constraint      | Do not modify production resources                            | Task/project until revoked        |
+| file_reference  | Path, symbol, commit, design frame                            | Verify staleness before reuse     |
+| failed_approach | A migration strategy failed and its failure mode              | Durable until obsolete            |
+| open_question   | A design decision is unresolved                               | Until answered                    |
+| procedure       | Verified command or workflow                                  | Versioned; never assume universal |
+| outcome         | Tests passed at commit X                                      | Immutable evidence scoped to X    |
 
 Scopes, in order of isolation:
 
@@ -195,7 +195,7 @@ Users can inspect, pin, edit, delete and export memories. Deletion marks the ite
 
 A checkpoint is a versioned, durable snapshot of sufficient state to safely resume.
 
-~~~json
+```json
 {
   "checkpointId": "cp_...",
   "schemaVersion": 1,
@@ -240,7 +240,7 @@ A checkpoint is a versioned, durable snapshot of sufficient state to safely resu
     "spentEstimated": 0
   }
 }
-~~~
+```
 
 Checkpoint writes must be atomic: either the old checkpoint remains valid or a complete new checkpoint appears. Append-only checkpoints are preferable. The latest is determined by sequence/revision, not solely timestamps. Recover from the last valid checkpoint and replay later events.
 
@@ -298,7 +298,7 @@ Keep native execution modes distinct from raw API calls. A subscription-authenti
 
 Suggested adapter contract:
 
-~~~ts
+```ts
 interface NativeAgentAdapter {
   start(run: AgentRunRequest): Promise<AgentSession>;
   resume(nativeSessionId: string, input: AgentInput): Promise<AgentResult>;
@@ -306,7 +306,7 @@ interface NativeAgentAdapter {
   getCapabilities(): Promise<AgentCapabilities>;
   getUsage?(nativeSessionId: string): Promise<ObservedUsage | undefined>;
 }
-~~~
+```
 
 For providers without reliable native session export, store a durable harness-owned handoff packet. Label imported summaries clearly; do not claim lossless resumption.
 
@@ -367,7 +367,7 @@ Use T3's SQLite database with WAL and migrations. Large artifacts go on disk wit
 
 Initial proposed tables:
 
-~~~sql
+```sql
 CREATE TABLE agent_memory_items (
   id TEXT PRIMARY KEY,
   scope_type TEXT NOT NULL,
@@ -406,7 +406,7 @@ CREATE TABLE agent_memory_events (
   payload_json TEXT NOT NULL,
   occurred_at TEXT NOT NULL
 );
-~~~
+```
 
 Add scope, status, chronological and checkpoint indexes. Use FTS5 in a follow-up migration if the bundled SQLite build supports it; retain non-FTS fallback.
 
@@ -451,6 +451,7 @@ Memory and context data should always be exportable into a versioned JSON/Markdo
 ## 16. Acceptance tests
 
 **Memory:**
+
 - Save a verified project decision, restart T3, retrieve the same ID and provenance.
 - Save two conflicting candidate facts; neither silently deletes the other.
 - A task for Project B cannot retrieve Project A facts without an explicit shared scope.
@@ -461,12 +462,14 @@ Memory and context data should always be exportable into a versioned JSON/Markdo
 - Save large raw tool artifacts externally and retrieve by checksum.
 
 **Context:**
+
 - A delegated agent gets a bounded context payload, not the full history.
 - Provider change preserves plan, decisions and unresolved issues.
 - Relevance ordering, pinning and budget limits are deterministic for given inputs.
 - Compaction preserves source refs and task outcome.
 
 **MCP:**
+
 - stdio and HTTP connections can be configured from UI without manual JSON.
 - Enabled server reaches selected providers only.
 - OAuth/header credentials never enter logs or prompt text.
@@ -474,6 +477,7 @@ Memory and context data should always be exportable into a versioned JSON/Markdo
 - Reconnection removes stale registrations.
 
 **Orchestration:**
+
 - Plan edit increments revision and invalidates stale scheduled steps.
 - Dependent step never runs before prerequisites complete.
 - Concurrent same-checkout writers serialize or require worktrees.
@@ -481,6 +485,7 @@ Memory and context data should always be exportable into a versioned JSON/Markdo
 - Closed/reopened app displays the exact durable plan state.
 
 **Quota:**
+
 - Monitor probes do not silently consume inference tokens.
 - Task budget prevents unbounded child spawning.
 - Claude 5h usage is benchmarked against native CLI with the merged fix.
@@ -583,14 +588,14 @@ All feature work belongs on **one integration branch and PR #3**, not four compe
 
 ### Required before production-ready claim
 
-| Area | Required implementation | Gate |
-| --- | --- | --- |
-| Memory UI | Accessible browser, authenticated confirm/decline, edit-as-revision, pin, supersede, tombstone, full export/import with audit and source links | Browser E2E + scope/privilege/restart tests |
-| MCP UI | UI CRUD/test/health for HTTP + stdio, canonical server-scoped credential references via macOS Keychain, OAuth PKCE/state, explicit provider/project authorization and tool allowlists | Real stdio/HTTP integration tests, credential redaction, disconnect/reconnect, cross-provider tests |
-| Crash resilience | Checkpoint before compaction/delegation/handoff and at safe boundaries, event cursor, idempotent effect ledger, Git HEAD/file fingerprint check, checkpoint browser + user-approved Resume | Kill/relaunch matrix at every side-effect boundary, corruption and divergent HEAD tests |
-| Plans | Persist editable plan steps/revisions/dependencies/artifacts; scheduler rejects stale revisions, defaults sequential; checkout locks/worktree isolation; cancellation/retry semantics | Deterministic state machine and concurrent-writer tests |
-| Token efficiency | Separate native subscription vs metered API paths, per-run/task/child hard caps where observable, provider-specific telemetry with unknown labels, no token-spending polling | Controlled Claude Code vs T3 A/B macOS runs; no unaudited inference/background agents |
-| Compatibility | Source-checkout and packaged Mac smoke runs; Cursor/OpenCode/Claude/Codex/custom routes; full mono-repo typecheck/lint/tests and upstream integration audit | Required CI green plus manual Mac launch and provider smoke tests |
+| Area             | Required implementation                                                                                                                                                                    | Gate                                                                                                |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| Memory UI        | Accessible browser, authenticated confirm/decline, edit-as-revision, pin, supersede, tombstone, full export/import with audit and source links                                             | Browser E2E + scope/privilege/restart tests                                                         |
+| MCP UI           | UI CRUD/test/health for HTTP + stdio, canonical server-scoped credential references via macOS Keychain, OAuth PKCE/state, explicit provider/project authorization and tool allowlists      | Real stdio/HTTP integration tests, credential redaction, disconnect/reconnect, cross-provider tests |
+| Crash resilience | Checkpoint before compaction/delegation/handoff and at safe boundaries, event cursor, idempotent effect ledger, Git HEAD/file fingerprint check, checkpoint browser + user-approved Resume | Kill/relaunch matrix at every side-effect boundary, corruption and divergent HEAD tests             |
+| Plans            | Persist editable plan steps/revisions/dependencies/artifacts; scheduler rejects stale revisions, defaults sequential; checkout locks/worktree isolation; cancellation/retry semantics      | Deterministic state machine and concurrent-writer tests                                             |
+| Token efficiency | Separate native subscription vs metered API paths, per-run/task/child hard caps where observable, provider-specific telemetry with unknown labels, no token-spending polling               | Controlled Claude Code vs T3 A/B macOS runs; no unaudited inference/background agents               |
+| Compatibility    | Source-checkout and packaged Mac smoke runs; Cursor/OpenCode/Claude/Codex/custom routes; full mono-repo typecheck/lint/tests and upstream integration audit                                | Required CI green plus manual Mac launch and provider smoke tests                                   |
 
 ### Explicit recovery decision model
 

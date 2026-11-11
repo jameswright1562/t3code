@@ -34,7 +34,9 @@ export const layer = McpToolAccess.toLayer(MemoryToolkit, {
         { scopeType: "project" as const, scopeId: caller.projectId },
         { scopeType: "thread" as const, scopeId: caller.threadId },
       ];
-      const stored = yield* searchMemoryCandidates({ scopes, query, limitPerScope: 250 }).pipe(Effect.mapError(unavailable));
+      const stored = yield* searchMemoryCandidates({ scopes, query, limitPerScope: 250 }).pipe(
+        Effect.mapError(unavailable),
+      );
       const selected = selectMemoryForContext(stored, {
         query,
         allowedScopes: scopes,
@@ -44,7 +46,7 @@ export const layer = McpToolAccess.toLayer(MemoryToolkit, {
       return {
         entries: selected.memories.map((entry) => ({
           id: entry.id,
-          scope: entry.scopeType === "thread" ? "thread" as const : "project" as const,
+          scope: entry.scopeType === "thread" ? ("thread" as const) : ("project" as const),
           kind: entry.kind,
           content: entry.content,
           sourceRef: entry.sourceRef,

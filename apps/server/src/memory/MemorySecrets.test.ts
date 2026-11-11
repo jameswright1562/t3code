@@ -19,7 +19,9 @@ describe("memory credential guard", () => {
     }
   });
   it("permits ordinary source references and statements about authentication", () => {
-    expect(potentialSecretCategory("Use bearer authentication and environment variables")).toBeNull();
+    expect(
+      potentialSecretCategory("Use bearer authentication and environment variables"),
+    ).toBeNull();
     expect(potentialSecretCategory("file:src/auth/TokenStore.ts@ab123")).toBeNull();
     expect(potentialSecretCategory("https://github.com/example/project#readme")).toBeNull();
   });

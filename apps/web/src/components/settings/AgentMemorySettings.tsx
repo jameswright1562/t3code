@@ -21,13 +21,14 @@ export function AgentMemorySettings() {
   const projectId = target?.projectId ?? null;
   const [threadId, setThreadId] = useState("");
   const [memoryScopeType, setMemoryScopeType] = useState<"project" | "thread">("project");
-  const scope = projectId === null
-    ? null
-    : memoryScopeType === "project"
-      ? { scopeType: "project" as const, scopeId: projectId }
-      : threadId.trim()
-        ? { scopeType: "thread" as const, scopeId: threadId.trim() }
-        : null;
+  const scope =
+    projectId === null
+      ? null
+      : memoryScopeType === "project"
+        ? { scopeType: "project" as const, scopeId: projectId }
+        : threadId.trim()
+          ? { scopeType: "thread" as const, scopeId: threadId.trim() }
+          : null;
   const memories = useEnvironmentQuery(
     environmentId !== null && scope !== null
       ? serverEnvironment.harnessMemories({ environmentId, input: { scope } })
@@ -53,7 +54,8 @@ export function AgentMemorySettings() {
   const checkpointHistory = useEnvironmentQuery(
     environmentId !== null && projectId !== null && threadId.trim().length > 0
       ? serverEnvironment.harnessCheckpointHistory({
-          environmentId, input: { projectId, threadId: threadId.trim(), limit: 30 },
+          environmentId,
+          input: { projectId, threadId: threadId.trim(), limit: 30 },
         })
       : null,
   );
@@ -83,13 +85,16 @@ export function AgentMemorySettings() {
   const backupEntries = useAtomCommand(serverEnvironment.harnessBackupMemory);
   const restoreEntries = useAtomCommand(serverEnvironment.harnessRestoreMemory);
   const revise = useAtomCommand(serverEnvironment.harnessReviseMemory);
-  const entries = memories.data?.filter((entry) =>
-    (kindFilter === "all" || entry.kind === kindFilter) &&
-    (verificationFilter === "all" || entry.verification === verificationFilter) &&
-    (!pinnedOnly || entry.pinned) &&
-    [entry.kind, entry.content, entry.sourceRef, entry.sourceActor, entry.verification]
-      .some((value) => value.toLowerCase().includes(filter.trim().toLowerCase())),
-  ) ?? [];
+  const entries =
+    memories.data?.filter(
+      (entry) =>
+        (kindFilter === "all" || entry.kind === kindFilter) &&
+        (verificationFilter === "all" || entry.verification === verificationFilter) &&
+        (!pinnedOnly || entry.pinned) &&
+        [entry.kind, entry.content, entry.sourceRef, entry.sourceActor, entry.verification].some(
+          (value) => value.toLowerCase().includes(filter.trim().toLowerCase()),
+        ),
+    ) ?? [];
 
   async function mutate(
     entry: HarnessMemoryEntry,
@@ -206,7 +211,9 @@ export function AgentMemorySettings() {
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
-      setMessage("Saved complete scoped memory backup, including audit, revisions, tombstones and project checkpoints.");
+      setMessage(
+        "Saved complete scoped memory backup, including audit, revisions, tombstones and project checkpoints.",
+      );
     } catch {
       setMessage("Full memory backup failed.");
     } finally {
@@ -232,11 +239,15 @@ export function AgentMemorySettings() {
       const backup = JSON.parse(await file.text()) as HarnessMemoryBackup;
       const result = await restoreEntries({ environmentId, input: { scope, backup } });
       if (result._tag !== "Success") {
-        setMessage("Backup rejected. Check its checksum, project scope and existing record conflicts.");
+        setMessage(
+          "Backup rejected. Check its checksum, project scope and existing record conflicts.",
+        );
         return;
       }
       memories.refresh();
-      setMessage(`Restored ${result.value.importedEntries} memories, ${result.value.importedEvents} audit events, and ${result.value.importedCheckpoints} checkpoints.`);
+      setMessage(
+        `Restored ${result.value.importedEntries} memories, ${result.value.importedEvents} audit events, and ${result.value.importedCheckpoints} checkpoints.`,
+      );
     } catch {
       setMessage("Could not read or restore this backup JSON file.");
     } finally {
@@ -247,8 +258,8 @@ export function AgentMemorySettings() {
   return (
     <SettingsSection id="agent-memory" title="Agent memory">
       <p className="text-sm text-muted-foreground">
-        Verified memories survive agent sessions. Proposed memories are never trusted
-        automatically. Select a project, then choose project or thread memory to review.
+        Verified memories survive agent sessions. Proposed memories are never trusted automatically.
+        Select a project, then choose project or thread memory to review.
       </p>
       {projectId === null || environmentId === null ? (
         <p className="text-sm text-muted-foreground" role="status">
@@ -263,7 +274,10 @@ export function AgentMemorySettings() {
                 aria-label="Choose memory scope"
                 className="rounded-md border bg-background px-2 py-1"
                 value={memoryScopeType}
-                onChange={(event) => { setMemoryScopeType(event.target.value as "project" | "thread"); setEditing(null); }}
+                onChange={(event) => {
+                  setMemoryScopeType(event.target.value as "project" | "thread");
+                  setEditing(null);
+                }}
               >
                 <option value="project">Selected project</option>
                 <option value="thread">Specific thread</option>
@@ -273,14 +287,18 @@ export function AgentMemorySettings() {
               <Input
                 aria-label="Thread ID for memories"
                 value={threadId}
-                onChange={(event) => { setThreadId(event.target.value); setEditing(null); }}
+                onChange={(event) => {
+                  setThreadId(event.target.value);
+                  setEditing(null);
+                }}
                 placeholder="Thread ID"
               />
             ) : null}
           </div>
           {memoryScopeType === "thread" && scope === null ? (
             <p role="status" className="text-sm text-muted-foreground">
-              Enter a thread ID to inspect its own memories, without promoting them to project memory.
+              Enter a thread ID to inspect its own memories, without promoting them to project
+              memory.
             </p>
           ) : null}
           <div className="flex items-center gap-2">
@@ -290,13 +308,25 @@ export function AgentMemorySettings() {
               onChange={(event) => setFilter(event.target.value)}
               placeholder="Search content, type or source"
             />
-            <Button variant="outline" disabled={busy !== null || scope === null} onClick={() => memories.refresh()}>
+            <Button
+              variant="outline"
+              disabled={busy !== null || scope === null}
+              onClick={() => memories.refresh()}
+            >
               Refresh
             </Button>
-            <Button variant="outline" disabled={busy !== null || scope === null} onClick={() => void saveExport()}>
+            <Button
+              variant="outline"
+              disabled={busy !== null || scope === null}
+              onClick={() => void saveExport()}
+            >
               Export live JSON
             </Button>
-            <Button variant="outline" disabled={busy !== null || scope === null} onClick={() => void saveBackup()}>
+            <Button
+              variant="outline"
+              disabled={busy !== null || scope === null}
+              onClick={() => void saveBackup()}
+            >
               Full backup
             </Button>
           </div>
@@ -310,9 +340,20 @@ export function AgentMemorySettings() {
                 onChange={(event) => setKindFilter(event.target.value)}
               >
                 <option value="all">All kinds</option>
-                {["fact", "decision", "preference", "constraint", "file_reference",
-                  "failed_approach", "open_question", "procedure", "outcome"].map((kind) => (
-                  <option key={kind} value={kind}>{kind.replaceAll("_", " ")}</option>
+                {[
+                  "fact",
+                  "decision",
+                  "preference",
+                  "constraint",
+                  "file_reference",
+                  "failed_approach",
+                  "open_question",
+                  "procedure",
+                  "outcome",
+                ].map((kind) => (
+                  <option key={kind} value={kind}>
+                    {kind.replaceAll("_", " ")}
+                  </option>
                 ))}
               </select>
             </label>
@@ -353,52 +394,90 @@ export function AgentMemorySettings() {
               onChange={(event) => void restoreBackup(event)}
             />
           </label>
-          {memories.error ? <p role="alert" className="text-sm">{memories.error}</p> : null}
+          {memories.error ? (
+            <p role="alert" className="text-sm">
+              {memories.error}
+            </p>
+          ) : null}
           {memories.isPending ? <p role="status">Loading memories…</p> : null}
           {entries.length === 0 && !memories.isPending ? (
             <p className="text-sm text-muted-foreground">No matching memories.</p>
           ) : null}
-          <ul className="flex max-h-96 flex-col gap-2 overflow-y-auto" aria-label="Memories in selected scope">
+          <ul
+            className="flex max-h-96 flex-col gap-2 overflow-y-auto"
+            aria-label="Memories in selected scope"
+          >
             {entries.map((entry) => (
               <li key={entry.id} className="rounded-md border p-3">
                 <div className="mb-1 flex items-center justify-between gap-2">
                   <span className="text-xs font-medium">
-                    {entry.kind} · {entry.verification}{entry.pinned ? " · pinned" : ""}
+                    {entry.kind} · {entry.verification}
+                    {entry.pinned ? " · pinned" : ""}
                   </span>
                   <div className="flex gap-1">
                     {entry.verification === "proposed" ? (
-                      <Button size="xs" disabled={busy !== null} onClick={() => void mutate(entry, "confirm")}>
+                      <Button
+                        size="xs"
+                        disabled={busy !== null}
+                        onClick={() => void mutate(entry, "confirm")}
+                      >
                         Approve
                       </Button>
                     ) : null}
-                    <Button size="xs" variant="outline" disabled={busy !== null}
-                      onClick={() => setEditing({ id: entry.id, content: entry.content })}>
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      disabled={busy !== null}
+                      onClick={() => setEditing({ id: entry.id, content: entry.content })}
+                    >
                       Edit
                     </Button>
-                    <Button size="xs" variant="outline" disabled={busy !== null} onClick={() => void mutate(entry, "pin")}>
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      disabled={busy !== null}
+                      onClick={() => void mutate(entry, "pin")}
+                    >
                       {entry.pinned ? "Unpin" : "Pin"}
                     </Button>
-                    <Button size="xs" variant="outline" disabled={busy !== null} onClick={() => void mutate(entry, "forget")}>
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      disabled={busy !== null}
+                      onClick={() => void mutate(entry, "forget")}
+                    >
                       Forget
                     </Button>
                   </div>
                 </div>
                 {editing?.id === entry.id ? (
                   <div className="flex flex-col gap-2">
-                    <label className="text-xs" htmlFor={`edit-memory-${entry.id}`}>New memory revision</label>
+                    <label className="text-xs" htmlFor={`edit-memory-${entry.id}`}>
+                      New memory revision
+                    </label>
                     <textarea
                       id={`edit-memory-${entry.id}`}
                       className="min-h-24 w-full rounded-md border bg-background p-2 text-sm"
                       value={editing.content}
                       maxLength={100_000}
-                      onChange={(event) => setEditing({ id: entry.id, content: event.target.value })}
+                      onChange={(event) =>
+                        setEditing({ id: entry.id, content: event.target.value })
+                      }
                     />
                     <div className="flex gap-2">
-                      <Button size="xs" disabled={busy !== null} onClick={() => void saveRevision()}>
+                      <Button
+                        size="xs"
+                        disabled={busy !== null}
+                        onClick={() => void saveRevision()}
+                      >
                         Save revision
                       </Button>
-                      <Button size="xs" variant="outline" disabled={busy !== null}
-                        onClick={() => setEditing(null)}>
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        disabled={busy !== null}
+                        onClick={() => setEditing(null)}
+                      >
                         Cancel
                       </Button>
                     </div>
@@ -485,7 +564,11 @@ export function AgentMemorySettings() {
           </div>
         </div>
       )}
-      {message ? <p className="text-sm" role="status">{message}</p> : null}
+      {message ? (
+        <p className="text-sm" role="status">
+          {message}
+        </p>
+      ) : null}
     </SettingsSection>
   );
 }

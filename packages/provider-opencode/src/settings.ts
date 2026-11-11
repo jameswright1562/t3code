@@ -58,7 +58,8 @@ export const OpenCodeSettings = makeProviderSettingsSchema(
           "Applied to OPENCODE_CONFIG_CONTENT for T3-launched OpenCode. Use environment variables or the secret manager for credentials, not inline API keys.",
         providerSettingsForm: {
           control: "textarea",
-          placeholder: '{\n  "provider": {\n    "my-provider": { "options": { "baseURL": "http://127.0.0.1:8000/v1" } }\n  }\n}',
+          placeholder:
+            '{\n  "provider": {\n    "my-provider": { "options": { "baseURL": "http://127.0.0.1:8000/v1" } }\n  }\n}',
         },
       }),
     ),

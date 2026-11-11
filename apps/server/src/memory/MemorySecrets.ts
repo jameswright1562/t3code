@@ -11,8 +11,11 @@ const patterns = [
   ["OpenAI-style API token", /\bsk-(?:proj-)?[a-z0-9_-]{20,}/i],
   ["GitHub token", /\b(?:gh[pousr]_[a-z0-9]{30,}|github_pat_[a-z0-9_]{35,})/i],
   ["AWS access key", /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/],
-  ["URL userinfo", /\bhttps?:\/\/[^\/\s:@]+:[^@\s/]+@/i],
-  ["plaintext credential assignment", /\b(?:api[_-]?key|access[_-]?token|password|client[_-]?secret|secret)\s*[:=]\s*["']?[A-Za-z0-9._~+/=-]{20,}/i],
+  ["URL userinfo", /\bhttps?:\/\/[^/\s:@]+:[^@\s/]+@/i],
+  [
+    "plaintext credential assignment",
+    /\b(?:api[_-]?key|access[_-]?token|password|client[_-]?secret|secret)\s*[:=]\s*["']?[A-Za-z0-9._~+/=-]{20,}/i,
+  ],
 ] as const;
 
 export function potentialSecretCategory(value: string): string | null {

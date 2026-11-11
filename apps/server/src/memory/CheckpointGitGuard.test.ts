@@ -14,7 +14,9 @@ describe("checkpoint Git recovery guard", () => {
     expect(assessCheckpointGit(base).status).toBe("match");
   });
   it("detects changed HEAD or branch", () => {
-    expect(assessCheckpointGit({ ...base, currentHeadCommit: "different" }).status).toBe("diverged");
+    expect(assessCheckpointGit({ ...base, currentHeadCommit: "different" }).status).toBe(
+      "diverged",
+    );
     expect(assessCheckpointGit({ ...base, currentBranch: "main" }).status).toBe("diverged");
   });
   it("rejects dirty worktrees and unknown historical checkpoint identity", () => {

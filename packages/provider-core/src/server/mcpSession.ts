@@ -1,4 +1,10 @@
-import type { EnvironmentId, HarnessMcpServerConfig, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  HarnessMcpServerConfig,
+  ProjectId,
+  ProviderInstanceId,
+  ThreadId,
+} from "@t3tools/contracts";
 
 export interface McpProviderSessionConfig {
   readonly environmentId: EnvironmentId;

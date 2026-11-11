@@ -23,8 +23,10 @@ export default Effect.gen(function* () {
       (cause) =>
         Predicate.hasProperty(cause.reason.cause, "errcode") && cause.reason.cause.errcode === 1,
       (cause) =>
-        Effect.logWarning("Agent memory FTS5 index unavailable; scoped search will use fallback.", cause)
-          .pipe(Effect.as(false)),
+        Effect.logWarning(
+          "Agent memory FTS5 index unavailable; scoped search will use fallback.",
+          cause,
+        ).pipe(Effect.as(false)),
     ),
   );
   if (!created) return;

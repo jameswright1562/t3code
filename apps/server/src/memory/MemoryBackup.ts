@@ -4,11 +4,7 @@ import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { potentialSecretCategory } from "./MemorySecrets.ts";
-import {
-  AgentMemoryValidationError,
-  type MemoryEntry,
-  type MemoryScope,
-} from "./AgentMemory.ts";
+import { AgentMemoryValidationError, type MemoryEntry, type MemoryScope } from "./AgentMemory.ts";
 
 /**
  * A scoped, audited backup of the memory ledger for ONE explicitly selected scope.
@@ -63,11 +59,14 @@ const encodeJson = Schema.encodeUnknownEffect(Schema.fromJsonString(Schema.Unkno
 const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 
 /** Deterministic digest over the exact serialized scope, records and audit ledger. */
-export const checksumMemoryBackup = Effect.fn("MemoryBackup.checksum")(function* (payload: BackupPayload) {
+export const checksumMemoryBackup = Effect.fn("MemoryBackup.checksum")(function* (
+  payload: BackupPayload,
+) {
   const serialized = yield* encodeJson(payload);
   return yield* Digest.Digest.pipe(
     Effect.flatMap((service) =>
-      service.digestHex(Digest.sha256, new TextEncoder().encode(serialized))),
+      service.digestHex(Digest.sha256, new TextEncoder().encode(serialized)),
+    ),
     Effect.provide(Digest.layerWebCrypto),
   );
 });
@@ -82,10 +81,11 @@ export const exportMemoryBackup = Effect.fn("MemoryBackup.export")(function* (sc
   const sql = yield* SqlClient.SqlClient;
   // A backup must use one SQLite snapshot, not three independently racing reads:
   // a concurrent memory revision or checkpoint save must appear all-or-nothing.
-  return yield* sql.withTransaction(Effect.gen(function* () {
-  // No implicit global or cross-project scope. Older revisions and deleted
-  // rows are deliberately included; these must not be lost during restore.
-  const rows = yield* sql<MemoryRow>`
+  return yield* sql.withTransaction(
+    Effect.gen(function* () {
+      // No implicit global or cross-project scope. Older revisions and deleted
+      // rows are deliberately included; these must not be lost during restore.
+      const rows = yield* sql<MemoryRow>`
     SELECT id, scope_type AS "scopeType", scope_id AS "scopeId",
       kind, content, source_ref AS "sourceRef", source_actor AS "sourceActor",
       verification, confidence, pinned, created_at AS "createdAt",
@@ -95,15 +95,16 @@ export const exportMemoryBackup = Effect.fn("MemoryBackup.export")(function* (sc
     WHERE scope_type = ${scope.scopeType} AND scope_id = ${scope.scopeId}
     ORDER BY created_at, id
   `;
-  const events = yield* sql<MemoryAuditEvent>`
+      const events = yield* sql<MemoryAuditEvent>`
     SELECT e.event_id AS "eventId", e.memory_id AS "memoryId",
       e.operation, e.payload_json AS "payloadJson", e.occurred_at AS "occurredAt"
     FROM agent_memory_events e JOIN agent_memory_items m ON m.id = e.memory_id
     WHERE m.scope_type = ${scope.scopeType} AND m.scope_id = ${scope.scopeId}
     ORDER BY e.seq
   `;
-  const checkpoints = scope.scopeType === "project"
-    ? yield* sql<MemoryCheckpointArchive>`
+      const checkpoints =
+        scope.scopeType === "project"
+          ? yield* sql<MemoryCheckpointArchive>`
       SELECT id, project_id AS "projectId", thread_id AS "threadId",
         task_id AS "taskId", sequence, checkpoint_json AS "checkpointJson",
         created_at AS "createdAt", schema_version AS "schemaVersion"
@@ -111,24 +112,28 @@ export const exportMemoryBackup = Effect.fn("MemoryBackup.export")(function* (sc
       WHERE project_id = ${scope.scopeId}
       ORDER BY thread_id, sequence
     `
-    : [];
-  if (rows.length > MAX_ITEMS || events.length > MAX_EVENTS ||
-      checkpoints.length > MAX_CHECKPOINTS) {
-    return yield* invalid("Backup exceeds the per-scope record limit");
-  }
-  const payload = {
-    schemaVersion: 2 as const,
-    scope,
-    entries: rows.map(item),
-    events,
-    checkpoints,
-  };
-  const encoded = yield* encodeJson(payload);
-  if (Buffer.byteLength(encoded, "utf8") > MAX_JSON_BYTES) {
-    return yield* invalid("Backup exceeds the 16 MiB limit");
-  }
-  return { ...payload, checksum: yield* checksumMemoryBackup(payload) } satisfies MemoryBackup;
-  }));
+          : [];
+      if (
+        rows.length > MAX_ITEMS ||
+        events.length > MAX_EVENTS ||
+        checkpoints.length > MAX_CHECKPOINTS
+      ) {
+        return yield* invalid("Backup exceeds the per-scope record limit");
+      }
+      const payload = {
+        schemaVersion: 2 as const,
+        scope,
+        entries: rows.map(item),
+        events,
+        checkpoints,
+      };
+      const encoded = yield* encodeJson(payload);
+      if (Buffer.byteLength(encoded, "utf8") > MAX_JSON_BYTES) {
+        return yield* invalid("Backup exceeds the 16 MiB limit");
+      }
+      return { ...payload, checksum: yield* checksumMemoryBackup(payload) } satisfies MemoryBackup;
+    }),
+  );
 });
 
 export const importMemoryBackup = Effect.fn("MemoryBackup.import")(function* (input: {
@@ -136,8 +141,12 @@ export const importMemoryBackup = Effect.fn("MemoryBackup.import")(function* (in
   readonly backup: MemoryBackup;
 }) {
   const { scope, backup } = input;
-  if (!scope.scopeId.trim() || backup.schemaVersion !== 2 ||
-      backup.scope.scopeType !== scope.scopeType || backup.scope.scopeId !== scope.scopeId) {
+  if (
+    !scope.scopeId.trim() ||
+    backup.schemaVersion !== 2 ||
+    backup.scope.scopeType !== scope.scopeType ||
+    backup.scope.scopeId !== scope.scopeId
+  ) {
     return yield* invalid("Backup does not belong to the selected scope");
   }
   const payload: BackupPayload = {
@@ -148,28 +157,35 @@ export const importMemoryBackup = Effect.fn("MemoryBackup.import")(function* (in
     checkpoints: backup.checkpoints,
   };
   const encoded = yield* encodeJson(payload);
-  if (backup.entries.length > MAX_ITEMS || backup.events.length > MAX_EVENTS ||
-      backup.checkpoints.length > MAX_CHECKPOINTS ||
-      Buffer.byteLength(encoded, "utf8") > MAX_JSON_BYTES ||
-      !/^[a-f0-9]{64}$/.test(backup.checksum) ||
-      (yield* checksumMemoryBackup(payload)) !== backup.checksum) {
+  if (
+    backup.entries.length > MAX_ITEMS ||
+    backup.events.length > MAX_EVENTS ||
+    backup.checkpoints.length > MAX_CHECKPOINTS ||
+    Buffer.byteLength(encoded, "utf8") > MAX_JSON_BYTES ||
+    !/^[a-f0-9]{64}$/.test(backup.checksum) ||
+    (yield* checksumMemoryBackup(payload)) !== backup.checksum
+  ) {
     return yield* invalid("Backup checksum, size or format is invalid");
   }
   const ids = new Set<string>();
   for (const entry of backup.entries) {
-    if (!entry.id.trim() || ids.has(entry.id) ||
-        entry.scopeType !== scope.scopeType || entry.scopeId !== scope.scopeId ||
-        !entry.content.trim() || !entry.sourceRef.trim() ||
-        potentialSecretCategory(entry.content) !== null ||
-        potentialSecretCategory(entry.sourceRef) !== null) {
+    if (
+      !entry.id.trim() ||
+      ids.has(entry.id) ||
+      entry.scopeType !== scope.scopeType ||
+      entry.scopeId !== scope.scopeId ||
+      !entry.content.trim() ||
+      !entry.sourceRef.trim() ||
+      potentialSecretCategory(entry.content) !== null ||
+      potentialSecretCategory(entry.sourceRef) !== null
+    ) {
       return yield* invalid("Backup contains duplicate, invalid or out-of-scope memory");
     }
     ids.add(entry.id);
   }
   const eventIds = new Set<string>();
   for (const event of backup.events) {
-    if (!event.eventId.trim() || eventIds.has(event.eventId) ||
-        !ids.has(event.memoryId)) {
+    if (!event.eventId.trim() || eventIds.has(event.eventId) || !ids.has(event.memoryId)) {
       return yield* invalid("Backup contains duplicate or unscoped audit events");
     }
     eventIds.add(event.eventId);
@@ -182,11 +198,17 @@ export const importMemoryBackup = Effect.fn("MemoryBackup.import")(function* (in
   const sequenceIds = new Set<string>();
   for (const checkpoint of backup.checkpoints) {
     const seqId = checkpoint.threadId + ":" + checkpoint.sequence;
-    if (scope.scopeType !== "project" || checkpoint.projectId !== scope.scopeId ||
-        !checkpoint.id.trim() || !checkpoint.threadId.trim() ||
-        !Number.isSafeInteger(checkpoint.sequence) || checkpoint.sequence < 0 ||
-        checkpoint.schemaVersion !== 1 ||
-        checkpointIds.has(checkpoint.id) || sequenceIds.has(seqId)) {
+    if (
+      scope.scopeType !== "project" ||
+      checkpoint.projectId !== scope.scopeId ||
+      !checkpoint.id.trim() ||
+      !checkpoint.threadId.trim() ||
+      !Number.isSafeInteger(checkpoint.sequence) ||
+      checkpoint.sequence < 0 ||
+      checkpoint.schemaVersion !== 1 ||
+      checkpointIds.has(checkpoint.id) ||
+      sequenceIds.has(seqId)
+    ) {
       return yield* invalid("Backup contains an invalid, duplicate or out-of-scope checkpoint");
     }
     checkpointIds.add(checkpoint.id);
@@ -215,9 +237,12 @@ export const importMemoryBackup = Effect.fn("MemoryBackup.import")(function* (in
         `;
         if (existing[0]) {
           const stored = item(existing[0]);
-          if (!(Object.keys(entry) as (keyof MemoryEntry)[]).every(
-            (key) => stored[key] === entry[key]
-          )) return yield* invalid("Existing memory conflicts with backup: " + entry.id);
+          if (
+            !(Object.keys(entry) as (keyof MemoryEntry)[]).every(
+              (key) => stored[key] === entry[key],
+            )
+          )
+            return yield* invalid("Existing memory conflicts with backup: " + entry.id);
           continue;
         }
         yield* sql`
@@ -242,9 +267,12 @@ export const importMemoryBackup = Effect.fn("MemoryBackup.import")(function* (in
           FROM agent_memory_events WHERE event_id = ${event.eventId}
         `;
         if (existing[0]) {
-          if (!(Object.keys(event) as (keyof MemoryAuditEvent)[]).every(
-            (key) => existing[0]![key] === event[key]
-          )) return yield* invalid("Existing audit event conflicts with backup: " + event.eventId);
+          if (
+            !(Object.keys(event) as (keyof MemoryAuditEvent)[]).every(
+              (key) => existing[0]![key] === event[key],
+            )
+          )
+            return yield* invalid("Existing audit event conflicts with backup: " + event.eventId);
           continue;
         }
         yield* sql`
@@ -267,10 +295,13 @@ export const importMemoryBackup = Effect.fn("MemoryBackup.import")(function* (in
             (thread_id = ${checkpoint.threadId} AND sequence = ${checkpoint.sequence})
         `;
         if (existing.length > 0) {
-          if (existing.length !== 1 ||
-              !(Object.keys(checkpoint) as (keyof MemoryCheckpointArchive)[]).every(
-                (key) => existing[0]![key] === checkpoint[key]
-              )) return yield* invalid("Existing checkpoint conflicts with backup: " + checkpoint.id);
+          if (
+            existing.length !== 1 ||
+            !(Object.keys(checkpoint) as (keyof MemoryCheckpointArchive)[]).every(
+              (key) => existing[0]![key] === checkpoint[key],
+            )
+          )
+            return yield* invalid("Existing checkpoint conflicts with backup: " + checkpoint.id);
           continue;
         }
         yield* sql`

@@ -153,7 +153,9 @@ export const layer: Layer.Layer<
     const eventSink = yield* EventSink.EventSinkV2;
     const turnAnalytics = yield* ProviderUsageAnalytics.ProviderTurnAnalytics;
     const contextHandoffService = yield* ContextHandoffService.ContextHandoffServiceV2;
-    const agentMemoryContext = yield* Effect.serviceOption(AgentMemoryContextService.AgentMemoryContextService);
+    const agentMemoryContext = yield* Effect.serviceOption(
+      AgentMemoryContextService.AgentMemoryContextService,
+    );
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -639,7 +641,8 @@ export const layer: Layer.Layer<
       }
       const { harnessMaxRunsPerThread } = yield* harnessSettings.getSettings;
       const runBudgetDecision = evaluateThreadRunBudget({
-        runOrdinal: run.ordinal, maxRuns: harnessMaxRunsPerThread,
+        runOrdinal: run.ordinal,
+        maxRuns: harnessMaxRunsPerThread,
       });
       if (!runBudgetDecision.allowed) {
         yield* settleStartFailure({
@@ -1597,7 +1600,9 @@ export const layer: Layer.Layer<
       });
       // Attach stored memory once to each fresh native provider session, not to every turn.
       const savedProjectMemoryContext =
-        runningProviderThread.nativeThreadRef === null && !goalCommand && Option.isSome(agentMemoryContext)
+        runningProviderThread.nativeThreadRef === null &&
+        !goalCommand &&
+        Option.isSome(agentMemoryContext)
           ? yield* agentMemoryContext.value.prepare({
               projectId: projection.thread.projectId,
               threadId: projection.thread.id,

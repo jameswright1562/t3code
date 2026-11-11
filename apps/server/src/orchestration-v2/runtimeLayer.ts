@@ -211,7 +211,11 @@ const layerCheckpointCaptureServiceProvided = CheckpointCaptureService.layer.pip
 );
 const layerRunFinalizationServiceProvided = RunFinalizationService.layer.pipe(
   Layer.provide(
-    Layer.mergeAll(layerCheckpointCaptureServiceProvided, ProjectionStore.layer, GitVcsDriver.layer),
+    Layer.mergeAll(
+      layerCheckpointCaptureServiceProvided,
+      ProjectionStore.layer,
+      GitVcsDriver.layer,
+    ),
   ),
 );
 

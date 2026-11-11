@@ -15,7 +15,9 @@ const toEntry = (row: MemoryRow): MemoryEntry => ({ ...row, pinned: row.pinned =
 
 /** Quoted FTS phrases are derived from Unicode word tokens, not raw user syntax. */
 export function makeMemoryFtsQuery(query: string): string | null {
-  const tokens = [...new Set(query.toLocaleLowerCase("en").match(/[\p{L}\p{N}_.-]{3,}/gu) ?? [])].slice(0, 8);
+  const tokens = [
+    ...new Set(query.toLocaleLowerCase("en").match(/[\p{L}\p{N}_.-]{3,}/gu) ?? []),
+  ].slice(0, 8);
   return tokens.length === 0 ? null : tokens.map((token) => `"${token}"`).join(" OR ");
 }
 
@@ -28,7 +30,10 @@ export const searchMemoryCandidates = Effect.fn("AgentMemory.searchCandidates")(
   const sql = yield* SqlClient.SqlClient;
   const limit = Math.max(1, Math.min(500, Math.floor(input.limitPerScope ?? 250)));
   const match = makeMemoryFtsQuery(input.query.slice(0, 1000));
-  const index = match === null ? [] : yield* sql<{ readonly name: string }>`
+  const index =
+    match === null
+      ? []
+      : yield* sql<{ readonly name: string }>`
     SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'agent_memory_search'
   `;
   const indexed = match !== null && index.length > 0;

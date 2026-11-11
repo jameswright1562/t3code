@@ -25,17 +25,24 @@ export function assessCheckpointGit(input: CheckpointGitInput): CheckpointGitSta
     savedBranch: input.savedBranch,
     currentBranch: input.currentBranch,
   };
-  if (!input.savedHeadCommit || !input.currentHeadCommit ||
-      !input.savedBranch || !input.currentBranch) {
+  if (
+    !input.savedHeadCommit ||
+    !input.currentHeadCommit ||
+    !input.savedBranch ||
+    !input.currentBranch
+  ) {
     return {
       ...values,
       status: "unverifiable",
-      reason: input.unavailableReason ??
+      reason:
+        input.unavailableReason ??
         "Saved or current Git identity is unavailable; manual review is required.",
     };
   }
-  if (input.savedHeadCommit !== input.currentHeadCommit ||
-      input.savedBranch !== input.currentBranch) {
+  if (
+    input.savedHeadCommit !== input.currentHeadCommit ||
+    input.savedBranch !== input.currentBranch
+  ) {
     return {
       ...values,
       status: "diverged",
