@@ -3,6 +3,8 @@
  * This module chooses eligible work; it never opens a provider session itself.
  * Checkout identity must be resolved from the trusted host, not an agent label.
  */
+import * as Schema from "effect/Schema";
+
 export type HarnessStepStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
 export interface HarnessStepDraft {
@@ -30,15 +32,13 @@ export interface HarnessPlan {
   readonly updatedAt: string;
 }
 
-export class HarnessPlanValidationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "HarnessPlanValidationError";
-  }
-}
+export class HarnessPlanValidationError extends Schema.TaggedError<HarnessPlanValidationError>()(
+  "HarnessPlanValidationError",
+  { detail: Schema.String },
+) {}
 
 const fail = (message: string): never => {
-  throw new HarnessPlanValidationError(message);
+  throw new HarnessPlanValidationError({ detail: message });
 };
 
 const isId = (value: string) => value.trim().length > 0 && value.length <= 128;
@@ -70,7 +70,7 @@ export function validateHarnessSteps(steps: readonly HarnessStep[]): void {
     ensure(!visiting.has(id), "Cyclic plan dependencies are not allowed");
     if (visited.has(id)) return;
     const step = byId.get(id);
-    if (!step) fail("Dependency points to a missing step");
+    if (!step) throw new HarnessPlanValidationError({ detail: "Dependency points to a missing step" });
     visiting.add(id);
     const deps = new Set<string>();
     for (const dep of step.dependsOn) {
@@ -133,7 +133,7 @@ export function transitionHarnessStep(
   options: { readonly allowParallel?: boolean } = {},
 ): readonly HarnessStep[] {
   const step = steps.find((candidate) => candidate.id === stepId);
-  if (!step) fail("Step does not exist in this plan");
+  if (!step) throw new HarnessPlanValidationError({ detail: "Step does not exist in this plan" });
   const from = step.status;
   const allowed =
     (from === "pending" && (next === "running" || next === "cancelled")) ||
@@ -142,7 +142,7 @@ export function transitionHarnessStep(
   ensure(allowed, "Invalid plan step state transition");
   if (next === "running") {
     ensure(
-      readyHarnessSteps(steps, { allowParallel: options.allowParallel, maxParallel: 4 }).some(
+      readyHarnessSteps(steps, { allowParallel: options.allowParallel ?? false, maxParallel: 4 }).some(
         (candidate) => candidate.id === stepId,
       ),
       "Dependencies or checkout concurrency prevent starting this step",

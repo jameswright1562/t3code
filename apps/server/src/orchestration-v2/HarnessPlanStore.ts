@@ -1,5 +1,6 @@
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import {
@@ -22,7 +23,8 @@ interface PlanRow {
   readonly updatedAt: string;
 }
 
-const fail = (detail: string) => new HarnessPlanValidationError(detail);
+const fail = (detail: string) => new HarnessPlanValidationError({ detail });
+const encodeJson = Schema.encodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 const safe = <T>(f: () => T) => Effect.try({ try: f, catch: (error) => fail(String(error)) });
 
 const parsePlan = Effect.fn("HarnessPlanStore.parse")(function* (row: PlanRow) {
@@ -82,13 +84,15 @@ export const createHarnessPlan = Effect.fn("HarnessPlanStore.create")(function* 
   }));
   yield* safe(() => validateHarnessSteps(steps));
   const sql = yield* SqlClient.SqlClient;
+  const stepsJson = yield* encodeJson(steps);
   const now = input.updatedAt ?? DateTime.formatIso(yield* DateTime.now);
   return yield* sql.withTransaction(
     Effect.gen(function* () {
       const existing = yield* readRow(input);
       if (existing) {
         const plan = yield* parsePlan(existing);
-        if (plan.planId !== input.planId || JSON.stringify(plan.steps) !== JSON.stringify(steps)) {
+        const priorStepsJson = yield* encodeJson(plan.steps);
+        if (plan.planId !== input.planId || priorStepsJson !== stepsJson) {
           return yield* Effect.fail(fail("Plan already exists with different content"));
         }
         return plan;
@@ -96,7 +100,7 @@ export const createHarnessPlan = Effect.fn("HarnessPlanStore.create")(function* 
       yield* sql`INSERT INTO harness_thread_plans
         (thread_id, project_id, plan_id, revision, steps_json, updated_at)
         VALUES (${input.threadId}, ${input.projectId}, ${input.planId}, 1,
-          ${JSON.stringify(steps)}, ${now})`;
+          ${stepsJson}, ${now})`;
       return {
         schemaVersion: 1 as const,
         ...input,
@@ -137,13 +141,14 @@ export const mutateHarnessPlan = Effect.fn("HarnessPlanStore.mutate")(function* 
         input.change.type === "edit"
           ? reviseHarnessSteps(previous.steps, input.change.steps)
           : transitionHarnessStep(previous.steps, input.change.stepId, input.change.next, {
-              allowParallel: input.change.allowParallel,
+              allowParallel: input.change.allowParallel ?? false,
             }),
       );
       const now = input.updatedAt ?? DateTime.formatIso(yield* DateTime.now);
+      const stepsJson = yield* encodeJson(steps);
       const revision = previous.revision + 1;
       const updated = yield* sql`UPDATE harness_thread_plans
-        SET revision = ${revision}, steps_json = ${JSON.stringify(steps)},
+        SET revision = ${revision}, steps_json = ${stepsJson},
           updated_at = ${now}
         WHERE thread_id = ${input.threadId} AND project_id = ${input.projectId}
           AND revision = ${input.expectedRevision}`;
