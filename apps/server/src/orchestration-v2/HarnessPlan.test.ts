@@ -48,7 +48,11 @@ const layer = it.layer(layerMemory);
 layer("persistent harness plans", (it) => {
   it.effect("enforces dependency order, optimistic revisions, and project isolation", () =>
     Effect.gen(function* () {
-      const scope = { projectId: "harness-project-a", threadId: "harness-thread-a", trustedCheckoutPath: "/work/project-a" };
+      const scope = {
+        projectId: "harness-project-a",
+        threadId: "harness-thread-a",
+        trustedCheckoutPath: "/work/project-a",
+      };
       const plan = yield* createHarnessPlan({
         ...scope,
         planId: "plan:1",
@@ -106,7 +110,11 @@ layer("persistent harness plans", (it) => {
   );
   it.effect("cannot erase completed steps or create overlapping writers", () =>
     Effect.gen(function* () {
-      const scope = { projectId: "harness-project-c", threadId: "harness-thread-c", trustedCheckoutPath: "/work/project-c" };
+      const scope = {
+        projectId: "harness-project-c",
+        threadId: "harness-thread-c",
+        trustedCheckoutPath: "/work/project-c",
+      };
       yield* createHarnessPlan({
         ...scope,
         planId: "plan:2",
@@ -138,31 +146,42 @@ layer("persistent harness plans", (it) => {
   );
   it.effect("blocks plan writes across different threads in one canonical checkout", () =>
     Effect.gen(function* () {
-      const a = { projectId: "shared-project", threadId: "thread-one",
-        trustedCheckoutPath: "/workspace/shared" };
-      const b = { projectId: "shared-project", threadId: "thread-two",
-        trustedCheckoutPath: "/workspace/shared" };
+      const a = {
+        projectId: "shared-project",
+        threadId: "thread-one",
+        trustedCheckoutPath: "/workspace/shared",
+      };
+      const b = {
+        projectId: "shared-project",
+        threadId: "thread-two",
+        trustedCheckoutPath: "/workspace/shared",
+      };
       yield* createHarnessPlan({ ...a, planId: "plan-one", steps: [draft("a")] });
       yield* createHarnessPlan({ ...b, planId: "plan-two", steps: [draft("b")] });
       yield* mutateHarnessPlan({
-        ...a, expectedRevision: 1,
+        ...a,
+        expectedRevision: 1,
         change: { type: "transition", stepId: "a", next: "running" },
       });
-      const blocked = yield* Effect.result(mutateHarnessPlan({
-        ...b, expectedRevision: 1,
-        change: { type: "transition", stepId: "b", next: "running" },
-      }));
+      const blocked = yield* Effect.result(
+        mutateHarnessPlan({
+          ...b,
+          expectedRevision: 1,
+          change: { type: "transition", stepId: "b", next: "running" },
+        }),
+      );
       assert.equal(blocked._tag, "Failure");
       yield* mutateHarnessPlan({
-        ...a, expectedRevision: 2,
+        ...a,
+        expectedRevision: 2,
         change: { type: "transition", stepId: "a", next: "completed" },
       });
       const resumed = yield* mutateHarnessPlan({
-        ...b, expectedRevision: 1,
+        ...b,
+        expectedRevision: 1,
         change: { type: "transition", stepId: "b", next: "running" },
       });
       assert.equal(resumed.steps[0]?.status, "running");
     }),
   );
-
 });

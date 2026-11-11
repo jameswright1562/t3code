@@ -1464,34 +1464,35 @@ export const layerWsRpc = (
       const deviceHostContext =
         yield* Effect.context<Effect.Services<ReturnType<typeof remoteSshDeviceHosts>>>();
       const orchestrationEngine = yield* Orchestrator.OrchestratorV2;
-      const resolveTrustedPlanCheckout = Effect.fn(
-        "WsRpc.resolveTrustedPlanCheckout",
-      )(function* (input: { readonly projectId: string; readonly threadId: string }) {
-        const projection = yield* orchestrationEngine.getThreadProjection(
-          ThreadId.make(input.threadId),
-        );
-        if (projection.thread.projectId !== input.projectId) {
-          return yield* new HarnessPlanError({
-            message: "Plan thread does not belong to the selected project.",
-          });
-        }
-        const project = yield* projectStore.get(projection.thread.projectId);
-        if (Option.isNone(project)) {
-          return yield* new HarnessPlanError({
-            message: "The project checkout is unavailable.",
-          });
-        }
-        const filesystem = yield* FileSystem.FileSystem;
-        return yield* filesystem
-          .realPath(projection.thread.worktreePath ?? project.value.workspaceRoot)
-          .pipe(
-            Effect.mapError(
-              () => new HarnessPlanError({
-                message: "Could not verify the host checkout realpath.",
-              }),
-            ),
+      const resolveTrustedPlanCheckout = Effect.fn("WsRpc.resolveTrustedPlanCheckout")(
+        function* (input: { readonly projectId: string; readonly threadId: string }) {
+          const projection = yield* orchestrationEngine.getThreadProjection(
+            ThreadId.make(input.threadId),
           );
-      });
+          if (projection.thread.projectId !== input.projectId) {
+            return yield* new HarnessPlanError({
+              message: "Plan thread does not belong to the selected project.",
+            });
+          }
+          const project = yield* projectStore.get(projection.thread.projectId);
+          if (Option.isNone(project)) {
+            return yield* new HarnessPlanError({
+              message: "The project checkout is unavailable.",
+            });
+          }
+          const filesystem = yield* FileSystem.FileSystem;
+          return yield* filesystem
+            .realPath(projection.thread.worktreePath ?? project.value.workspaceRoot)
+            .pipe(
+              Effect.mapError(
+                () =>
+                  new HarnessPlanError({
+                    message: "Could not verify the host checkout realpath.",
+                  }),
+              ),
+            );
+        },
+      );
       const random = yield* SecureRandom.SecureRandom;
       // RPC client ids are only unique within one socket; terminals share viewers across sockets.
       const terminalViewerPrefix = yield* random.uuidV4();
@@ -2460,9 +2461,9 @@ export const layerWsRpc = (
               });
             }
             return yield* HarnessPlanStore.createHarnessPlan({
-                ...input,
-                trustedCheckoutPath: yield* resolveTrustedPlanCheckout(input),
-              }).pipe(
+              ...input,
+              trustedCheckoutPath: yield* resolveTrustedPlanCheckout(input),
+            }).pipe(
               Effect.provideService(SqlClient.SqlClient, sql),
               Effect.mapError(
                 (error) =>
@@ -2491,9 +2492,9 @@ export const layerWsRpc = (
               });
             }
             return yield* HarnessPlanStore.mutateHarnessPlan({
-                ...input,
-                trustedCheckoutPath: yield* resolveTrustedPlanCheckout(input),
-              }).pipe(
+              ...input,
+              trustedCheckoutPath: yield* resolveTrustedPlanCheckout(input),
+            }).pipe(
               Effect.provideService(SqlClient.SqlClient, sql),
               Effect.mapError(
                 (error) =>

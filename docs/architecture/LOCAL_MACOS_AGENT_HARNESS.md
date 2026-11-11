@@ -19,30 +19,30 @@ states and must not be read as the latest checklist.
 ### Implemented and tested in fork-specific CI
 
 - [x] Persistent **project/thread-scoped memory**, source references, proposal
-  versus verified status, browser/approval/revision/pinning/forgetting UI,
-  bounded context search and injection on fresh native sessions.
+      versus verified status, browser/approval/revision/pinning/forgetting UI,
+      bounded context search and injection on fresh native sessions.
 - [x] Full **scoped memory backup/restore** with audit events, revision ancestors,
-  tombstones, checksum, idempotence and conflict refusal; no external Git objects
-  or provider-native sessions are included.
+      tombstones, checksum, idempotence and conflict refusal; no external Git objects
+      or provider-native sessions are included.
 - [x] **Checkpoint capture after finalization**, Git branch/HEAD validation,
-  persisted thread event cursor, corrupt-latest fallback, checkpoint history and
-  read-only recovery inspector. The inspector **does not** resume execution.
+      persisted thread event cursor, corrupt-latest fallback, checkpoint history and
+      read-only recovery inspector. The inspector **does not** resume execution.
 - [x] Configurable shared MCP **registry and Settings UI** for selected providers
-  and projects, with conservative URL/stdio validation. This is not a complete
-  credentialed MCP connection manager.
+      and projects, with conservative URL/stdio validation. This is not a complete
+      credentialed MCP connection manager.
 - [x] Per-thread **maximum native provider run count** (optional; 0 = unlimited).
-  This is **not** a hard cap on native child turns, tokens or subscription usage.
+      This is **not** a hard cap on native child turns, tokens or subscription usage.
 - [x] Offline paired Claude quota **analysis script**, using recorded subscription
-  percentages. No real paid-model A/B measurements have been taken.
+      percentages. No real paid-model A/B measurements have been taken.
 - [x] **Migration 81 collision handling**: preserve fork memory migrations
-  81/82 and install upstream message-search upgrade as 83, with regression tests.
+      81/82 and install upstream message-search upgrade as 83, with regression tests.
 - [x] Durable **revisioned plans** (migration 84), dependency/cycle validation,
-  optimistic edit guards, sequential-ready selection and logical checkout-key
-  collision refusal. Manual plan editor and authenticated, thread-owned RPCs
-  are connected. **No real agent scheduling or filesystem lock is attached.**
+      optimistic edit guards, sequential-ready selection and logical checkout-key
+      collision refusal. Manual plan editor and authenticated, thread-owned RPCs
+      are connected. **No real agent scheduling or filesystem lock is attached.**
 - [x] Hosted **macOS unsigned desktop build** and preload smoke, Linux desktop
-  build/lint/unused export checks, focused memory/plan/migration tests, server,
-  contracts and client typechecks, plus web build.
+      build/lint/unused export checks, focused memory/plan/migration tests, server,
+      contracts and client typechecks, plus web build.
 
 **CI evidence at `448d82d`:** [fork memory/OpenCode checks](https://github.com/jameswright1562/t3code/actions/runs/43016432685),
 [fork desktop/lint checks](https://github.com/jameswright1562/t3code/actions/runs/43016432683) and
@@ -52,14 +52,14 @@ passing focused checks are not an all-green branch-protection result.
 
 ### Unfinished release blockers
 
-| Priority | Requirement | Status / acceptance gate |
-| --- | --- | --- |
-| P0 | **Upstream synchronization** | Fork `main` at `f097733`; upstream `main` at `6700cf6`, **98 newer upstream commits** since `04f6cfc`. Merge/reconcile without rewriting applied fork migrations 81–84; retain OpenCode/MCP customizations, run migrations and full CI, then update fork `main` only through an approved merge. |
-| P0 | **Real agent plan runner** | Manual state tracking only. Connect user-initiated provider dispatch, true checkout/worktree identity and filesystem exclusivity, explicit parallelism, child delegation, pause/cancel/retry, artifact provenance and recovery. Do not auto-run after app launch. |
-| P0 | **Crash-safe user-approved resume** | Add pre-compaction, handoff, delegation and shutdown capture; validate file fingerprints and Git state; reconcile committed events; ledger ambiguous external effects; require explicit resume approval before any retry. Existing read-only recovery is not equivalent. |
-| P0 | **MCP credentials and tooling** | Implement macOS Keychain secret references, OAuth PKCE/state, HTTP and stdio connection test, tool discovery/health/reconnect, provider-project-tool allowlists enforced per invocation. Avoid persisting raw credentials in SQLite or logs. |
-| P0 | **Token and subscription efficiency** | Add per-step/child/turn/concurrency limits where adapters expose counters, measured versus unknown usage labeling, usage attribution and explicit budget stops. Run controlled native-Claude-versus-T3 macOS A/B with actual five-hour and weekly quota percentages; do not infer subscription meters from tokens. |
-| P0 | **Release validation** | Full monorepo CI, migration replay against fork and upstream DB copies, packaged/signed macOS restart and security tests, credentialed provider/MCP smoke, independent PR review and branch protection. GitHub-hosted unsigned build is not a packaged test. |
+| Priority | Requirement                           | Status / acceptance gate                                                                                                                                                                                                                                                                                           |
+| -------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| P0       | **Upstream synchronization**          | Fork `main` at `f097733`; upstream `main` at `6700cf6`, **98 newer upstream commits** since `04f6cfc`. Merge/reconcile without rewriting applied fork migrations 81–84; retain OpenCode/MCP customizations, run migrations and full CI, then update fork `main` only through an approved merge.                    |
+| P0       | **Real agent plan runner**            | Manual state tracking only. Connect user-initiated provider dispatch, true checkout/worktree identity and filesystem exclusivity, explicit parallelism, child delegation, pause/cancel/retry, artifact provenance and recovery. Do not auto-run after app launch.                                                  |
+| P0       | **Crash-safe user-approved resume**   | Add pre-compaction, handoff, delegation and shutdown capture; validate file fingerprints and Git state; reconcile committed events; ledger ambiguous external effects; require explicit resume approval before any retry. Existing read-only recovery is not equivalent.                                           |
+| P0       | **MCP credentials and tooling**       | Implement macOS Keychain secret references, OAuth PKCE/state, HTTP and stdio connection test, tool discovery/health/reconnect, provider-project-tool allowlists enforced per invocation. Avoid persisting raw credentials in SQLite or logs.                                                                       |
+| P0       | **Token and subscription efficiency** | Add per-step/child/turn/concurrency limits where adapters expose counters, measured versus unknown usage labeling, usage attribution and explicit budget stops. Run controlled native-Claude-versus-T3 macOS A/B with actual five-hour and weekly quota percentages; do not infer subscription meters from tokens. |
+| P0       | **Release validation**                | Full monorepo CI, migration replay against fork and upstream DB copies, packaged/signed macOS restart and security tests, credentialed provider/MCP smoke, independent PR review and branch protection. GitHub-hosted unsigned build is not a packaged test.                                                       |
 
 **Local validation limitation:** the connected Mac development machine was offline
 when checked on 11 November 2026. Live Keychain/Claude-authenticated benchmarks
@@ -72,19 +72,17 @@ claim exactly-once effects without a proven external effect ledger.
 
 ---
 
-
 ### Incremental checkout protection (migration 85; not yet provider-integrated)
 
 - [x] Added a persistent SQLite exclusive checkout lease ledger with canonical
-  absolute-path checks, parent/child path overlap refusal, owner verification
-  and no automatic lock expiry. A crashed server must not silently release a
-  potentially live native child writer. Unit and migration tests cover overlap,
-  idempotence, cross-owner release refusal and persistence.
+      absolute-path checks, parent/child path overlap refusal, owner verification
+      and no automatic lock expiry. A crashed server must not silently release a
+      potentially live native child writer. Unit and migration tests cover overlap,
+      idempotence, cross-owner release refusal and persistence.
 - [ ] Wire trusted realpaths, acquisition and release into provider dispatch,
-  finalization, cancellation and crash review. Until that wiring is complete,
-  this module **does not protect arbitrary native-provider writes**. The plan
-  board remains a manual tracker, not a lock-enforced execution engine.
-
+      finalization, cancellation and crash review. Until that wiring is complete,
+      this module **does not protect arbitrary native-provider writes**. The plan
+      board remains a manual tracker, not a lock-enforced execution engine.
 
 ### Plan-board checkout lease integration (migration 85; requires CI)
 

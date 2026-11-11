@@ -43,7 +43,7 @@ export function normalizeCheckoutRealPath(path: string): string {
     !path ||
     path.length > 4096 ||
     path.includes("\0") ||
-    !(/^(?:\/|[a-zA-Z]:[\\/]|\\\\)/u.test(path))
+    !/^(?:\/|[a-zA-Z]:[\\/]|\\\\)/u.test(path)
   ) {
     throw reject("A trusted absolute checkout realpath is required.");
   }
@@ -58,8 +58,11 @@ export function normalizeCheckoutRealPath(path: string): string {
 export function checkoutPathsOverlap(left: string, right: string): boolean {
   const a = normalizeCheckoutRealPath(left);
   const b = normalizeCheckoutRealPath(right);
-  return a === b || a.startsWith(b.endsWith("/") ? b : b + "/") ||
-    b.startsWith(a.endsWith("/") ? a : a + "/");
+  return (
+    a === b ||
+    a.startsWith(b.endsWith("/") ? b : b + "/") ||
+    b.startsWith(a.endsWith("/") ? a : a + "/")
+  );
 }
 
 const rows = Effect.fn("HarnessCheckoutLease.rows")(function* () {
@@ -100,7 +103,8 @@ export const acquireCheckoutLease = Effect.fn("HarnessCheckoutLease.acquire")(fu
     [input.leaseId, input.projectId, input.threadId, input.planId, input.stepId].some(
       (id) => id.trim().length === 0 || id.length > 256,
     )
-  ) return yield* reject("Invalid checkout lease identity.");
+  )
+    return yield* reject("Invalid checkout lease identity.");
   const canonical = yield* Effect.try({
     try: () => normalizeCheckoutRealPath(input.checkoutPath),
     catch: () => reject("Invalid host checkout realpath."),

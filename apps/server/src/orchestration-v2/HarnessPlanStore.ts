@@ -84,9 +84,7 @@ export const createHarnessPlan = Effect.fn("HarnessPlanStore.create")(function* 
     )
   )
     return yield* fail("Invalid plan or scope identity");
-  const checkoutPath = yield* safe(() =>
-    normalizeCheckoutRealPath(input.trustedCheckoutPath),
-  );
+  const checkoutPath = yield* safe(() => normalizeCheckoutRealPath(input.trustedCheckoutPath));
   const steps: HarnessStep[] = input.steps.map((step) => ({
     ...step,
     checkoutKey: checkoutPath,
@@ -151,9 +149,7 @@ export const mutateHarnessPlan = Effect.fn("HarnessPlanStore.mutate")(function* 
         previous.revision !== input.expectedRevision
       )
         return yield* fail("Stale plan revision; reload before modifying");
-      const checkoutPath = yield* safe(() =>
-        normalizeCheckoutRealPath(input.trustedCheckoutPath),
-      );
+      const checkoutPath = yield* safe(() => normalizeCheckoutRealPath(input.trustedCheckoutPath));
       const change =
         input.change.type === "edit"
           ? {
@@ -189,11 +185,8 @@ export const mutateHarnessPlan = Effect.fn("HarnessPlanStore.mutate")(function* 
       }
       if (
         change.type === "transition" &&
-        (change.next === "completed" || change.next === "failed" ||
-          change.next === "cancelled") &&
-        previous.steps.some(
-          (step) => step.id === change.stepId && step.status === "running",
-        )
+        (change.next === "completed" || change.next === "failed" || change.next === "cancelled") &&
+        previous.steps.some((step) => step.id === change.stepId && step.status === "running")
       ) {
         yield* releaseCheckoutLease({
           leaseId: previous.planId + ":" + change.stepId,

@@ -11,7 +11,11 @@ import {
 } from "./HarnessCheckoutLease.ts";
 
 const owner = (leaseId: string, threadId = "thread:a") => ({
-  leaseId, threadId, projectId: "project:a", planId: "plan:a", stepId: "step:a",
+  leaseId,
+  threadId,
+  projectId: "project:a",
+  planId: "plan:a",
+  stepId: "step:a",
 });
 
 it("normalizes realpaths conservatively and detects parent-child overlap", () => {
@@ -34,9 +38,7 @@ layer("persistent exclusive checkout leases", (it) => {
       const repeated = yield* sql.withTransaction(acquireCheckoutLease(first));
       assert.equal(repeated.leaseId, acquired.leaseId);
       const other = { ...owner("lease:b", "thread:b"), checkoutPath: "/private/project/src" };
-      const blocked = yield* Effect.result(
-        sql.withTransaction(acquireCheckoutLease(other)),
-      );
+      const blocked = yield* Effect.result(sql.withTransaction(acquireCheckoutLease(other)));
       assert.equal(blocked._tag, "Failure");
       const stolen = yield* Effect.result(
         sql.withTransaction(releaseCheckoutLease(owner("lease:a", "thread:b"))),
@@ -52,14 +54,21 @@ layer("persistent exclusive checkout leases", (it) => {
   it.effect("a forgotten running step cannot be acquired by a different owner after reload", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      yield* sql.withTransaction(acquireCheckoutLease({
-        ...owner("lease:crash"), checkoutPath: "/private/crash",
-      }));
+      yield* sql.withTransaction(
+        acquireCheckoutLease({
+          ...owner("lease:crash"),
+          checkoutPath: "/private/crash",
+        }),
+      );
       // A new request has no in-memory state. The persisted record is still live.
-      const contender = yield* Effect.result(sql.withTransaction(acquireCheckoutLease({
-        ...owner("lease:other", "thread:restart"),
-        checkoutPath: "/private/crash",
-      })));
+      const contender = yield* Effect.result(
+        sql.withTransaction(
+          acquireCheckoutLease({
+            ...owner("lease:other", "thread:restart"),
+            checkoutPath: "/private/crash",
+          }),
+        ),
+      );
       assert.equal(contender._tag, "Failure");
     }),
   );
