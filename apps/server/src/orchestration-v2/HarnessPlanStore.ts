@@ -23,8 +23,7 @@ interface PlanRow {
 }
 
 const fail = (detail: string) => new HarnessPlanValidationError(detail);
-const safe = <T>(f: () => T) =>
-  Effect.try({ try: f, catch: (error) => fail(String(error)) });
+const safe = <T>(f: () => T) => Effect.try({ try: f, catch: (error) => fail(String(error)) });
 
 const parsePlan = Effect.fn("HarnessPlanStore.parse")(function* (row: PlanRow) {
   const steps = yield* safe(() => JSON.parse(row.stepsJson) as HarnessStep[]);
@@ -70,11 +69,16 @@ export const createHarnessPlan = Effect.fn("HarnessPlanStore.create")(function* 
   readonly steps: readonly HarnessStepDraft[];
   readonly updatedAt?: string;
 }) {
-  if (![input.planId, input.projectId, input.threadId].every((id) =>
-    id.trim().length > 0 && id.length <= 128
-  )) return yield* Effect.fail(fail("Invalid plan or scope identity"));
+  if (
+    ![input.planId, input.projectId, input.threadId].every(
+      (id) => id.trim().length > 0 && id.length <= 128,
+    )
+  )
+    return yield* Effect.fail(fail("Invalid plan or scope identity"));
   const steps: HarnessStep[] = input.steps.map((step) => ({
-    ...step, status: "pending" as const, artifactRefs: [],
+    ...step,
+    status: "pending" as const,
+    artifactRefs: [],
   }));
   yield* safe(() => validateHarnessSteps(steps));
   const sql = yield* SqlClient.SqlClient;
@@ -93,7 +97,13 @@ export const createHarnessPlan = Effect.fn("HarnessPlanStore.create")(function* 
         (thread_id, project_id, plan_id, revision, steps_json, updated_at)
         VALUES (${input.threadId}, ${input.projectId}, ${input.planId}, 1,
           ${JSON.stringify(steps)}, ${now})`;
-      return { schemaVersion: 1 as const, ...input, revision: 1, steps, updatedAt: now } satisfies HarnessPlan;
+      return {
+        schemaVersion: 1 as const,
+        ...input,
+        revision: 1,
+        steps,
+        updatedAt: now,
+      } satisfies HarnessPlan;
     }),
   );
 });
@@ -116,17 +126,19 @@ export const mutateHarnessPlan = Effect.fn("HarnessPlanStore.mutate")(function* 
   return yield* sql.withTransaction(
     Effect.gen(function* () {
       const previous = yield* readHarnessPlan(input);
-      if (!previous) return yield* Effect.fail(fail("Plan not found in selected project and thread"));
-      if (!Number.isSafeInteger(input.expectedRevision) ||
-        previous.revision !== input.expectedRevision)
+      if (!previous)
+        return yield* Effect.fail(fail("Plan not found in selected project and thread"));
+      if (
+        !Number.isSafeInteger(input.expectedRevision) ||
+        previous.revision !== input.expectedRevision
+      )
         return yield* Effect.fail(fail("Stale plan revision; reload before modifying"));
       const steps = yield* safe(() =>
         input.change.type === "edit"
           ? reviseHarnessSteps(previous.steps, input.change.steps)
-          : transitionHarnessStep(
-              previous.steps, input.change.stepId, input.change.next,
-              { allowParallel: input.change.allowParallel },
-            ),
+          : transitionHarnessStep(previous.steps, input.change.stepId, input.change.next, {
+              allowParallel: input.change.allowParallel,
+            }),
       );
       const now = input.updatedAt ?? DateTime.formatIso(yield* DateTime.now);
       const revision = previous.revision + 1;

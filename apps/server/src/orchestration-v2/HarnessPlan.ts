@@ -58,10 +58,14 @@ export function validateHarnessSteps(steps: readonly HarnessStep[]): void {
     ensure(step.acceptanceCriteria.length <= 10000, "Acceptance criteria too long");
     ensure(step.dependsOn.length <= 100, "Too many step dependencies");
     ensure(step.artifactRefs.length <= 200, "Too many step artifacts");
-    ensure(["pending", "running", "completed", "failed", "cancelled"].includes(step.status), "Invalid step status");
+    ensure(
+      ["pending", "running", "completed", "failed", "cancelled"].includes(step.status),
+      "Invalid step status",
+    );
     byId.set(step.id, step);
   }
-  const visited = new Set<string>(), visiting = new Set<string>();
+  const visited = new Set<string>(),
+    visiting = new Set<string>();
   const walk = (id: string): void => {
     ensure(!visiting.has(id), "Cyclic plan dependencies are not allowed");
     if (visited.has(id)) return;
@@ -103,9 +107,10 @@ export function readyHarnessSteps(
   validateHarnessSteps(steps);
   const running = steps.filter((step) => step.status === "running");
   if (running.length && options.allowParallel !== true) return [];
-  const capacity = options.allowParallel === true
-    ? Math.min(4, Math.max(0, Math.floor(options.maxParallel ?? 1))) - running.length
-    : 1;
+  const capacity =
+    options.allowParallel === true
+      ? Math.min(4, Math.max(0, Math.floor(options.maxParallel ?? 1))) - running.length
+      : 1;
   if (capacity <= 0) return [];
   const byId = new Map(steps.map((step) => [step.id, step]));
   const occupied = new Set(running.map((step) => step.checkoutKey));
@@ -137,8 +142,9 @@ export function transitionHarnessStep(
   ensure(allowed, "Invalid plan step state transition");
   if (next === "running") {
     ensure(
-      readyHarnessSteps(steps, { allowParallel: options.allowParallel, maxParallel: 4 })
-        .some((candidate) => candidate.id === stepId),
+      readyHarnessSteps(steps, { allowParallel: options.allowParallel, maxParallel: 4 }).some(
+        (candidate) => candidate.id === stepId,
+      ),
       "Dependencies or checkout concurrency prevent starting this step",
     );
   }
@@ -159,8 +165,10 @@ export function reviseHarnessSteps(
     const existing = original.get(draft.id);
     if (existing && existing.status !== "pending" && existing.status !== "failed") {
       const { status: _status, artifactRefs: _artifacts, ...prior } = existing;
-      ensure(JSON.stringify(prior) === JSON.stringify(draft),
-        "An active or completed step cannot be edited");
+      ensure(
+        JSON.stringify(prior) === JSON.stringify(draft),
+        "An active or completed step cannot be edited",
+      );
     }
     return {
       ...draft,
@@ -170,8 +178,10 @@ export function reviseHarnessSteps(
   });
   for (const step of current) {
     if (step.status !== "pending" && step.status !== "failed") {
-      ensure(updated.some((candidate) => candidate.id === step.id),
-        "An active or completed step cannot be deleted");
+      ensure(
+        updated.some((candidate) => candidate.id === step.id),
+        "An active or completed step cannot be deleted",
+      );
     }
   }
   validateHarnessSteps(updated);

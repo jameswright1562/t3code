@@ -12,11 +12,14 @@ const layer = it.layer(layerMemory);
 layer("Upstream message-search migration ID collision", (it) => {
   it.effect("retains fork 81/82 and installs upstream search_text at 83", () =>
     Effect.gen(function* () {
-      assert.deepStrictEqual(migrationManifest.filter(([id]) => id >= 81 && id <= 83), [
-        [81, "AgentMemory"],
-        [82, "AgentMemorySearch"],
-        [83, "UpstreamProjectionMessageSearchText"],
-      ]);
+      assert.deepStrictEqual(
+        migrationManifest.filter(([id]) => id >= 81 && id <= 83),
+        [
+          [81, "AgentMemory"],
+          [82, "AgentMemorySearch"],
+          [83, "UpstreamProjectionMessageSearchText"],
+        ],
+      );
       const sql = yield* SqlClient.SqlClient;
       const columns = yield* sql<{ readonly name: string }>`
         SELECT name FROM pragma_table_info('orchestration_v2_projection_messages')
