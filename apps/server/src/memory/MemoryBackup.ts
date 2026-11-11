@@ -3,6 +3,7 @@ import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
+import { potentialSecretCategory } from "./MemorySecrets.ts";
 import {
   AgentMemoryValidationError,
   type MemoryEntry,
@@ -158,7 +159,9 @@ export const importMemoryBackup = Effect.fn("MemoryBackup.import")(function* (in
   for (const entry of backup.entries) {
     if (!entry.id.trim() || ids.has(entry.id) ||
         entry.scopeType !== scope.scopeType || entry.scopeId !== scope.scopeId ||
-        !entry.content.trim() || !entry.sourceRef.trim()) {
+        !entry.content.trim() || !entry.sourceRef.trim() ||
+        potentialSecretCategory(entry.content) !== null ||
+        potentialSecretCategory(entry.sourceRef) !== null) {
       return yield* invalid("Backup contains duplicate, invalid or out-of-scope memory");
     }
     ids.add(entry.id);

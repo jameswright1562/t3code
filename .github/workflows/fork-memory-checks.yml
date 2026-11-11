@@ -61,6 +61,7 @@ jobs:
             apps/server/src/memory/MemoryBackup.test.ts \
             apps/server/src/memory/MemoryContext.test.ts \
             apps/server/src/memory/MemorySearch.test.ts \
+            apps/server/src/memory/MemorySecrets.test.ts \
             apps/server/src/memory/CheckpointGitGuard.test.ts \
             packages/provider-opencode/src/server/openCodeLaunch.test.ts \
             apps/server/src/mcp/toolkits/core.test.ts \

@@ -9,6 +9,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
+import { potentialSecretCategory } from "./MemorySecrets.ts";
 
 export type MemoryScopeType = "global" | "workspace" | "project" | "thread" | "task";
 export type MemoryKind =
@@ -161,6 +162,12 @@ export const remember = Effect.fn("AgentMemory.remember")(function* (input: Reme
       (!Number.isFinite(input.confidence) || input.confidence < 0 || input.confidence > 1)
     ) {
       return yield* new AgentMemoryValidationError({ detail: "confidence must be between 0 and 1" });
+    }
+    const secret = potentialSecretCategory(input.content) ?? potentialSecretCategory(input.sourceRef);
+    if (secret) {
+      return yield* new AgentMemoryValidationError({
+        detail: `Do not store potential ${secret} credentials in agent memory`,
+      });
     }
     const sql = yield* SqlClient.SqlClient;
     const now = input.occurredAt ?? DateTime.formatIso(yield* DateTime.now);
@@ -410,6 +417,12 @@ export const reviseMemory = Effect.fn("AgentMemory.reviseMemory")(function* (inp
   if (validationError || input.id === input.replacementId) {
     return yield* new AgentMemoryValidationError({
       detail: validationError ?? "A revision needs a different memory ID",
+    });
+  }
+  const secret = potentialSecretCategory(input.content);
+  if (secret) {
+    return yield* new AgentMemoryValidationError({
+      detail: `Do not store potential ${secret} credentials in agent memory`,
     });
   }
   const sql = yield* SqlClient.SqlClient;

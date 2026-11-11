@@ -19,6 +19,29 @@ import {
 const layer = it.layer(layerMemory);
 
 layer("Checkpoint fallback and authorized export", (it) => {
+  it.effect("refuses credential-bearing memory proposals and revisions", () =>
+    Effect.gen(function* () {
+      const scope = { scopeType: "project" as const, scopeId: "memory-credential-guard" };
+      const proposed = yield* Effect.result(remember({
+        ...scope, id: "redacted-secret", eventId: "redacted-secret-event",
+        kind: "fact", content: "Authorization: Bearer abcdefghijklmnopqrstuvwxyz1234567890",
+        sourceRef: "test:secrets", sourceActor: "agent", verification: "proposed",
+      }));
+      assert.equal(proposed._tag, "Failure");
+      yield* remember({
+        ...scope, id: "clean-memory", eventId: "clean-memory-event",
+        kind: "fact", content: "Use environment variables for deployment credentials",
+        sourceRef: "test:secrets", sourceActor: "user", verification: "verified",
+      });
+      const revised = yield* Effect.result(reviseMemory({
+        scope, id: "clean-memory", replacementId: "bad-revision",
+        eventId: "bad-revision-event", content: "secret=abcdefghijklmnopqrstuvwxyz123456",
+      }));
+      assert.equal(revised._tag, "Failure");
+      const stored = yield* listMemory([scope]);
+      assert.deepStrictEqual(stored.map((x) => x.id), ["clean-memory"]);
+    }),
+  );
   it.effect("skips a corrupt newer checkpoint without crossing project scopes", () =>
     Effect.gen(function* () {
       const threadId = "thread-recovery-invalid";
