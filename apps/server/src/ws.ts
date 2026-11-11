@@ -1399,6 +1399,9 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
   },
 );
 
+// Compile schema guards once; plan RPC error paths do not pay a per-call compile cost.
+const isHarnessPlanError = Schema.is(HarnessPlanError);
+
 export const layerWsRpc = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   clientAnalyticsProps: Readonly<Record<string, unknown>>,
@@ -2391,6 +2394,7 @@ export const layerWsRpc = (
             Effect.andThen(scheduledTasks.getWebhookDelivery(input)),
           ),
         // Read and mutation scopes are checked against the trusted thread projection.
+        // oxlint-disable-next-line t3code/prefer-effect-fn -- Single-use RpcGroup handler receives contextual error types from its contract.
         [WS_METHODS.harnessPlanRead]: (input) =>
           Effect.gen(function* () {
             const projection = yield* orchestrationEngine.getThreadProjection(
@@ -2410,12 +2414,13 @@ export const layerWsRpc = (
             );
           }).pipe(
             Effect.mapError((error) =>
-              Schema.is(HarnessPlanError)(error)
+              isHarnessPlanError(error)
                 ? error
                 : new HarnessPlanError({ message: "Plan read is unavailable for this thread." }),
             ),
           ),
         // Read and mutation scopes are checked against the trusted thread projection.
+        // oxlint-disable-next-line t3code/prefer-effect-fn -- Single-use RpcGroup handler receives contextual error types from its contract.
         [WS_METHODS.harnessPlanCreate]: (input) =>
           Effect.gen(function* () {
             const projection = yield* orchestrationEngine.getThreadProjection(
@@ -2435,7 +2440,7 @@ export const layerWsRpc = (
             );
           }).pipe(
             Effect.mapError((error) =>
-              Schema.is(HarnessPlanError)(error)
+              isHarnessPlanError(error)
                 ? error
                 : new HarnessPlanError({
                     message: "Plan creation is unavailable for this thread.",
@@ -2443,6 +2448,7 @@ export const layerWsRpc = (
             ),
           ),
         // Read and mutation scopes are checked against the trusted thread projection.
+        // oxlint-disable-next-line t3code/prefer-effect-fn -- Single-use RpcGroup handler receives contextual error types from its contract.
         [WS_METHODS.harnessPlanMutate]: (input) =>
           Effect.gen(function* () {
             const projection = yield* orchestrationEngine.getThreadProjection(
@@ -2462,7 +2468,7 @@ export const layerWsRpc = (
             );
           }).pipe(
             Effect.mapError((error) =>
-              Schema.is(HarnessPlanError)(error)
+              isHarnessPlanError(error)
                 ? error
                 : new HarnessPlanError({ message: "Plan update is unavailable for this thread." }),
             ),

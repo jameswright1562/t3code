@@ -37,7 +37,7 @@ export function HarnessPlanSettings() {
 
   async function createPlan() {
     if (!scope || !projectId || lines.length === 0 || lines.length > 100 || busy) return;
-    const steps: HarnessPlanStepDraft[] = lines.map((title, index) => ({
+    const steps: HarnessPlanStepDraft[] = lines.map((title) => ({
       id: randomUUID(),
       title,
       dependsOn: [],
