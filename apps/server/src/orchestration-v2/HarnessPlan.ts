@@ -70,7 +70,8 @@ export function validateHarnessSteps(steps: readonly HarnessStep[]): void {
     ensure(!visiting.has(id), "Cyclic plan dependencies are not allowed");
     if (visited.has(id)) return;
     const step = byId.get(id);
-    if (!step) throw new HarnessPlanValidationError({ detail: "Dependency points to a missing step" });
+    if (!step)
+      throw new HarnessPlanValidationError({ detail: "Dependency points to a missing step" });
     visiting.add(id);
     const deps = new Set<string>();
     for (const dep of step.dependsOn) {
@@ -142,7 +143,10 @@ export function transitionHarnessStep(
   ensure(allowed, "Invalid plan step state transition");
   if (next === "running") {
     ensure(
-      readyHarnessSteps(steps, { allowParallel: options.allowParallel ?? false, maxParallel: 4 }).some(
+      readyHarnessSteps(steps, {
+        allowParallel: options.allowParallel ?? false,
+        maxParallel: 4,
+      }).some(
         (candidate) => candidate.id === stepId,
       ),
       "Dependencies or checkout concurrency prevent starting this step",

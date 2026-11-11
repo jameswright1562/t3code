@@ -1,6 +1,6 @@
 # Local macOS Agent Harness — Architecture, Durable Memory, Context & Implementation Plan
 
-**Status:** Living implementation specification — upstream integration and memory runtime underway; not production-ready  
+**Status:** Living implementation specification — PR #3 merged, PR #8 active and not production-ready  
 **Base:** fork of [T3 Code](https://github.com/pingdotgg/t3code)  
 **Target:** macOS-first, local execution while the Mac is awake  
 **Owner repo:** [jameswright1562/t3code](https://github.com/jameswright1562/t3code)  
@@ -8,9 +8,9 @@
 
 > This is a specification and implementation plan, not a claim that every feature below is already implemented. The original fork main was last updated in May 2026. This integration branch is based on upstream commit d756fed (Nov 2026), preserving the old branch and porting the memory work. The May fork's custom OpenCode options must be reconciled before finishing. Keep the fork's earlier OpenCode work intact during that reconciliation.
 
-## Implementation snapshot — 10 November 2026
+## Historical implementation snapshot — 10 November 2026
 
-**Active integration branch:** `feat/macos-orchestrator-upstream-base`, draft [PR #3](https://github.com/jameswright1562/t3code/pull/3), based on upstream `d756fed7`. The older May 2026 fork main and draft PR #2 are preserved, not overwritten.
+**Historical integration branch (since merged):** `feat/macos-orchestrator-upstream-base`, [PR #3](https://github.com/jameswright1562/t3code/pull/3), based on upstream `d756fed7`. The older May 2026 fork main and draft PR #2 are preserved, not overwritten.
 
 **Committed, subject to validation:**
 
@@ -577,7 +577,7 @@ The first usable release must let the user start a multi-step task in T3 on macO
 
 ## 21. Consolidated PR #3 gap closure and release gates (2026-11-10)
 
-All feature work belongs on **one integration branch and PR #3**, not four competing implementation PRs. Issues #4–#7 remain tracked requirements, not proof that any feature is complete. Do not merge this draft just because a particular focused test passes.
+Historical consolidation note: PR #3 has merged. Continue all release-gate implementation in **draft PR #8**; do not open competing feature PRs. Issues #4–#7 remain tracked requirements, not proof that any feature is complete. Do not merge this draft just because a particular focused test passes.
 
 ### Verified implementation increments
 
