@@ -32,7 +32,7 @@ export function HarnessPlanSettings() {
   const create = useAtomCommand(serverEnvironment.harnessCreatePlan);
   const change = useAtomCommand(serverEnvironment.harnessMutatePlan);
   const lines = draft.split("\n").map((line) => line.trim()).filter(Boolean);
-  const current = plan.data;
+  const current = plan.data ?? null;
 
   async function createPlan() {
     if (!scope || !projectId || lines.length === 0 || lines.length > 100 || busy) return;

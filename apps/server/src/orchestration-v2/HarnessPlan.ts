@@ -13,7 +13,7 @@ export interface HarnessStepDraft {
   readonly dependsOn: readonly string[];
   readonly checkoutKey: string;
   readonly provider: string;
-  readonly model?: string | null;
+  readonly model?: string | null | undefined;
   readonly acceptanceCriteria: string;
 }
 

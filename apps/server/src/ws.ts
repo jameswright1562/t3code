@@ -2407,7 +2407,13 @@ export const layerWsRpc = (
                 (error) => new HarnessPlanError({ message: error.message || "Could not read plan" }),
               ),
             );
-          }),
+          }).pipe(
+            Effect.mapError((error) =>
+              error instanceof HarnessPlanError
+                ? error
+                : new HarnessPlanError({ message: "Plan read is unavailable for this thread." }),
+            ),
+          ),
         // Read and mutation scopes are checked against the trusted thread projection.
         [WS_METHODS.harnessPlanCreate]: (input) =>
           Effect.gen(function* () {
@@ -2425,7 +2431,13 @@ export const layerWsRpc = (
                 (error) => new HarnessPlanError({ message: error.message || "Could not create plan" }),
               ),
             );
-          }),
+          }).pipe(
+            Effect.mapError((error) =>
+              error instanceof HarnessPlanError
+                ? error
+                : new HarnessPlanError({ message: "Plan creation is unavailable for this thread." }),
+            ),
+          ),
         // Read and mutation scopes are checked against the trusted thread projection.
         [WS_METHODS.harnessPlanMutate]: (input) =>
           Effect.gen(function* () {
@@ -2443,7 +2455,13 @@ export const layerWsRpc = (
                 (error) => new HarnessPlanError({ message: error.message || "Could not update plan" }),
               ),
             );
-          }),
+          }).pipe(
+            Effect.mapError((error) =>
+              error instanceof HarnessPlanError
+                ? error
+                : new HarnessPlanError({ message: "Plan update is unavailable for this thread." }),
+            ),
+          ),
         [WS_METHODS.harnessMemoryList]: ({ scope, limit }) =>
           AgentHarnessMemory.listMemory([scope], limit).pipe(
             Effect.provideService(SqlClient.SqlClient, sql),

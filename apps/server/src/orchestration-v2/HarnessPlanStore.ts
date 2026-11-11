@@ -122,7 +122,7 @@ export const mutateHarnessPlan = Effect.fn("HarnessPlanStore.mutate")(function* 
         readonly type: "transition";
         readonly stepId: string;
         readonly next: HarnessStepStatus;
-        readonly allowParallel?: boolean;
+        readonly allowParallel?: boolean | undefined;
       };
   readonly updatedAt?: string;
 }) {
