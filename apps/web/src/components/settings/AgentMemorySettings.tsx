@@ -19,7 +19,15 @@ export function AgentMemorySettings() {
   const { target } = useSettingsScope();
   const environmentId = target?.environmentId ?? null;
   const projectId = target?.projectId ?? null;
-  const scope = projectId === null ? null : { scopeType: "project" as const, scopeId: projectId };
+  const [threadId, setThreadId] = useState("");
+  const [memoryScopeType, setMemoryScopeType] = useState<"project" | "thread">("project");
+  const scope = projectId === null
+    ? null
+    : memoryScopeType === "project"
+      ? { scopeType: "project" as const, scopeId: projectId }
+      : threadId.trim()
+        ? { scopeType: "thread" as const, scopeId: threadId.trim() }
+        : null;
   const memories = useEnvironmentQuery(
     environmentId !== null && scope !== null
       ? serverEnvironment.harnessMemories({ environmentId, input: { scope } })
@@ -31,7 +39,6 @@ export function AgentMemorySettings() {
   const [pinnedOnly, setPinnedOnly] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [threadId, setThreadId] = useState("");
   const [selectedCheckpointId, setSelectedCheckpointId] = useState("");
   const [editing, setEditing] = useState<{ id: string; content: string } | null>(null);
   const recovery = useEnvironmentQuery(
@@ -240,8 +247,8 @@ export function AgentMemorySettings() {
   return (
     <SettingsSection id="agent-memory" title="Agent memory">
       <p className="text-sm text-muted-foreground">
-        Verified project memories survive agent sessions. Proposed memories are never trusted
-        automatically. Select a single project in the settings scope to review its memories.
+        Verified memories survive agent sessions. Proposed memories are never trusted
+        automatically. Select a project, then choose project or thread memory to review.
       </p>
       {projectId === null || environmentId === null ? (
         <p className="text-sm text-muted-foreground" role="status">
@@ -249,20 +256,47 @@ export function AgentMemorySettings() {
         </p>
       ) : (
         <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-sm">
+              Memory scope
+              <select
+                aria-label="Choose memory scope"
+                className="rounded-md border bg-background px-2 py-1"
+                value={memoryScopeType}
+                onChange={(event) => { setMemoryScopeType(event.target.value as "project" | "thread"); setEditing(null); }}
+              >
+                <option value="project">Selected project</option>
+                <option value="thread">Specific thread</option>
+              </select>
+            </label>
+            {memoryScopeType === "thread" ? (
+              <Input
+                aria-label="Thread ID for memories"
+                value={threadId}
+                onChange={(event) => { setThreadId(event.target.value); setEditing(null); }}
+                placeholder="Thread ID"
+              />
+            ) : null}
+          </div>
+          {memoryScopeType === "thread" && scope === null ? (
+            <p role="status" className="text-sm text-muted-foreground">
+              Enter a thread ID to inspect its own memories, without promoting them to project memory.
+            </p>
+          ) : null}
           <div className="flex items-center gap-2">
             <Input
-              aria-label="Search project memories"
+              aria-label="Search memories in selected scope"
               value={filter}
               onChange={(event) => setFilter(event.target.value)}
               placeholder="Search content, type or source"
             />
-            <Button variant="outline" disabled={busy !== null} onClick={() => memories.refresh()}>
+            <Button variant="outline" disabled={busy !== null || scope === null} onClick={() => memories.refresh()}>
               Refresh
             </Button>
-            <Button variant="outline" disabled={busy !== null} onClick={() => void saveExport()}>
+            <Button variant="outline" disabled={busy !== null || scope === null} onClick={() => void saveExport()}>
               Export live JSON
             </Button>
-            <Button variant="outline" disabled={busy !== null} onClick={() => void saveBackup()}>
+            <Button variant="outline" disabled={busy !== null || scope === null} onClick={() => void saveBackup()}>
               Full backup
             </Button>
           </div>
@@ -310,7 +344,7 @@ export function AgentMemorySettings() {
             </span>
           </div>
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-            Restore complete memory backup for this project
+            Restore complete memory backup for this {memoryScopeType}
             <input
               type="file"
               accept="application/json,.json"
@@ -320,11 +354,11 @@ export function AgentMemorySettings() {
             />
           </label>
           {memories.error ? <p role="alert" className="text-sm">{memories.error}</p> : null}
-          {memories.isPending ? <p role="status">Loading project memories…</p> : null}
+          {memories.isPending ? <p role="status">Loading memories…</p> : null}
           {entries.length === 0 && !memories.isPending ? (
             <p className="text-sm text-muted-foreground">No matching memories.</p>
           ) : null}
-          <ul className="flex max-h-96 flex-col gap-2 overflow-y-auto" aria-label="Project memories">
+          <ul className="flex max-h-96 flex-col gap-2 overflow-y-auto" aria-label="Memories in selected scope">
             {entries.map((entry) => (
               <li key={entry.id} className="rounded-md border p-3">
                 <div className="mb-1 flex items-center justify-between gap-2">
