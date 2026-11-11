@@ -21,6 +21,9 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.previewClose]: AuthPreviewOperateScope,
   // Stopping a server signals its processes, as closing a terminal does.
   [WS_METHODS.previewStopLocalServer]: AuthTerminalOperateScope,
+  [WS_METHODS.harnessPlanRead]: AuthSettingsWriteScope,
+  [WS_METHODS.harnessPlanCreate]: AuthSettingsWriteScope,
+  [WS_METHODS.harnessPlanMutate]: AuthSettingsWriteScope,
   [WS_METHODS.harnessMemoryList]: AuthSettingsWriteScope,
   [WS_METHODS.harnessMemoryExport]: AuthSettingsWriteScope,
   [WS_METHODS.harnessMemoryBackup]: AuthSettingsWriteScope,

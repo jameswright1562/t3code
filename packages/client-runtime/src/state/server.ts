@@ -1205,6 +1205,21 @@ export function createServerEnvironmentAtoms<R, E>(
 
   return {
     configValueAtom,
+    harnessPlan: createEnvironmentQueryAtomFamily(runtime, {
+      label: "environment-data:harness:plan:read",
+      idleTtlMs: 0,
+      staleTimeMs: 0,
+      execute: (input: EnvironmentRpcInput<typeof WS_METHODS.harnessPlanRead>) =>
+        requestGuarded(WS_METHODS.harnessPlanRead, input),
+    }),
+    harnessCreatePlan: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:harness:plan:create",
+      tag: WS_METHODS.harnessPlanCreate,
+    }),
+    harnessMutatePlan: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:harness:plan:mutate",
+      tag: WS_METHODS.harnessPlanMutate,
+    }),
     harnessMemories: createEnvironmentQueryAtomFamily(runtime, {
       label: "environment-data:harness:memory:list",
       idleTtlMs: 0,

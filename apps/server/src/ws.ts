@@ -3,9 +3,10 @@ import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as AgentHarnessMemory from "./memory/AgentMemory.ts";
+import * as HarnessPlanStore from "./orchestration-v2/HarnessPlanStore.ts";
 import * as AgentHarnessMemoryBackup from "./memory/MemoryBackup.ts";
 import { assessCheckpointGit } from "./memory/CheckpointGitGuard.ts";
-import { HarnessMemoryError } from "@t3tools/contracts";
+import { HarnessMemoryError, HarnessPlanError } from "@t3tools/contracts";
 import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
 import * as PeerLinks from "./peer/PeerLinks.ts";
 
@@ -2389,6 +2390,60 @@ export const layerWsRpc = (
           Effect.annotateCurrentSpan({ "scheduled_task.id": input.id }).pipe(
             Effect.andThen(scheduledTasks.getWebhookDelivery(input)),
           ),
+        // Read and mutation scopes are checked against the trusted thread projection.
+        [WS_METHODS.harnessPlanRead]: (input) =>
+          Effect.gen(function* () {
+            const projection = yield* orchestrationEngine.getThreadProjection(
+              ThreadId.make(input.threadId),
+            );
+            if (projection.thread.projectId !== input.projectId) {
+              return yield* new HarnessPlanError({
+                message: "Plan thread does not belong to the selected project.",
+              });
+            }
+            return yield* HarnessPlanStore.readHarnessPlan(input).pipe(
+              Effect.provideService(SqlClient.SqlClient, sql),
+              Effect.mapError(
+                (error) => new HarnessPlanError({ message: error.message || "Could not read plan" }),
+              ),
+            );
+          }),
+        // Read and mutation scopes are checked against the trusted thread projection.
+        [WS_METHODS.harnessPlanCreate]: (input) =>
+          Effect.gen(function* () {
+            const projection = yield* orchestrationEngine.getThreadProjection(
+              ThreadId.make(input.threadId),
+            );
+            if (projection.thread.projectId !== input.projectId) {
+              return yield* new HarnessPlanError({
+                message: "Plan thread does not belong to the selected project.",
+              });
+            }
+            return yield* HarnessPlanStore.createHarnessPlan(input).pipe(
+              Effect.provideService(SqlClient.SqlClient, sql),
+              Effect.mapError(
+                (error) => new HarnessPlanError({ message: error.message || "Could not create plan" }),
+              ),
+            );
+          }),
+        // Read and mutation scopes are checked against the trusted thread projection.
+        [WS_METHODS.harnessPlanMutate]: (input) =>
+          Effect.gen(function* () {
+            const projection = yield* orchestrationEngine.getThreadProjection(
+              ThreadId.make(input.threadId),
+            );
+            if (projection.thread.projectId !== input.projectId) {
+              return yield* new HarnessPlanError({
+                message: "Plan thread does not belong to the selected project.",
+              });
+            }
+            return yield* HarnessPlanStore.mutateHarnessPlan(input).pipe(
+              Effect.provideService(SqlClient.SqlClient, sql),
+              Effect.mapError(
+                (error) => new HarnessPlanError({ message: error.message || "Could not update plan" }),
+              ),
+            );
+          }),
         [WS_METHODS.harnessMemoryList]: ({ scope, limit }) =>
           AgentHarnessMemory.listMemory([scope], limit).pipe(
             Effect.provideService(SqlClient.SqlClient, sql),

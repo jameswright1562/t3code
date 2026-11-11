@@ -430,6 +430,13 @@ import {
   HarnessCheckpointRecovery,
   HarnessMemoryError,
 } from "./harnessMemory.ts";
+import {
+  HarnessPlan,
+  HarnessPlanReadInput,
+  HarnessPlanCreateInput,
+  HarnessPlanMutationInput,
+  HarnessPlanError,
+} from "./harnessPlan.ts";
 
 export const WS_METHODS = {
   projectsListEntries: "projects.listEntries",
@@ -454,6 +461,9 @@ export const WS_METHODS = {
   attachmentsCreateUploadUrl: "attachments.createUploadUrl",
   attachmentsDelete: "attachments.delete",
 
+  harnessPlanRead: "harness.plan.read",
+  harnessPlanCreate: "harness.plan.create",
+  harnessPlanMutate: "harness.plan.mutate",
   harnessMemoryList: "harness.memory.list",
   harnessMemoryConfirm: "harness.memory.confirm",
   harnessMemoryForget: "harness.memory.forget",
@@ -673,6 +683,22 @@ const WsServerProbeRpc = Rpc.make(WS_METHODS.serverProbe, {
   payload: Schema.Struct({}),
   success: Schema.Struct({}),
   error: EnvironmentAuthorizationError,
+});
+
+const WsHarnessPlanReadRpc = Rpc.make(WS_METHODS.harnessPlanRead, {
+  payload: HarnessPlanReadInput,
+  success: Schema.NullOr(HarnessPlan),
+  error: Schema.Union([HarnessPlanError, EnvironmentAuthorizationError]),
+});
+const WsHarnessPlanCreateRpc = Rpc.make(WS_METHODS.harnessPlanCreate, {
+  payload: HarnessPlanCreateInput,
+  success: HarnessPlan,
+  error: Schema.Union([HarnessPlanError, EnvironmentAuthorizationError]),
+});
+const WsHarnessPlanMutateRpc = Rpc.make(WS_METHODS.harnessPlanMutate, {
+  payload: HarnessPlanMutationInput,
+  success: HarnessPlan,
+  error: Schema.Union([HarnessPlanError, EnvironmentAuthorizationError]),
 });
 
 const WsHarnessMemoryListRpc = Rpc.make(WS_METHODS.harnessMemoryList, {
@@ -2154,6 +2180,9 @@ export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthori
 export const WsRpcGroup = RpcGroup.make(
   WsGuestShareCreateRpc,
   WsServerProbeRpc,
+  WsHarnessPlanReadRpc,
+  WsHarnessPlanCreateRpc,
+  WsHarnessPlanMutateRpc,
   WsHarnessMemoryListRpc,
   WsHarnessMemoryConfirmRpc,
   WsHarnessMemoryForgetRpc,

@@ -691,3 +691,14 @@ steps and distinct host-verified checkout identities. Persisted changes use an
 optimistic expected-revision guard. Tests exercise dependency order, persistence
 and isolation. **This does not launch agents, lock a real filesystem, cancel a
 provider or provide the editable plan UI.** Those remain P0 release blockers.
+
+## 26. User-facing plan editor (11 November 2026)
+
+Authenticated, project/thread-verified RPC endpoints expose create/read/edit and
+state transitions for revisioned harness plans. The project Settings plan editor
+can create a linear plan, edit pending steps and track step status. Host-side
+scope checks enforce thread ownership before reading or writing plan data.
+This is **manual plan tracking**, not automatic provider execution or native
+subagent delegation. No on-launch auto-run, automatic triggers, or background
+agent is introduced. Real agent scheduler integration and crash-safe resume
+remain release blockers.
