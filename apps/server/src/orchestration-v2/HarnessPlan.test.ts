@@ -117,16 +117,18 @@ layer("persistent harness plans", (it) => {
         expectedRevision: 1,
         change: { type: "transition", stepId: "a", next: "running" },
       });
-      const b = yield* mutateHarnessPlan({
-        ...scope,
-        expectedRevision: 2,
-        change: { type: "transition", stepId: "b", next: "running", allowParallel: true },
-      });
-      assert.equal(b.steps.filter((s) => s.status === "running").length, 2);
+      const blocked = yield* Effect.result(
+        mutateHarnessPlan({
+          ...scope,
+          expectedRevision: 2,
+          change: { type: "transition", stepId: "b", next: "running", allowParallel: true },
+        }),
+      );
+      assert.equal(blocked._tag, "Failure");
       const erased = yield* Effect.result(
         mutateHarnessPlan({
           ...scope,
-          expectedRevision: 3,
+          expectedRevision: 2,
           change: { type: "edit", steps: [draft("b", [], "repo:isolated-b")] },
         }),
       );
