@@ -12,8 +12,7 @@ export function HarnessRunBudgetSettings() {
   const save = useAtomCommand(serverEnvironment.updateSettings);
   const saved = target?.settings?.harnessMaxRunsPerThread ?? 0;
   const [edit, setEdit] = useState<{ environmentId: string; value: string } | null>(null);
-  const draft =
-    edit?.environmentId === target?.environmentId ? edit.value : String(saved);
+  const draft = edit?.environmentId === target?.environmentId ? edit.value : String(saved);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   async function update(): Promise<void> {

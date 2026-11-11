@@ -79,9 +79,7 @@ export function selectHarnessMcpServers(
   );
 }
 
-export function toClaudeHarnessMcpServers(
-  selected: HarnessMcpSelection,
-): Readonly<
+export function toClaudeHarnessMcpServers(selected: HarnessMcpSelection): Readonly<
   Record<
     string,
     | { readonly type: "http"; readonly url: string }
