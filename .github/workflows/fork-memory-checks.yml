@@ -6,6 +6,7 @@ on:
       - "apps/server/src/memory/**"
       - "apps/server/src/persistence/**"
       - "apps/server/src/orchestration-v2/ProviderTurnStartService.ts"
+      - "apps/server/src/orchestration-v2/HarnessPlan*.ts"
       - "apps/server/src/orchestration-v2/HarnessRunBudget.ts"
       - "apps/server/src/orchestration-v2/HarnessRunBudget.test.ts"
       - "apps/web/src/components/settings/HarnessRunBudgetSettings.tsx"
@@ -69,6 +70,7 @@ jobs:
             apps/server/src/memory/MemorySearch.test.ts \
             apps/server/src/memory/MemorySecrets.test.ts \
             apps/server/src/orchestration-v2/HarnessRunBudget.test.ts \
+            apps/server/src/orchestration-v2/HarnessPlan.test.ts \
             scripts/claudeQuotaBenchmark.test.ts \
             apps/server/src/memory/CheckpointGitGuard.test.ts \
             packages/provider-opencode/src/server/openCodeLaunch.test.ts \

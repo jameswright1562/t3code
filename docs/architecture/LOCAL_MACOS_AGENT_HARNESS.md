@@ -680,3 +680,14 @@ all upstream commits have been merged. After an upstream merge, retain these
 fork migration IDs, audit the newest upstream migration manifest for further
 collisions, and run migration tests on a copy of both fork-upgraded and
 upstream-upgraded SQLite databases before release.
+
+## 25. Persisted plan state-machine foundation (11 November 2026)
+
+Migration 84 stores scoped, revisioned multi-step plans per thread. The pure
+state-machine rejects cycles, missing dependencies, stale revisions, deleting
+active/completed steps and simultaneous writers in one checkout. The default
+ready queue is sequential. Explicit parallel selection requires independent
+steps and distinct host-verified checkout identities. Persisted changes use an
+optimistic expected-revision guard. Tests exercise dependency order, persistence
+and isolation. **This does not launch agents, lock a real filesystem, cancel a
+provider or provide the editable plan UI.** Those remain P0 release blockers.

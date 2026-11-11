@@ -86,6 +86,7 @@ import Migration0080 from "./Migrations/080_ScheduledTaskThreadMode.ts";
 import Migration0081 from "./Migrations/081_AgentMemory.ts";
 import Migration0082 from "./Migrations/082_AgentMemorySearch.ts";
 import Migration0083 from "./Migrations/083_UpstreamProjectionMessageSearchText.ts";
+import Migration0084 from "./Migrations/084_HarnessPlans.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -172,6 +173,7 @@ const migrationEntries = [
   [81, "AgentMemory", Migration0081],
   [82, "AgentMemorySearch", Migration0082],
   [83, "UpstreamProjectionMessageSearchText", Migration0083],
+  [84, "HarnessPlans", Migration0084],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
