@@ -35,7 +35,11 @@ export interface HarnessPlan {
 export class HarnessPlanValidationError extends Schema.TaggedError<HarnessPlanValidationError>()(
   "HarnessPlanValidationError",
   { detail: Schema.String },
-) {}
+) {
+  override get message(): string {
+    return this.detail;
+  }
+}
 
 const fail = (message: string): never => {
   throw new HarnessPlanValidationError({ detail: message });
