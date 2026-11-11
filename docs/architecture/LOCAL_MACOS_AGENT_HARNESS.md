@@ -8,6 +8,70 @@
 
 > This is a specification and implementation plan, not a claim that every feature below is already implemented. The original fork main was last updated in May 2026. This integration branch is based on upstream commit d756fed (Nov 2026), preserving the old branch and porting the memory work. The May fork's custom OpenCode options must be reconciled before finishing. Keep the fork's earlier OpenCode work intact during that reconciliation.
 
+## Current delivery status — 11 November 2026
+
+**Canonical working PR:** [#8 — macOS harness release gates](https://github.com/jameswright1562/t3code/pull/8) ·
+branch `feat/macos-harness-release-gates` · verified implementation commit `448d82d` ·
+**draft, unmerged, not production ready**. PR #3 was merged previously. This
+section is the current tracker; historical sections below describe earlier
+states and must not be read as the latest checklist.
+
+### Implemented and tested in fork-specific CI
+
+- [x] Persistent **project/thread-scoped memory**, source references, proposal
+  versus verified status, browser/approval/revision/pinning/forgetting UI,
+  bounded context search and injection on fresh native sessions.
+- [x] Full **scoped memory backup/restore** with audit events, revision ancestors,
+  tombstones, checksum, idempotence and conflict refusal; no external Git objects
+  or provider-native sessions are included.
+- [x] **Checkpoint capture after finalization**, Git branch/HEAD validation,
+  persisted thread event cursor, corrupt-latest fallback, checkpoint history and
+  read-only recovery inspector. The inspector **does not** resume execution.
+- [x] Configurable shared MCP **registry and Settings UI** for selected providers
+  and projects, with conservative URL/stdio validation. This is not a complete
+  credentialed MCP connection manager.
+- [x] Per-thread **maximum native provider run count** (optional; 0 = unlimited).
+  This is **not** a hard cap on native child turns, tokens or subscription usage.
+- [x] Offline paired Claude quota **analysis script**, using recorded subscription
+  percentages. No real paid-model A/B measurements have been taken.
+- [x] **Migration 81 collision handling**: preserve fork memory migrations
+  81/82 and install upstream message-search upgrade as 83, with regression tests.
+- [x] Durable **revisioned plans** (migration 84), dependency/cycle validation,
+  optimistic edit guards, sequential-ready selection and logical checkout-key
+  collision refusal. Manual plan editor and authenticated, thread-owned RPCs
+  are connected. **No real agent scheduling or filesystem lock is attached.**
+- [x] Hosted **macOS unsigned desktop build** and preload smoke, Linux desktop
+  build/lint/unused export checks, focused memory/plan/migration tests, server,
+  contracts and client typechecks, plus web build.
+
+**CI evidence at `448d82d`:** [fork memory/OpenCode checks](https://github.com/jameswright1562/t3code/actions/runs/43016432685),
+[fork desktop/lint checks](https://github.com/jameswright1562/t3code/actions/runs/43016432683) and
+[hosted macOS build smoke](https://github.com/jameswright1562/t3code/actions/runs/43016432705)
+all completed successfully. General monorepo CI was still **pending**, so these
+passing focused checks are not an all-green branch-protection result.
+
+### Unfinished release blockers
+
+| Priority | Requirement | Status / acceptance gate |
+| --- | --- | --- |
+| P0 | **Upstream synchronization** | Fork `main` at `f097733`; upstream `main` at `6700cf6`, **98 newer upstream commits** since `04f6cfc`. Merge/reconcile without rewriting applied fork migrations 81–84; retain OpenCode/MCP customizations, run migrations and full CI, then update fork `main` only through an approved merge. |
+| P0 | **Real agent plan runner** | Manual state tracking only. Connect user-initiated provider dispatch, true checkout/worktree identity and filesystem exclusivity, explicit parallelism, child delegation, pause/cancel/retry, artifact provenance and recovery. Do not auto-run after app launch. |
+| P0 | **Crash-safe user-approved resume** | Add pre-compaction, handoff, delegation and shutdown capture; validate file fingerprints and Git state; reconcile committed events; ledger ambiguous external effects; require explicit resume approval before any retry. Existing read-only recovery is not equivalent. |
+| P0 | **MCP credentials and tooling** | Implement macOS Keychain secret references, OAuth PKCE/state, HTTP and stdio connection test, tool discovery/health/reconnect, provider-project-tool allowlists enforced per invocation. Avoid persisting raw credentials in SQLite or logs. |
+| P0 | **Token and subscription efficiency** | Add per-step/child/turn/concurrency limits where adapters expose counters, measured versus unknown usage labeling, usage attribution and explicit budget stops. Run controlled native-Claude-versus-T3 macOS A/B with actual five-hour and weekly quota percentages; do not infer subscription meters from tokens. |
+| P0 | **Release validation** | Full monorepo CI, migration replay against fork and upstream DB copies, packaged/signed macOS restart and security tests, credentialed provider/MCP smoke, independent PR review and branch protection. GitHub-hosted unsigned build is not a packaged test. |
+
+**Local validation limitation:** the connected Mac development machine was offline
+when checked on 11 November 2026. Live Keychain/Claude-authenticated benchmarks
+and personal packaged-app testing cannot be certified from hosted CI.
+
+**Design invariants:** one integration PR; no automatic triggers; only run while
+Mac is active; default to sequential execution; avoid duplicate LLM calls and
+silent quota drain; no unauthorized parallel writers; never fabricate usage or
+claim exactly-once effects without a proven external effect ledger.
+
+---
+
 ## Historical implementation snapshot — 10 November 2026
 
 **Historical integration branch (since merged):** `feat/macos-orchestrator-upstream-base`, [PR #3](https://github.com/jameswright1562/t3code/pull/3), based on upstream `d756fed7`. The older May 2026 fork main and draft PR #2 are preserved, not overwritten.
