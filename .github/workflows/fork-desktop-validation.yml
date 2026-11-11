@@ -37,6 +37,8 @@ jobs:
           save-pnpm-store: "false"
       - name: Lint and formatting
         run: vp check
+      - name: Detect unused imports and exported symbols
+        run: vp run knip:check
       - name: Install Electron runtime
         run: vp run --filter @t3tools/desktop ensure:electron
       - name: Build desktop
