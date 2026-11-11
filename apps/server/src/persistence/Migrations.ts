@@ -191,11 +191,8 @@ const FIRST_V2_MIGRATION_ID = 55;
 
 // Migrators skip ids up to the highest recorded; reject collisions that would skip V2 schema.
 /**
- * Upstream introduced its own migration 81 after this fork assigned 81 to
- * agent memory. A previously-upgraded upstream database has recorded upstream
- * 81, so the migrator will skip the fork's 81. Materialize the fork's additive
- * tables before migration 82 and retain the original migration journal entry.
- * Never rewrite migration history or reinterpret unknown 81 migrations.
+ * Upstream and fork both claimed migration 81. Install missing fork memory
+ * tables for an upstream-upgraded DB without rewriting its migration journal.
  */
 const reconcileKnownUpstream81 = Effect.fn("reconcileKnownUpstream81")(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -257,7 +254,9 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
     toMigrationInclusive === undefined || toMigrationInclusive >= FIRST_V2_MIGRATION_ID;
   const previewMigrations = includesV2 ? yield* reconcileV2PreviewMigration() : [];
   if (includesV2) {
-    yield* reconcileKnownUpstream81();
+    if (toMigrationInclusive === undefined || toMigrationInclusive >= 81) {
+      yield* reconcileKnownUpstream81();
+    }
     yield* assertV2MigrationsCanRun(toMigrationInclusive);
   }
   const executedMigrations = [

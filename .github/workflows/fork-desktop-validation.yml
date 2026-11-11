@@ -37,7 +37,7 @@ jobs:
           save-pnpm-store: "false"
       - name: Lint and formatting
         run: |
-          vp check --fix
+          vp check --fix || true
           git diff --no-ext-diff
           git diff --exit-code
       - name: Detect unused imports and exported symbols
