@@ -58,10 +58,6 @@ export const readableSearchText = (text: string) => {
   return readable === text ? null : readable;
 };
 
-/** A message's text as it reads, for thread search. */
-export const messageSearchText = (sql: SqlClient.SqlClient) =>
-  sql.literal(readableText("messages"));
-
 /**
  * A message's stored text with apostrophes folded, what the index held before
  * migration 81. Migration 69's backfill uses it. `payload` is the message's
