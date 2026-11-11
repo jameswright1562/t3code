@@ -634,3 +634,27 @@ A read-only checkpoint inspector now compares the saved HEAD and branch with the
 New final-run context checkpoints also record the Git HEAD SHA when the local checkout is readable. This is evidence for a future divergence check, **not** automatic recovery approval or a substitute for changed-file fingerprints.
 
 **Still required:** native macOS Keychain/OAuth MCP support and health checks; pre-handoff checkpoints, event-cursor replay and Git divergence guards; persisted editable dependency plans, scheduling and checkout locks; trustworthy turn budgets and a measured native Claude A/B comparison; full release smoke and security verification. Do not mark these complete just because memory backup has landed.
+
+## 23. Further post-merge safeguards
+
+- Final-run memory checkpoints now record the canonical thread event high-water
+  mark (separate from the run ordinal), as well as Git HEAD when available.
+  This allows future recovery to replay only later committed events, but does
+  **not** imply automatic side-effect-safe replay.
+- The UI offers project- and thread-scoped memory browsing. Common plaintext
+  credentials are refused during memory creation, revision and backup import;
+  this is a heuristic safety guard, not full DLP or a replacement for Keychain.
+- The optional persisted **maximum native provider runs per thread** setting
+  stops further native run starts once the canonical run ordinal exceeds the
+  cap. Zero is unlimited. Native child turns within one provider run, task-wide
+  budgets, cancellation and delegation concurrency are not yet capped.
+- `scripts/claudeQuotaBenchmark.ts` accepts recorded native Claude Code/T3
+  subscription meter deltas in paired, alternating order, with identical model,
+  effort, prompt/context fingerprints and token telemetry. It never calls a
+  model or converts token counts into subscription quota claims. The actual
+  macOS A/B data has not been collected; no quota parity is claimed.
+
+**Release blockers remain:** upstream Mac smoke tests, shared credentialed
+MCP/OAuth and health, pre-handoff/compaction/shutdown capture, safe user-approved
+resume with file/side-effect verification, editable dependency scheduler and
+native child-agent budgets. Keep PR #8 draft until real validation passes.

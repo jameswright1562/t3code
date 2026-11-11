@@ -21,6 +21,8 @@ on:
       - "apps/server/src/auth/RpcAuthorization.ts"
       - "apps/server/src/observability/RpcInstrumentation.ts"
       - "apps/web/src/components/settings/AgentMemorySettings.tsx"
+      - "scripts/claudeQuotaBenchmark.ts"
+      - "scripts/claudeQuotaBenchmark.test.ts"
       - "apps/web/src/components/settings/SettingsPanels.tsx"
       - "apps/web/src/components/settings/HarnessMcpSettings.tsx"
       - "packages/shared/src/harnessMcp.ts"
@@ -66,6 +68,7 @@ jobs:
             apps/server/src/memory/MemorySearch.test.ts \
             apps/server/src/memory/MemorySecrets.test.ts \
             apps/server/src/orchestration-v2/HarnessRunBudget.test.ts \
+            scripts/claudeQuotaBenchmark.test.ts \
             apps/server/src/memory/CheckpointGitGuard.test.ts \
             packages/provider-opencode/src/server/openCodeLaunch.test.ts \
             apps/server/src/mcp/toolkits/core.test.ts \
