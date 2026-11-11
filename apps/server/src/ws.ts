@@ -2404,7 +2404,8 @@ export const layerWsRpc = (
             return yield* HarnessPlanStore.readHarnessPlan(input).pipe(
               Effect.provideService(SqlClient.SqlClient, sql),
               Effect.mapError(
-                (error) => new HarnessPlanError({ message: error.message || "Could not read plan" }),
+                (error) =>
+                  new HarnessPlanError({ message: error.message || "Could not read plan" }),
               ),
             );
           }).pipe(
@@ -2428,14 +2429,17 @@ export const layerWsRpc = (
             return yield* HarnessPlanStore.createHarnessPlan(input).pipe(
               Effect.provideService(SqlClient.SqlClient, sql),
               Effect.mapError(
-                (error) => new HarnessPlanError({ message: error.message || "Could not create plan" }),
+                (error) =>
+                  new HarnessPlanError({ message: error.message || "Could not create plan" }),
               ),
             );
           }).pipe(
             Effect.mapError((error) =>
               Schema.is(HarnessPlanError)(error)
                 ? error
-                : new HarnessPlanError({ message: "Plan creation is unavailable for this thread." }),
+                : new HarnessPlanError({
+                    message: "Plan creation is unavailable for this thread.",
+                  }),
             ),
           ),
         // Read and mutation scopes are checked against the trusted thread projection.
@@ -2452,7 +2456,8 @@ export const layerWsRpc = (
             return yield* HarnessPlanStore.mutateHarnessPlan(input).pipe(
               Effect.provideService(SqlClient.SqlClient, sql),
               Effect.mapError(
-                (error) => new HarnessPlanError({ message: error.message || "Could not update plan" }),
+                (error) =>
+                  new HarnessPlanError({ message: error.message || "Could not update plan" }),
               ),
             );
           }).pipe(

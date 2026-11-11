@@ -58,7 +58,6 @@ export const HarnessPlanMutationInput = Schema.Struct({
     }),
   ]),
 });
-export class HarnessPlanError extends Schema.TaggedError<HarnessPlanError>()(
-  "HarnessPlanError",
-  { message: Schema.String },
-) {}
+export class HarnessPlanError extends Schema.TaggedError<HarnessPlanError>()("HarnessPlanError", {
+  message: Schema.String,
+}) {}

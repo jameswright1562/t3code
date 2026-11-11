@@ -26,12 +26,13 @@ export function HarnessPlanSettings() {
     environmentId !== null && projectId !== null && threadId.trim()
       ? { environmentId, input: { projectId, threadId: threadId.trim() } }
       : null;
-  const plan = useEnvironmentQuery(
-    scope === null ? null : serverEnvironment.harnessPlan(scope),
-  );
+  const plan = useEnvironmentQuery(scope === null ? null : serverEnvironment.harnessPlan(scope));
   const create = useAtomCommand(serverEnvironment.harnessCreatePlan);
   const change = useAtomCommand(serverEnvironment.harnessMutatePlan);
-  const lines = draft.split("\n").map((line) => line.trim()).filter(Boolean);
+  const lines = draft
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
   const current = plan.data ?? null;
 
   async function createPlan() {
@@ -122,7 +123,10 @@ export function HarnessPlanSettings() {
     }
   }
 
-  async function transition(stepId: string, next: "pending" | "running" | "completed" | "failed" | "cancelled") {
+  async function transition(
+    stepId: string,
+    next: "pending" | "running" | "completed" | "failed" | "cancelled",
+  ) {
     if (!scope || !current || busy) return;
     setBusy(true);
     setMessage(null);
@@ -151,8 +155,8 @@ export function HarnessPlanSettings() {
     <SettingsSection id="harness-plans" title="Multi-step plans">
       <div className="flex flex-col gap-3 text-sm">
         <p className="text-muted-foreground">
-          Create and edit a durable plan for a thread. This board tracks status manually:
-          it does not run coding agents, resume providers or lock a real checkout yet.
+          Create and edit a durable plan for a thread. This board tracks status manually: it does
+          not run coding agents, resume providers or lock a real checkout yet.
         </p>
         {projectId === null ? (
           <p>Select a project in Settings to manage its plans.</p>
@@ -163,7 +167,10 @@ export function HarnessPlanSettings() {
               <Input
                 id="harness-plan-thread"
                 value={threadId}
-                onChange={(event) => { setThreadId(event.target.value); setDraft(""); }}
+                onChange={(event) => {
+                  setThreadId(event.target.value);
+                  setDraft("");
+                }}
                 placeholder="Thread ID"
               />
             </label>
@@ -179,43 +186,76 @@ export function HarnessPlanSettings() {
                 <ol className="flex flex-col gap-2" aria-label="Saved plan steps">
                   {current.steps.map((step, index) => (
                     <li key={step.id} className="rounded-md border p-3">
-                      <p className="font-medium">{index + 1}. {step.title}</p>
+                      <p className="font-medium">
+                        {index + 1}. {step.title}
+                      </p>
                       <p className="text-xs text-muted-foreground">
                         {step.status} · {step.provider} · {step.acceptanceCriteria}
                       </p>
                       {step.dependsOn.length > 0 ? (
                         <p className="text-xs text-muted-foreground">
-                          Depends on: {step.dependsOn.map((id) =>
-                            current.steps.find((other) => other.id === id)?.title ?? id
-                          ).join(", ")}
+                          Depends on:{" "}
+                          {step.dependsOn
+                            .map(
+                              (id) => current.steps.find((other) => other.id === id)?.title ?? id,
+                            )
+                            .join(", ")}
                         </p>
                       ) : null}
                       <div className="mt-2 flex flex-wrap gap-1">
                         {step.status === "pending" ? (
                           <>
-                            <Button size="xs" disabled={busy} onClick={() => void transition(step.id, "running")}>
+                            <Button
+                              size="xs"
+                              disabled={busy}
+                              onClick={() => void transition(step.id, "running")}
+                            >
                               Mark in progress
                             </Button>
-                            <Button size="xs" variant="outline" disabled={busy} onClick={() => void transition(step.id, "cancelled")}>
+                            <Button
+                              size="xs"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() => void transition(step.id, "cancelled")}
+                            >
                               Cancel
                             </Button>
                           </>
                         ) : null}
                         {step.status === "running" ? (
                           <>
-                            <Button size="xs" disabled={busy} onClick={() => void transition(step.id, "completed")}>
+                            <Button
+                              size="xs"
+                              disabled={busy}
+                              onClick={() => void transition(step.id, "completed")}
+                            >
                               Mark complete
                             </Button>
-                            <Button size="xs" variant="outline" disabled={busy} onClick={() => void transition(step.id, "failed")}>
+                            <Button
+                              size="xs"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() => void transition(step.id, "failed")}
+                            >
                               Mark failed
                             </Button>
-                            <Button size="xs" variant="outline" disabled={busy} onClick={() => void transition(step.id, "cancelled")}>
+                            <Button
+                              size="xs"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() => void transition(step.id, "cancelled")}
+                            >
                               Cancel
                             </Button>
                           </>
                         ) : null}
                         {step.status === "failed" ? (
-                          <Button size="xs" variant="outline" disabled={busy} onClick={() => void transition(step.id, "pending")}>
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            disabled={busy}
+                            onClick={() => void transition(step.id, "pending")}
+                          >
                             Reset to pending
                           </Button>
                         ) : null}
@@ -227,29 +267,48 @@ export function HarnessPlanSettings() {
             ) : null}
             {scope ? (
               <label className="flex flex-col gap-1" htmlFor="harness-plan-lines">
-                {current ? "Edit pending step titles (one per line)" : "New plan steps (one per line)"}
+                {current
+                  ? "Edit pending step titles (one per line)"
+                  : "New plan steps (one per line)"}
                 <textarea
                   id="harness-plan-lines"
                   className="min-h-24 w-full rounded-md border bg-background p-2"
                   maxLength={10000}
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
-                  placeholder={current ? "Select Load steps to edit the current plan" : "Research\nImplement\nTest"}
+                  placeholder={
+                    current
+                      ? "Select Load steps to edit the current plan"
+                      : "Research\nImplement\nTest"
+                  }
                 />
               </label>
             ) : null}
             {scope && current ? (
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" disabled={busy} onClick={() => setDraft(current.steps.map((step) => step.title).join("\n"))}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => setDraft(current.steps.map((step) => step.title).join("\n"))}
+                >
                   Load steps for editing
                 </Button>
-                <Button size="sm" disabled={busy || lines.length === 0} onClick={() => void saveEdits()}>
+                <Button
+                  size="sm"
+                  disabled={busy || lines.length === 0}
+                  onClick={() => void saveEdits()}
+                >
                   Save plan revision
                 </Button>
               </div>
             ) : null}
             {scope && current === null ? (
-              <Button size="sm" disabled={busy || lines.length === 0} onClick={() => void createPlan()}>
+              <Button
+                size="sm"
+                disabled={busy || lines.length === 0}
+                onClick={() => void createPlan()}
+              >
                 Create plan
               </Button>
             ) : null}
