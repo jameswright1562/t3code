@@ -2409,7 +2409,7 @@ export const layerWsRpc = (
             );
           }).pipe(
             Effect.mapError((error) =>
-              error instanceof HarnessPlanError
+              Schema.is(HarnessPlanError)(error)
                 ? error
                 : new HarnessPlanError({ message: "Plan read is unavailable for this thread." }),
             ),
@@ -2433,7 +2433,7 @@ export const layerWsRpc = (
             );
           }).pipe(
             Effect.mapError((error) =>
-              error instanceof HarnessPlanError
+              Schema.is(HarnessPlanError)(error)
                 ? error
                 : new HarnessPlanError({ message: "Plan creation is unavailable for this thread." }),
             ),
@@ -2457,7 +2457,7 @@ export const layerWsRpc = (
             );
           }).pipe(
             Effect.mapError((error) =>
-              error instanceof HarnessPlanError
+              Schema.is(HarnessPlanError)(error)
                 ? error
                 : new HarnessPlanError({ message: "Plan update is unavailable for this thread." }),
             ),
