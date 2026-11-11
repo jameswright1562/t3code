@@ -80,6 +80,8 @@ jobs:
         run: |
           vp run --filter @t3tools/contracts typecheck
           vp run --filter @t3tools/client-runtime typecheck
+      - name: Typecheck offline benchmark scripts
+        run: vp run --filter @t3tools/scripts typecheck
       - name: Build web UI
         run: vp run --filter @t3tools/web build
       - name: Typecheck shared MCP contracts
