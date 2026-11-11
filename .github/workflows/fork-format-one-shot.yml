@@ -32,7 +32,7 @@ jobs:
         with:
           save-pnpm-store: "false"
       - name: Format repo
-        run: vp check --fix
+        run: vp check --fix || true # Formatter writes files even when separate lint rules fail
       - name: Commit formatter changes if any
         run: |
           if git diff --quiet; then
