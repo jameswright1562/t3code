@@ -36,10 +36,7 @@ jobs:
         with:
           save-pnpm-store: "false"
       - name: Lint and formatting
-        run: |
-          vp check --fix || true
-          git diff --no-ext-diff
-          git diff --exit-code
+        run: vp check
       - name: Detect unused imports and exported symbols
         run: vp run knip:check
       - name: Install Electron runtime

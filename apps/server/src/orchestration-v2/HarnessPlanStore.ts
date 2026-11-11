@@ -130,8 +130,7 @@ export const mutateHarnessPlan = Effect.fn("HarnessPlanStore.mutate")(function* 
   return yield* sql.withTransaction(
     Effect.gen(function* () {
       const previous = yield* readHarnessPlan(input);
-      if (!previous)
-        return yield* fail("Plan not found in selected project and thread");
+      if (!previous) return yield* fail("Plan not found in selected project and thread");
       if (
         !Number.isSafeInteger(input.expectedRevision) ||
         previous.revision !== input.expectedRevision

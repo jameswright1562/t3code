@@ -150,9 +150,7 @@ export function transitionHarnessStep(
       readyHarnessSteps(steps, {
         allowParallel: options.allowParallel ?? false,
         maxParallel: 4,
-      }).some(
-        (candidate) => candidate.id === stepId,
-      ),
+      }).some((candidate) => candidate.id === stepId),
       "Dependencies or checkout concurrency prevent starting this step",
     );
   }
