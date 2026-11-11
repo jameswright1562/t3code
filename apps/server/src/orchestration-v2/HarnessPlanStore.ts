@@ -76,7 +76,7 @@ export const createHarnessPlan = Effect.fn("HarnessPlanStore.create")(function* 
       (id) => id.trim().length > 0 && id.length <= 128,
     )
   )
-    return yield* Effect.fail(fail("Invalid plan or scope identity"));
+    return yield* fail("Invalid plan or scope identity");
   const steps: HarnessStep[] = input.steps.map((step) => ({
     ...step,
     status: "pending" as const,
@@ -93,7 +93,7 @@ export const createHarnessPlan = Effect.fn("HarnessPlanStore.create")(function* 
         const plan = yield* parsePlan(existing);
         const priorStepsJson = yield* encodeJson(plan.steps);
         if (plan.planId !== input.planId || priorStepsJson !== stepsJson) {
-          return yield* Effect.fail(fail("Plan already exists with different content"));
+          return yield* fail("Plan already exists with different content");
         }
         return plan;
       }
@@ -131,12 +131,12 @@ export const mutateHarnessPlan = Effect.fn("HarnessPlanStore.mutate")(function* 
     Effect.gen(function* () {
       const previous = yield* readHarnessPlan(input);
       if (!previous)
-        return yield* Effect.fail(fail("Plan not found in selected project and thread"));
+        return yield* fail("Plan not found in selected project and thread");
       if (
         !Number.isSafeInteger(input.expectedRevision) ||
         previous.revision !== input.expectedRevision
       )
-        return yield* Effect.fail(fail("Stale plan revision; reload before modifying"));
+        return yield* fail("Stale plan revision; reload before modifying");
       const steps = yield* safe(() =>
         input.change.type === "edit"
           ? reviseHarnessSteps(previous.steps, input.change.steps)
