@@ -57,7 +57,7 @@ export function validateHarnessSteps(steps: readonly HarnessStep[]): void {
   for (const step of steps) {
     ensure(isId(step.id) && !byId.has(step.id), "Step IDs must be unique and non-empty");
     ensure(step.title.trim().length > 0 && step.title.length <= 500, "Invalid step title");
-    ensure(isId(step.checkoutKey), "Every step needs a host-resolved checkout key");
+    ensure(step.checkoutKey.trim().length > 0 && step.checkoutKey.length <= 4096, "Every step needs a host-resolved checkout key");
     ensure(isId(step.provider), "Every step needs a provider");
     ensure(step.acceptanceCriteria.length <= 10000, "Acceptance criteria too long");
     ensure(step.dependsOn.length <= 100, "Too many step dependencies");

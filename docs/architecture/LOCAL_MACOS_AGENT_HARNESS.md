@@ -85,6 +85,20 @@ claim exactly-once effects without a proven external effect ledger.
   this module **does not protect arbitrary native-provider writes**. The plan
   board remains a manual tracker, not a lock-enforced execution engine.
 
+
+### Plan-board checkout lease integration (migration 85; requires CI)
+
+Manual step transitions now resolve each checkout from the **trusted host**
+project/worktree realpath. The server ignores caller-supplied checkout keys on
+creation and edits. Marking a step as running atomically acquires a persistent
+exclusive plan lease; completing/failing/cancelling it releases that lease
+in the same transaction as the step status update. Parent/child paths and
+cross-thread plan writers are blocked. A lease left by a crash does not expire
+automatically; a missing lease or moved checkout fails closed for manual review.
+**These are plan-board leases only:** existing native provider sessions and
+external tool executions are not yet covered by this gate. The UI still marks
+steps manually and does not dispatch agents or prove a provider has stopped.
+
 ## Historical implementation snapshot — 10 November 2026
 
 **Historical integration branch (since merged):** `feat/macos-orchestrator-upstream-base`, [PR #3](https://github.com/jameswright1562/t3code/pull/3), based on upstream `d756fed7`. The older May 2026 fork main and draft PR #2 are preserved, not overwritten.

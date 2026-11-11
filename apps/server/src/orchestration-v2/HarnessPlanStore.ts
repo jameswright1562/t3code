@@ -13,6 +13,11 @@ import {
   transitionHarnessStep,
   validateHarnessSteps,
 } from "./HarnessPlan.ts";
+import {
+  acquireCheckoutLease,
+  normalizeCheckoutRealPath,
+  releaseCheckoutLease,
+} from "./HarnessCheckoutLease.ts";
 
 interface PlanRow {
   readonly planId: string;
@@ -69,6 +74,8 @@ export const createHarnessPlan = Effect.fn("HarnessPlanStore.create")(function* 
   readonly projectId: string;
   readonly threadId: string;
   readonly steps: readonly HarnessStepDraft[];
+  /** Must come from the host filesystem realpath, never an agent/UI claim. */
+  readonly trustedCheckoutPath: string;
   readonly updatedAt?: string;
 }) {
   if (
@@ -77,8 +84,12 @@ export const createHarnessPlan = Effect.fn("HarnessPlanStore.create")(function* 
     )
   )
     return yield* fail("Invalid plan or scope identity");
+  const checkoutPath = yield* safe(() =>
+    normalizeCheckoutRealPath(input.trustedCheckoutPath),
+  );
   const steps: HarnessStep[] = input.steps.map((step) => ({
     ...step,
+    checkoutKey: checkoutPath,
     status: "pending" as const,
     artifactRefs: [],
   }));
@@ -103,7 +114,9 @@ export const createHarnessPlan = Effect.fn("HarnessPlanStore.create")(function* 
           ${stepsJson}, ${now})`;
       return {
         schemaVersion: 1 as const,
-        ...input,
+        planId: input.planId,
+        projectId: input.projectId,
+        threadId: input.threadId,
         revision: 1,
         steps,
         updatedAt: now,
@@ -116,6 +129,8 @@ export const mutateHarnessPlan = Effect.fn("HarnessPlanStore.mutate")(function* 
   readonly projectId: string;
   readonly threadId: string;
   readonly expectedRevision: number;
+  /** Must come from the host filesystem realpath, never an agent/UI claim. */
+  readonly trustedCheckoutPath: string;
   readonly change:
     | { readonly type: "edit"; readonly steps: readonly HarnessStepDraft[] }
     | {
@@ -136,13 +151,58 @@ export const mutateHarnessPlan = Effect.fn("HarnessPlanStore.mutate")(function* 
         previous.revision !== input.expectedRevision
       )
         return yield* fail("Stale plan revision; reload before modifying");
-      const steps = yield* safe(() =>
+      const checkoutPath = yield* safe(() =>
+        normalizeCheckoutRealPath(input.trustedCheckoutPath),
+      );
+      const change =
         input.change.type === "edit"
-          ? reviseHarnessSteps(previous.steps, input.change.steps)
-          : transitionHarnessStep(previous.steps, input.change.stepId, input.change.next, {
-              allowParallel: input.change.allowParallel ?? false,
+          ? {
+              type: "edit" as const,
+              steps: input.change.steps.map((step) => ({
+                ...step,
+                checkoutKey: checkoutPath,
+              })),
+            }
+          : input.change;
+      const steps = yield* safe(() =>
+        change.type === "edit"
+          ? reviseHarnessSteps(previous.steps, change.steps)
+          : transitionHarnessStep(previous.steps, change.stepId, change.next, {
+              allowParallel: change.allowParallel ?? false,
             }),
       );
+      if (change.type === "transition" && change.next === "running") {
+        const step = previous.steps.find((candidate) => candidate.id === change.stepId);
+        if (!step || step.checkoutKey !== checkoutPath) {
+          return yield* fail(
+            "Saved checkout identity is stale; revise pending plan steps before starting.",
+          );
+        }
+        yield* acquireCheckoutLease({
+          leaseId: previous.planId + ":" + change.stepId,
+          checkoutPath,
+          projectId: previous.projectId,
+          threadId: previous.threadId,
+          planId: previous.planId,
+          stepId: change.stepId,
+        });
+      }
+      if (
+        change.type === "transition" &&
+        (change.next === "completed" || change.next === "failed" ||
+          change.next === "cancelled") &&
+        previous.steps.some(
+          (step) => step.id === change.stepId && step.status === "running",
+        )
+      ) {
+        yield* releaseCheckoutLease({
+          leaseId: previous.planId + ":" + change.stepId,
+          projectId: previous.projectId,
+          threadId: previous.threadId,
+          planId: previous.planId,
+          stepId: change.stepId,
+        });
+      }
       const now = input.updatedAt ?? DateTime.formatIso(yield* DateTime.now);
       const stepsJson = yield* encodeJson(steps);
       const revision = previous.revision + 1;
