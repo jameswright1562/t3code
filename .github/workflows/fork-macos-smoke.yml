@@ -47,6 +47,7 @@ jobs:
         run: |
           vp test run \
             apps/server/src/orchestration-v2/HarnessPlan.test.ts \
+            apps/server/src/orchestration-v2/HarnessCheckoutLease.test.ts \
             apps/server/src/persistence/ProjectionMessageSearchUpgrade.test.ts \
             apps/server/src/memory/MemoryBackup.test.ts
 

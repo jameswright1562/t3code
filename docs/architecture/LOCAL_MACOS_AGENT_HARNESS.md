@@ -72,6 +72,19 @@ claim exactly-once effects without a proven external effect ledger.
 
 ---
 
+
+### Incremental checkout protection (migration 85; not yet provider-integrated)
+
+- [x] Added a persistent SQLite exclusive checkout lease ledger with canonical
+  absolute-path checks, parent/child path overlap refusal, owner verification
+  and no automatic lock expiry. A crashed server must not silently release a
+  potentially live native child writer. Unit and migration tests cover overlap,
+  idempotence, cross-owner release refusal and persistence.
+- [ ] Wire trusted realpaths, acquisition and release into provider dispatch,
+  finalization, cancellation and crash review. Until that wiring is complete,
+  this module **does not protect arbitrary native-provider writes**. The plan
+  board remains a manual tracker, not a lock-enforced execution engine.
+
 ## Historical implementation snapshot — 10 November 2026
 
 **Historical integration branch (since merged):** `feat/macos-orchestrator-upstream-base`, [PR #3](https://github.com/jameswright1562/t3code/pull/3), based on upstream `d756fed7`. The older May 2026 fork main and draft PR #2 are preserved, not overwritten.

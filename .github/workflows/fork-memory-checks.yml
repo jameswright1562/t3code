@@ -73,6 +73,7 @@ jobs:
             apps/server/src/memory/MemorySecrets.test.ts \
             apps/server/src/orchestration-v2/HarnessRunBudget.test.ts \
             apps/server/src/orchestration-v2/HarnessPlan.test.ts \
+            apps/server/src/orchestration-v2/HarnessCheckoutLease.test.ts \
             scripts/claudeQuotaBenchmark.test.ts \
             apps/server/src/memory/CheckpointGitGuard.test.ts \
             packages/provider-opencode/src/server/openCodeLaunch.test.ts \
