@@ -663,3 +663,20 @@ New final-run context checkpoints also record the Git HEAD SHA when the local ch
 MCP/OAuth and health, pre-handoff/compaction/shutdown capture, safe user-approved
 resume with file/side-effect verification, editable dependency scheduler and
 native child-agent budgets. Keep PR #8 draft until real validation passes.
+
+## 24. Upstream migration collision (11 November 2026)
+
+Upstream introduced `081_ProjectionMessageSearchText` after this fork assigned
+migration 81 to AgentMemory and 82 to AgentMemorySearch. **Do not overwrite the
+fork's migration 81**: existing users have already committed that history.
+This branch carries the upstream message-search upgrade as fork migration 83,
+including idempotent search-text backfill and trigger recreation. A database
+whose migration journal contains upstream `81_ProjectionMessageSearchText`
+is explicitly reconciled by creating the fork's memory tables before migration
+82, without rewriting its journal. Unknown divergent histories still fail closed.
+
+This migration is necessary for upstream compatibility but does **not** mean
+all upstream commits have been merged. After an upstream merge, retain these
+fork migration IDs, audit the newest upstream migration manifest for further
+collisions, and run migration tests on a copy of both fork-upgraded and
+upstream-upgraded SQLite databases before release.

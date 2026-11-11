@@ -63,6 +63,7 @@ jobs:
         run: |
           vp test run \
             apps/server/src/memory/AgentMemory.test.ts \
+            apps/server/src/persistence/ProjectionMessageSearchUpgrade.test.ts \
             apps/server/src/memory/MemoryBackup.test.ts \
             apps/server/src/memory/MemoryContext.test.ts \
             apps/server/src/memory/MemorySearch.test.ts \

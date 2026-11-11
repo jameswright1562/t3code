@@ -85,6 +85,7 @@ import Migration0079 from "./Migrations/079_DelegatedRecoveryIndexes.ts";
 import Migration0080 from "./Migrations/080_ScheduledTaskThreadMode.ts";
 import Migration0081 from "./Migrations/081_AgentMemory.ts";
 import Migration0082 from "./Migrations/082_AgentMemorySearch.ts";
+import Migration0083 from "./Migrations/083_UpstreamProjectionMessageSearchText.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -170,6 +171,7 @@ const migrationEntries = [
   [80, "ScheduledTaskThreadMode", Migration0080],
   [81, "AgentMemory", Migration0081],
   [82, "AgentMemorySearch", Migration0082],
+  [83, "UpstreamProjectionMessageSearchText", Migration0083],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
@@ -186,6 +188,27 @@ const makeMigrationLoader = (throughId?: number) =>
 const FIRST_V2_MIGRATION_ID = 55;
 
 // Migrators skip ids up to the highest recorded; reject collisions that would skip V2 schema.
+/**
+ * Upstream introduced its own migration 81 after this fork assigned 81 to
+ * agent memory. A previously-upgraded upstream database has recorded upstream
+ * 81, so the migrator will skip the fork's 81. Materialize the fork's additive
+ * tables before migration 82 and retain the original migration journal entry.
+ * Never rewrite migration history or reinterpret unknown 81 migrations.
+ */
+const reconcileKnownUpstream81 = Effect.fn("reconcileKnownUpstream81")(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const ledger = yield* sql`SELECT 1 FROM sqlite_master
+    WHERE type = 'table' AND name = 'effect_sql_migrations'`;
+  if (ledger.length === 0) return;
+  const entries = yield* sql<{ readonly name: string }>`
+    SELECT name FROM effect_sql_migrations WHERE migration_id = 81
+  `;
+  if (entries[0]?.name !== "ProjectionMessageSearchText") return;
+  // CREATE TABLE/INDEX IF NOT EXISTS is idempotent. Fail startup if schema
+  // repair fails rather than silently opening without protected memory scope.
+  yield* sql.withTransaction(Migration0081);
+});
+
 const assertV2MigrationsCanRun = Effect.fn("assertV2MigrationsCanRun")(function* (
   throughId?: number,
 ) {
@@ -209,6 +232,7 @@ const assertV2MigrationsCanRun = Effect.fn("assertV2MigrationsCanRun")(function*
       return [];
     const recordedName = recordedNames.get(id);
     if (recordedName === name) return [];
+    if (id === 81 && recordedName === "ProjectionMessageSearchText") return [];
     return [`${id}_${name} (recorded: ${recordedName ?? "nothing"})`];
   });
   if (skipped.length === 0) return;
@@ -231,6 +255,7 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
     toMigrationInclusive === undefined || toMigrationInclusive >= FIRST_V2_MIGRATION_ID;
   const previewMigrations = includesV2 ? yield* reconcileV2PreviewMigration() : [];
   if (includesV2) {
+    yield* reconcileKnownUpstream81();
     yield* assertV2MigrationsCanRun(toMigrationInclusive);
   }
   const executedMigrations = [
@@ -253,7 +278,8 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
     if (expected === undefined) {
       return [`${row.migration_id}:${row.name} (unknown to this build)`];
     }
-    return expected === row.name
+    return expected === row.name ||
+      (row.migration_id === 81 && row.name === "ProjectionMessageSearchText")
       ? []
       : [`${row.migration_id}:${row.name} (this build: ${expected})`];
   });
