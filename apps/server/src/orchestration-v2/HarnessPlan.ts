@@ -196,3 +196,31 @@ export function reviseHarnessSteps(
   validateHarnessSteps(updated);
   return updated;
 }
+
+/**
+ * Source-backed, bounded plan state for a durable context checkpoint.
+ * These fields are evidence of the saved plan revision, not approval to
+ * resume execution or retry a native provider's external side effects.
+ */
+export function checkpointHarnessPlan(plan: HarnessPlan): {
+  readonly planId: string;
+  readonly planRevision: number;
+  readonly completedStepIds: readonly string[];
+  readonly pendingStepIds: readonly string[];
+  readonly activeStepIds: readonly string[];
+  readonly nextActions: readonly string[];
+} {
+  validateHarnessSteps(plan.steps);
+  return {
+    planId: plan.planId,
+    planRevision: plan.revision,
+    completedStepIds: plan.steps.filter((step) => step.status === "completed").map((step) => step.id),
+    pendingStepIds: plan.steps.filter((step) => step.status === "pending").map((step) => step.id),
+    activeStepIds: plan.steps.filter((step) => step.status === "running").map((step) => step.id),
+    // Include only work actually eligible under the manual, sequential policy.
+    // Pending steps with failed dependencies are not next actions.
+    nextActions: readyHarnessSteps(plan.steps)
+      .slice(0, 5)
+      .map((step) => step.title.slice(0, 240)),
+  };
+}
