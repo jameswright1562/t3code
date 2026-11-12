@@ -153,7 +153,7 @@ export function transitionHarnessStep(
   const allowed =
     (from === "pending" && (next === "running" || next === "cancelled")) ||
     (from === "running" && (next === "completed" || next === "failed" || next === "cancelled")) ||
-    (from === "failed" && next === "pending");
+    ((from === "failed" || from === "cancelled") && next === "pending");
   ensure(allowed, "Invalid plan step state transition");
   if (next === "running") {
     ensure(
