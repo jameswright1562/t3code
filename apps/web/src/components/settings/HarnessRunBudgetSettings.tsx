@@ -124,8 +124,8 @@ export function HarnessRunBudgetSettings() {
         </div>
       )}
       <p className="text-xs text-muted-foreground">
-        0 disables the per-thread run cap; a value of 20 allows up to 20 runs on each thread.
-        The delegated child limit defaults to 4 per active parent run.
+        0 disables the per-thread run cap; a value of 20 allows up to 20 runs on each thread. The
+        delegated child limit defaults to 4 per active parent run.
       </p>
       {message ? (
         <p role="status" className="text-sm">
