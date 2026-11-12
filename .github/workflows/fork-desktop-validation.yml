@@ -42,6 +42,7 @@ jobs:
         run: |
           vp check --fix || true
           git diff -- \
+            apps/server/src/orchestration-v2/Orchestrator.ts \
             apps/server/src/orchestration-v2/HarnessPlanStore.ts \
             apps/server/src/orchestration-v2/HarnessPlan.ts \
             apps/server/src/orchestration-v2/ProviderTurnStartService.ts \
