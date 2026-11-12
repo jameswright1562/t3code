@@ -10,6 +10,13 @@ import { Input } from "../ui/input";
 import { SettingsSection } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
 
+const PLAN_PROVIDERS = [
+  { id: "codex", label: "Codex" },
+  { id: "claudeAgent", label: "Claude Code" },
+  { id: "cursor", label: "Cursor" },
+  { id: "opencode", label: "OpenCode / custom models" },
+] as const;
+
 /**
  * The plan board edits persisted state but does NOT invoke providers or
  * automatically execute steps. The execution scheduler is a separate gate.
@@ -20,6 +27,10 @@ export function HarnessPlanSettings() {
   const projectId = target?.projectId ?? null;
   const [threadId, setThreadId] = useState("");
   const [draft, setDraft] = useState("");
+  const [newProvider, setNewProvider] = useState("codex");
+  const [newModel, setNewModel] = useState("");
+  const [providerOverrides, setProviderOverrides] = useState<Record<string, string>>({});
+  const [modelOverrides, setModelOverrides] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const scope =
@@ -34,6 +45,7 @@ export function HarnessPlanSettings() {
     .map((line) => line.trim())
     .filter(Boolean);
   const current = plan.data ?? null;
+  const editLines = lines.length > 0 ? lines : (current?.steps.map((step) => step.title) ?? []);
 
   async function createPlan() {
     if (!scope || !projectId || lines.length === 0 || lines.length > 100 || busy) return;
@@ -42,7 +54,8 @@ export function HarnessPlanSettings() {
       title,
       dependsOn: [],
       checkoutKey: `project:${projectId}`,
-      provider: "codex",
+      provider: newProvider,
+      ...(newModel.trim() ? { model: newModel.trim() } : {}),
       acceptanceCriteria: "User verifies this step is complete",
     }));
     for (let index = 1; index < steps.length; index++) {
@@ -70,8 +83,8 @@ export function HarnessPlanSettings() {
   }
 
   async function saveEdits() {
-    if (!scope || !current || lines.length === 0 || lines.length > 100 || busy) return;
-    const steps: HarnessPlanStepDraft[] = lines.map((title, index) => {
+    if (!scope || !current || editLines.length === 0 || editLines.length > 100 || busy) return;
+    const steps: HarnessPlanStepDraft[] = editLines.map((title, index) => {
       const existing = current.steps[index];
       return existing
         ? {
@@ -79,8 +92,8 @@ export function HarnessPlanSettings() {
             title,
             dependsOn: existing.dependsOn,
             checkoutKey: existing.checkoutKey,
-            provider: existing.provider,
-            model: existing.model,
+            provider: providerOverrides[existing.id] ?? existing.provider,
+            model: modelOverrides[existing.id] ?? existing.model,
             acceptanceCriteria: existing.acceptanceCriteria,
           }
         : {
@@ -88,7 +101,8 @@ export function HarnessPlanSettings() {
             title,
             dependsOn: index > 0 ? [current.steps[index - 1]?.id ?? ""] : [],
             checkoutKey: `project:${scope.input.projectId}`,
-            provider: "codex",
+            provider: newProvider,
+            ...(newModel.trim() ? { model: newModel.trim() } : {}),
             acceptanceCriteria: "User verifies this step is complete",
           };
     });
@@ -113,6 +127,8 @@ export function HarnessPlanSettings() {
         setMessage("Edit refused. Active steps and dependencies are protected; reload the plan.");
       } else {
         setDraft("");
+        setProviderOverrides({});
+        setModelOverrides({});
         setMessage("Plan revision saved.");
         plan.refresh();
       }
@@ -156,7 +172,8 @@ export function HarnessPlanSettings() {
       <div className="flex flex-col gap-3 text-sm">
         <p className="text-muted-foreground">
           Create and edit a durable plan for a thread. This board tracks status manually: it does
-          not run coding agents, resume providers or lock a real checkout yet.
+          not run coding agents or resume providers. Running steps acquire plan-level checkout
+          leases, but these do not protect native provider sessions.
         </p>
         {projectId === null ? (
           <p>Select a project in Settings to manage its plans.</p>
@@ -170,6 +187,8 @@ export function HarnessPlanSettings() {
                 onChange={(event) => {
                   setThreadId(event.target.value);
                   setDraft("");
+                  setProviderOverrides({});
+                  setModelOverrides({});
                 }}
                 placeholder="Thread ID"
               />
@@ -202,6 +221,47 @@ export function HarnessPlanSettings() {
                             .join(", ")}
                         </p>
                       ) : null}
+                      {(step.status === "pending" || step.status === "failed") && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <label className="flex flex-col gap-1 text-xs">
+                            Assigned provider
+                            <select
+                              className="rounded-md border bg-background p-2"
+                              value={providerOverrides[step.id] ?? step.provider}
+                              disabled={busy}
+                              onChange={(event) =>
+                                setProviderOverrides((previous) => ({
+                                  ...previous,
+                                  [step.id]: event.target.value,
+                                }))
+                              }
+                            >
+                              {!PLAN_PROVIDERS.some((provider) => provider.id === step.provider) ? (
+                                <option value={step.provider}>{step.provider}</option>
+                              ) : null}
+                              {PLAN_PROVIDERS.map((provider) => (
+                                <option key={provider.id} value={provider.id}>
+                                  {provider.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="flex flex-col gap-1 text-xs">
+                            Model ID (optional)
+                            <Input
+                              value={modelOverrides[step.id] ?? step.model ?? ""}
+                              disabled={busy}
+                              onChange={(event) =>
+                                setModelOverrides((previous) => ({
+                                  ...previous,
+                                  [step.id]: event.target.value,
+                                }))
+                              }
+                              placeholder="Provider default"
+                            />
+                          </label>
+                        </div>
+                      )}
                       <div className="mt-2 flex flex-wrap gap-1">
                         {step.status === "pending" ? (
                           <>
@@ -266,6 +326,36 @@ export function HarnessPlanSettings() {
               </>
             ) : null}
             {scope ? (
+              <div className="flex flex-wrap gap-2">
+                <label className="flex flex-col gap-1" htmlFor="harness-plan-new-provider">
+                  Provider for new steps
+                  <select
+                    id="harness-plan-new-provider"
+                    className="rounded-md border bg-background p-2"
+                    value={newProvider}
+                    disabled={busy}
+                    onChange={(event) => setNewProvider(event.target.value)}
+                  >
+                    {PLAN_PROVIDERS.map((provider) => (
+                      <option key={provider.id} value={provider.id}>
+                        {provider.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1" htmlFor="harness-plan-new-model">
+                  Model for new steps (optional)
+                  <Input
+                    id="harness-plan-new-model"
+                    value={newModel}
+                    disabled={busy}
+                    onChange={(event) => setNewModel(event.target.value)}
+                    placeholder="Provider default"
+                  />
+                </label>
+              </div>
+            ) : null}
+            {scope ? (
               <label className="flex flex-col gap-1" htmlFor="harness-plan-lines">
                 {current
                   ? "Edit pending step titles (one per line)"
@@ -296,7 +386,13 @@ export function HarnessPlanSettings() {
                 </Button>
                 <Button
                   size="sm"
-                  disabled={busy || lines.length === 0}
+                  disabled={
+                    busy ||
+                    editLines.length === 0 ||
+                    (lines.length === 0 &&
+                      Object.keys(providerOverrides).length === 0 &&
+                      Object.keys(modelOverrides).length === 0)
+                  }
                   onClick={() => void saveEdits()}
                 >
                   Save plan revision
