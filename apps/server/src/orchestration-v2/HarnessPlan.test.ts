@@ -5,6 +5,7 @@ import {
   attachHarnessDispatch,
   checkpointHarnessPlan,
   matchingActiveHarnessRun,
+  queuedHarnessRecoveryRuns,
   readyHarnessSteps,
   renderHarnessStepPrompt,
   terminalHarnessStepStatus,
@@ -103,6 +104,19 @@ it("maps only verified terminal native run states to plan settlement", () => {
   for (const active of ["starting", "queued", "running", "waiting", "preparing"]) {
     assert.equal(terminalHarnessStepStatus(active), null);
   }
+});
+
+it("holds only unheld queued harness messages after restart", () => {
+  const runs = [
+    { id: "harness-queued", status: "queued", userMessageId: "harness:one", queueHeld: false },
+    { id: "already-held", status: "queued", userMessageId: "harness:two", queueHeld: true },
+    { id: "ordinary", status: "queued", userMessageId: "message:normal", queueHeld: false },
+    { id: "running", status: "running", userMessageId: "harness:three", queueHeld: false },
+  ];
+  assert.deepStrictEqual(
+    queuedHarnessRecoveryRuns(runs).map((run) => run.id),
+    ["harness-queued"],
+  );
 });
 
 it("stops only the exact active run for the same durable plan and thread", () => {
