@@ -9,6 +9,7 @@ import {
   type HarnessStepDraft,
   type HarnessStepStatus,
   HarnessPlanValidationError,
+  attachHarnessDispatch,
   reviseHarnessSteps,
   transitionHarnessStep,
   validateHarnessSteps,
@@ -136,6 +137,15 @@ export const mutateHarnessPlan = Effect.fn("HarnessPlanStore.mutate")(function* 
         readonly stepId: string;
         readonly next: HarnessStepStatus;
         readonly allowParallel?: boolean | undefined;
+      }
+    /** Server-only: prepared before native dispatch. Not exposed through the client RPC schema. */
+    | { readonly type: "dispatch"; readonly stepId: string; readonly messageId: string }
+    /** Server-only: invoked only after observing the matching native run settle. */
+    | {
+        readonly type: "settle";
+        readonly stepId: string;
+        readonly messageId: string;
+        readonly next: "completed" | "failed" | "cancelled";
       };
   readonly updatedAt?: string;
 }) {
@@ -160,16 +170,44 @@ export const mutateHarnessPlan = Effect.fn("HarnessPlanStore.mutate")(function* 
               })),
             }
           : input.change;
-      const steps = yield* safe(() =>
-        change.type === "edit"
-          ? reviseHarnessSteps(previous.steps, change.steps)
-          : transitionHarnessStep(previous.steps, change.stepId, change.next, {
+      const current = change.type === "edit"
+        ? null
+        : previous.steps.find((candidate) => candidate.id === change.stepId);
+      if (change.type === "settle" && (
+        !current ||
+        current.status !== "running" ||
+        current.dispatchMessageId !== change.messageId
+      )) {
+        return yield* fail("Native run identity does not match the running plan step.");
+      }
+      if (
+        change.type === "transition" &&
+        current?.dispatchMessageId !== undefined &&
+        (change.next === "completed" || change.next === "failed" || change.next === "cancelled")
+      ) {
+        return yield* fail(
+          "Native plan steps can only be settled after the matching provider run terminates.",
+        );
+      }
+      const steps = yield* safe(() => {
+        switch (change.type) {
+          case "edit":
+            return reviseHarnessSteps(previous.steps, change.steps);
+          case "dispatch":
+            return attachHarnessDispatch(previous.steps, change.stepId, change.messageId);
+          case "settle":
+            return transitionHarnessStep(previous.steps, change.stepId, change.next);
+          case "transition":
+            return transitionHarnessStep(previous.steps, change.stepId, change.next, {
               allowParallel: change.allowParallel ?? false,
-            }),
-      );
-      if (change.type === "transition" && change.next === "running") {
-        const step = previous.steps.find((candidate) => candidate.id === change.stepId);
-        if (!step || step.checkoutKey !== checkoutPath) {
+            });
+        }
+      });
+      if (
+        change.type === "dispatch" ||
+        (change.type === "transition" && change.next === "running")
+      ) {
+        if (!current || current.checkoutKey !== checkoutPath) {
           return yield* fail(
             "Saved checkout identity is stale; revise pending plan steps before starting.",
           );
@@ -184,9 +222,10 @@ export const mutateHarnessPlan = Effect.fn("HarnessPlanStore.mutate")(function* 
         });
       }
       if (
-        change.type === "transition" &&
-        (change.next === "completed" || change.next === "failed" || change.next === "cancelled") &&
-        previous.steps.some((step) => step.id === change.stepId && step.status === "running")
+        (change.type === "settle" ||
+          (change.type === "transition" &&
+            (change.next === "completed" || change.next === "failed" || change.next === "cancelled"))) &&
+        current?.status === "running"
       ) {
         yield* releaseCheckoutLease({
           leaseId: previous.planId + ":" + change.stepId,
@@ -211,3 +250,40 @@ export const mutateHarnessPlan = Effect.fn("HarnessPlanStore.mutate")(function* 
     }),
   );
 });
+
+/**
+ * Settle only the native run whose original user message was recorded before
+ * dispatch. Other thread runs, stale plan revisions and retries cannot
+ * accidentally release a checkout lease.
+ */
+export const settleNativeHarnessStep = Effect.fn("HarnessPlanStore.settleNative")(
+  function* (input: {
+    readonly projectId: string;
+    readonly threadId: string;
+    readonly planId: string;
+    readonly messageId: string;
+    readonly trustedCheckoutPath: string;
+    readonly next: "completed" | "failed" | "cancelled";
+  }) {
+    const plan = yield* readHarnessPlan(input);
+    if (!plan || plan.planId !== input.planId) return false;
+    const step = plan.steps.find(
+      (candidate) =>
+        candidate.dispatchMessageId === input.messageId && candidate.status === "running",
+    );
+    if (!step) return false;
+    yield* mutateHarnessPlan({
+      projectId: input.projectId,
+      threadId: input.threadId,
+      expectedRevision: plan.revision,
+      trustedCheckoutPath: input.trustedCheckoutPath,
+      change: {
+        type: "settle",
+        stepId: step.id,
+        messageId: input.messageId,
+        next: input.next,
+      },
+    });
+    return true;
+  },
+);
