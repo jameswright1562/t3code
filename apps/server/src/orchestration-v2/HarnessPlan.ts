@@ -20,6 +20,8 @@ export interface HarnessStepDraft {
 export interface HarnessStep extends HarnessStepDraft {
   readonly status: HarnessStepStatus;
   readonly artifactRefs: readonly string[];
+  /** Host-generated message identity; an uncertain native dispatch is never replayed on launch. */
+  readonly dispatchMessageId?: string | undefined;
 }
 
 export interface HarnessPlan {
@@ -65,6 +67,11 @@ export function validateHarnessSteps(steps: readonly HarnessStep[]): void {
     ensure(step.acceptanceCriteria.length <= 10000, "Acceptance criteria too long");
     ensure(step.dependsOn.length <= 100, "Too many step dependencies");
     ensure(step.artifactRefs.length <= 200, "Too many step artifacts");
+    ensure(
+      step.dispatchMessageId === undefined ||
+        (isId(step.dispatchMessageId) && step.status !== "pending"),
+      "Invalid or stale native dispatch identity",
+    );
     ensure(
       ["pending", "running", "completed", "failed", "cancelled"].includes(step.status),
       "Invalid step status",
@@ -158,10 +165,43 @@ export function transitionHarnessStep(
     );
   }
   const updated = steps.map((candidate) =>
-    candidate.id === stepId ? { ...candidate, status: next } : candidate,
+    candidate.id === stepId
+      ? {
+          ...candidate,
+          status: next,
+          ...(next === "pending" ? { dispatchMessageId: undefined } : {}),
+        }
+      : candidate,
   );
   validateHarnessSteps(updated);
   return updated;
+}
+
+/**
+ * A native dispatch identity is recorded in the same SQL transaction as
+ * the plan's running transition and checkout lease. Never independently
+ * replay a command for a running step after restart.
+ */
+export function attachHarnessDispatch(
+  steps: readonly HarnessStep[],
+  stepId: string,
+  messageId: string,
+): readonly HarnessStep[] {
+  if (!isId(messageId)) fail("Invalid native dispatch message identity");
+  const updated = transitionHarnessStep(steps, stepId, "running");
+  return updated.map((step) =>
+    step.id === stepId ? { ...step, dispatchMessageId: messageId } : step,
+  );
+}
+
+/** Small, deterministic prompt: no planning/model calls are spent on the control plane. */
+export function renderHarnessStepPrompt(step: HarnessStep): string {
+  return [
+    "Execute this single user-approved coding plan step. Do not start later plan steps.",
+    "Step: " + step.title,
+    "Acceptance criteria: " + (step.acceptanceCriteria || "Report the changed files and tests."),
+    "At completion, report evidence and any remaining issues. Do not claim unrun tests passed.",
+  ].join("\n\n");
 }
 
 /** Preserve active/completed work across user edits; a stale plan cannot erase it. */
@@ -173,7 +213,12 @@ export function reviseHarnessSteps(
   const updated = drafts.map((draft) => {
     const existing = original.get(draft.id);
     if (existing && existing.status !== "pending" && existing.status !== "failed") {
-      const { status: _status, artifactRefs: _artifacts, ...prior } = existing;
+      const {
+        status: _status,
+        artifactRefs: _artifacts,
+        dispatchMessageId: _dispatchMessageId,
+        ...prior
+      } = existing;
       ensure(
         JSON.stringify(prior) === JSON.stringify(draft),
         "An active or completed step cannot be edited",
@@ -183,6 +228,9 @@ export function reviseHarnessSteps(
       ...draft,
       status: existing?.status ?? "pending",
       artifactRefs: existing?.artifactRefs ?? [],
+      ...(existing?.dispatchMessageId === undefined
+        ? {}
+        : { dispatchMessageId: existing.dispatchMessageId }),
     } satisfies HarnessStep;
   });
   for (const step of current) {
