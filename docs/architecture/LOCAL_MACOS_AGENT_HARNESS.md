@@ -4,7 +4,7 @@
 
 - [x] Corrected the startup queue-recovery formatter failure from Actions on `e646855`. The subsequently checked `b64f167` branch commit passed Linux desktop/lint and focused memory/OpenCode workflows.
 - [x] Reject obviously credential-bearing native MCP command arguments, including bearer headers and env secret flags. This is defence-in-depth pending a proper Keychain-backed, per-tool-authorized host gateway.
-- [x] Added a configurable direct **app-owned delegated child concurrency cap** (default 4, range 1–32) enforced before child-thread emission under the parent dispatch lock, plus policy tests and a Settings control. This does **not** enforce limits for native provider-internal children, token usage or total recursive delegation.
+- [x] Added a configurable direct **app-owned delegated child concurrency cap** (default 4, range 1–32) enforced before child-thread emission under the parent dispatch lock, plus policy tests and a Settings control. Cancelled/interrupted app-owned children keep their slots because process teardown is uncertain. This does **not** enforce limits for native provider-internal children, token usage or total recursive delegation.
 - [ ] Validate these latest concurrency changes in GitHub Actions. No on-device Mac E2E was possible because the connected Mac remains offline.
 - [ ] Still blocked for release: authenticated MCP OAuth/Keychain gateway, safe opt-in crash Resume and pre-compaction/handoff capture, native child-process supervision and quota attribution, eight upstream merge conflicts, full required CI and packaged macOS E2E. Keep PR in draft until verified.
 

@@ -58,3 +58,8 @@ export function evaluateDelegatedChildBudget(input: {
   }
   return { allowed: true, reason: "" };
 }
+
+/** Ambiguous stop/cancel does not prove delegated child process teardown. */
+export function retainsDelegatedChildSlot(status: string): boolean {
+  return status !== "completed" && status !== "failed";
+}

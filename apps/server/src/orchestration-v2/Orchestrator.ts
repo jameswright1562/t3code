@@ -177,7 +177,7 @@ import * as RunExecutionService from "./RunExecutionService.ts";
 import { ProviderSessionManagerV2 } from "./ProviderSessionManager.ts";
 import { ProviderSwitchServiceV2 } from "./ProviderSwitchService.ts";
 import { isAutomaticCompletionRun, queuedRunsInDeliveryOrder } from "./QueuedRunOrder.ts";
-import { evaluateDelegatedChildBudget } from "./HarnessRunBudget.ts";
+import { evaluateDelegatedChildBudget, retainsDelegatedChildSlot } from "./HarnessRunBudget.ts";
 import { isRuntimePolicyAboveCeilingError, RuntimePolicyV2 } from "./RuntimePolicy.ts";
 import {
   endOrphanedNativeSubagent,
@@ -8277,7 +8277,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           (child) =>
             child.runId === parentRun.id &&
             child.origin === "app_owned" &&
-            !isTerminalDelegatedTaskStatus(child.status),
+            retainsDelegatedChildSlot(child.status),
         ).length,
         maxConcurrentChildren: settings.harnessMaxConcurrentDelegatedTasks,
       });

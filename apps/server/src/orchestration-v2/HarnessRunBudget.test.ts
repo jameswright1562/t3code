@@ -1,5 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
-import { evaluateDelegatedChildBudget, evaluateThreadRunBudget } from "./HarnessRunBudget.ts";
+import {
+  evaluateDelegatedChildBudget,
+  evaluateThreadRunBudget,
+  retainsDelegatedChildSlot,
+} from "./HarnessRunBudget.ts";
 
 describe("per-thread provider-start budget", () => {
   it("allows unlimited or under-budget runs", () => {
@@ -41,5 +45,16 @@ describe("app-owned delegated child concurrency", () => {
     expect(
       evaluateDelegatedChildBudget({ activeChildren: 0, maxConcurrentChildren: 33 }).allowed,
     ).toBe(false);
+  });
+});
+
+describe("delegated child slot retention", () => {
+  it("continues counting interrupted or cancelled children until teardown is verified", () => {
+    expect(retainsDelegatedChildSlot("running")).toBe(true);
+    expect(retainsDelegatedChildSlot("interrupted")).toBe(true);
+    expect(retainsDelegatedChildSlot("cancelled")).toBe(true);
+    expect(retainsDelegatedChildSlot("unknown")).toBe(true);
+    expect(retainsDelegatedChildSlot("completed")).toBe(false);
+    expect(retainsDelegatedChildSlot("failed")).toBe(false);
   });
 });
