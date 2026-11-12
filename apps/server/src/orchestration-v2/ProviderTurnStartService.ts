@@ -711,7 +711,7 @@ export const layer: Layer.Layer<
         .realPath(checkpointScope.cwd)
         .pipe(Effect.orElseSucceed(() => null));
       if (nativeCheckout === null || Option.isNone(harnessSql)) {
-        if (run.sourcePlanRef !== undefined) {
+        if (run.sourcePlanRef !== undefined && String(run.userMessageId).startsWith("harness:")) {
           yield* settleStartFailure({
             signal: "harness-checkout-unverified",
             title: "Could not verify native checkout lease",
