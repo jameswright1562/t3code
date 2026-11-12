@@ -793,7 +793,7 @@ export const layer: Layer.Layer<
             planId: "native-run:" + run.id,
             stepId: "provider-root",
           };
-          const acquired = yield* harnessSql
+          const acquired = yield* harnessSql.value
             .withTransaction(acquireCheckoutLease(lease))
             .pipe(Effect.provideService(SqlClient.SqlClient, harnessSql.value), Effect.result);
           if (acquired._tag === "Failure") {
