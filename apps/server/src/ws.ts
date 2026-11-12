@@ -2525,7 +2525,9 @@ export const layerWsRpc = (
                 message: "Plan thread does not belong to the selected project.",
               });
             }
-            if (projection.thread.activeRunId !== null) {
+            if (projection.runs.some((run) =>
+              run.status === "running" || run.status === "starting" || run.status === "queued"
+            )) {
               return yield* new HarnessPlanError({
                 message: "The thread already has an active provider run; stop or finish it first.",
               });
@@ -2566,6 +2568,7 @@ export const layerWsRpc = (
                 threadId: projection.thread.id,
                 planId: PlanId.make(plan.planId),
               },
+              dispatchMode: { type: "queue_after_active" },
               modelSelection: {
                 instanceId: ProviderInstanceId.make(step.provider),
                 model: requestedModel || threadSelection.model,
