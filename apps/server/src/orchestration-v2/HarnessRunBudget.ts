@@ -27,3 +27,34 @@ export function evaluateThreadRunBudget(input: {
   }
   return { allowed: true, reason: "" };
 }
+
+/**
+ * Fail-closed limit for directly app-owned, nonterminal delegated children of
+ * one active parent run. Check under the parent's command dispatch lock before
+ * emitting any child thread or side-effect. Provider-native descendants are
+ * not observable here and require a separate supervision gate.
+ */
+export function evaluateDelegatedChildBudget(input: {
+  readonly activeChildren: number;
+  readonly maxConcurrentChildren: number;
+}):
+  | { readonly allowed: true; readonly reason: "" }
+  | { readonly allowed: false; readonly reason: string } {
+  const { activeChildren, maxConcurrentChildren } = input;
+  if (
+    !Number.isSafeInteger(activeChildren) ||
+    activeChildren < 0 ||
+    !Number.isSafeInteger(maxConcurrentChildren) ||
+    maxConcurrentChildren < 1 ||
+    maxConcurrentChildren > 32
+  ) {
+    return { allowed: false, reason: "Invalid delegated child concurrency budget." };
+  }
+  if (activeChildren >= maxConcurrentChildren) {
+    return {
+      allowed: false,
+      reason: `Delegated child limit of ${maxConcurrentChildren} reached for this run. Wait for a child to finish or change Agent run budgets in Settings.`,
+    };
+  }
+  return { allowed: true, reason: "" };
+}

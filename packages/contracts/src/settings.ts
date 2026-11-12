@@ -1353,11 +1353,19 @@ export const HarnessMaxRunsPerThread = Schema.Int.check(
   Schema.isBetween({ minimum: 0, maximum: 1000 }),
 );
 export type HarnessMaxRunsPerThread = typeof HarnessMaxRunsPerThread.Type;
+export const HarnessMaxConcurrentDelegatedTasks = Schema.Int.check(
+  Schema.isBetween({ minimum: 1, maximum: 32 }),
+);
+export type HarnessMaxConcurrentDelegatedTasks = typeof HarnessMaxConcurrentDelegatedTasks.Type;
 
 export const ServerSettings = Schema.Struct({
   // Zero disables the cap; counted against the canonical thread run ordinal.
   harnessMaxRunsPerThread: HarnessMaxRunsPerThread.pipe(
     Schema.withDecodingDefault(Effect.succeed(0)),
+  ),
+  // Direct app-owned children per parent run, not native provider-internal subagents.
+  harnessMaxConcurrentDelegatedTasks: HarnessMaxConcurrentDelegatedTasks.pipe(
+    Schema.withDecodingDefault(Effect.succeed(4)),
   ),
   harnessMcpServers: Schema.Record(Schema.String, HarnessMcpServerConfig).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
@@ -1941,6 +1949,7 @@ export const ServerSettingsPatch = Schema.Struct({
   // Replace whole maps to avoid half-merged driver configs.
   providerInstances: Schema.optionalKey(Schema.Record(ProviderInstanceId, ProviderInstanceConfig)),
   harnessMaxRunsPerThread: Schema.optionalKey(HarnessMaxRunsPerThread),
+  harnessMaxConcurrentDelegatedTasks: Schema.optionalKey(HarnessMaxConcurrentDelegatedTasks),
   // Shared MCP configuration: null deletes a server; no raw authentication secrets.
   harnessMcpServers: Schema.optionalKey(
     Schema.Record(Schema.String, Schema.NullOr(HarnessMcpServerConfig)),

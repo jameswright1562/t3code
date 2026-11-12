@@ -177,6 +177,7 @@ import * as RunExecutionService from "./RunExecutionService.ts";
 import { ProviderSessionManagerV2 } from "./ProviderSessionManager.ts";
 import { ProviderSwitchServiceV2 } from "./ProviderSwitchService.ts";
 import { isAutomaticCompletionRun, queuedRunsInDeliveryOrder } from "./QueuedRunOrder.ts";
+import { evaluateDelegatedChildBudget } from "./HarnessRunBudget.ts";
 import { isRuntimePolicyAboveCeilingError, RuntimePolicyV2 } from "./RuntimePolicy.ts";
 import {
   endOrphanedNativeSubagent,
@@ -8223,7 +8224,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const parentProjection = yield* projectionStore
         .getThreadRecords(
           command.parentThreadId,
-          ["runs", "nodes", "providerThreads", "providerTurns", "attempts"],
+          ["runs", "nodes", "providerThreads", "providerTurns", "attempts", "subagents"],
           // The parent node must belong to the active run, whose nodes this keeps.
           { omitSettledLeafNodes: true },
         )
@@ -8265,6 +8266,26 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           commandId: command.commandId,
           commandType: command.type,
           cause: `Parent node ${command.parentNodeId} is not part of active run ${parentRun.id}.`,
+        });
+      }
+
+      // Count persisted children while holding the parent thread dispatch lock.
+      // Failed admission must not emit a child thread or start a provider.
+      const settings = yield* serverSettings.getSettings.pipe(Effect.orDie);
+      const budget = evaluateDelegatedChildBudget({
+        activeChildren: parentProjection.subagents.filter(
+          (child) =>
+            child.runId === parentRun.id &&
+            child.origin === "app_owned" &&
+            !isTerminalDelegatedTaskStatus(child.status),
+        ).length,
+        maxConcurrentChildren: settings.harnessMaxConcurrentDelegatedTasks,
+      });
+      if (!budget.allowed) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: budget.reason,
         });
       }
 
