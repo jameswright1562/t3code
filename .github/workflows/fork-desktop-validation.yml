@@ -41,7 +41,14 @@ jobs:
         if: failure()
         run: |
           vp check --fix || true
-          git diff -- apps/web/src/components/settings/AgentMemorySettings.tsx
+          git diff -- \
+            apps/server/src/orchestration-v2/HarnessPlanStore.ts \
+            apps/server/src/orchestration-v2/HarnessPlan.ts \
+            apps/server/src/orchestration-v2/ProviderTurnStartService.ts \
+            apps/server/src/orchestration-v2/RunFinalizationService.ts \
+            apps/server/src/ws.ts \
+            apps/web/src/components/settings/HarnessPlanSettings.tsx \
+            docs/architecture/LOCAL_MACOS_AGENT_HARNESS.md
       - name: Detect unused imports and exported symbols
         run: vp run knip:check
       - name: Install Electron runtime
