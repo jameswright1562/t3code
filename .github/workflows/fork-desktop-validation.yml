@@ -57,6 +57,10 @@ jobs:
             packages/contracts/src/rpc.ts \
             packages/client-runtime/src/state/server.ts \
             apps/web/src/components/settings/HarnessPlanSettings.tsx \
+            apps/web/src/components/settings/HarnessRunBudgetSettings.tsx \
+            apps/server/src/orchestration-v2/HarnessRunBudget.test.ts \
+            packages/shared/src/harnessMcp.ts \
+            packages/shared/src/harnessMcp.test.ts \
             docs/architecture/LOCAL_MACOS_AGENT_HARNESS.md
       - name: Detect unused imports and exported symbols
         run: vp run knip:check
