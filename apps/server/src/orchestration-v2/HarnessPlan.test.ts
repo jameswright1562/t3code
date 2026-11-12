@@ -2,13 +2,20 @@ import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { layerMemory } from "../persistence/Sqlite.ts";
 import {
+  attachHarnessDispatch,
   checkpointHarnessPlan,
   readyHarnessSteps,
+  renderHarnessStepPrompt,
   transitionHarnessStep,
   validateHarnessSteps,
   type HarnessStepDraft,
 } from "./HarnessPlan.ts";
-import { createHarnessPlan, mutateHarnessPlan, readHarnessPlan } from "./HarnessPlanStore.ts";
+import {
+  createHarnessPlan,
+  mutateHarnessPlan,
+  readHarnessPlan,
+  settleNativeHarnessStep,
+} from "./HarnessPlanStore.ts";
 
 const draft = (
   id: string,
@@ -84,6 +91,19 @@ it("checkpoints a plan revision with bounded eligible next steps and no executio
   });
   assert.deepStrictEqual(finished.completedStepIds, ["implement"]);
   assert.deepStrictEqual(finished.nextActions, ["Step verify"]);
+});
+
+it("records a native dispatch identity only when the step is ready", () => {
+  const steps = [
+    { ...draft("compile"), status: "pending" as const, artifactRefs: [] },
+    { ...draft("test", ["compile"]), status: "pending" as const, artifactRefs: [] },
+  ];
+  assert.throws(() => attachHarnessDispatch(steps, "test", "message:early"), /Dependencies/);
+  const dispatched = attachHarnessDispatch(steps, "compile", "message:compile");
+  assert.equal(dispatched[0]?.status, "running");
+  assert.equal(dispatched[0]?.dispatchMessageId, "message:compile");
+  assert.match(renderHarnessStepPrompt(dispatched[0]!), /Do not start later plan steps/);
+  assert.throws(() => attachHarnessDispatch(dispatched, "compile", "message:duplicate"), /Invalid/);
 });
 
 const layer = it.layer(layerMemory);
@@ -241,6 +261,81 @@ layer("persistent harness plans", (it) => {
       );
       assert.equal(blocked._tag, "Failure");
       assert.equal((yield* readHarnessPlan(scope))?.steps[0]?.provider, "opencode");
+    }),
+  );
+  it.effect("native dispatch intent holds its lease until a matching terminal run", () =>
+    Effect.gen(function* () {
+      const scope = {
+        projectId: "native-dispatch-project",
+        threadId: "native-dispatch-thread",
+        trustedCheckoutPath: "/work/native-dispatch",
+      };
+      yield* createHarnessPlan({
+        ...scope,
+        planId: "plan-native",
+        steps: [draft("implement"), draft("test", ["implement"])],
+      });
+      const claimed = yield* mutateHarnessPlan({
+        ...scope,
+        expectedRevision: 1,
+        change: { type: "dispatch", stepId: "implement", messageId: "message:native-start" },
+      });
+      assert.equal(claimed.steps[0]?.status, "running");
+      assert.equal(claimed.steps[0]?.dispatchMessageId, "message:native-start");
+      const duplicate = yield* Effect.result(
+        mutateHarnessPlan({
+          ...scope,
+          expectedRevision: 1,
+          change: { type: "dispatch", stepId: "implement", messageId: "message:duplicate" },
+        }),
+      );
+      assert.equal(duplicate._tag, "Failure");
+
+      // The existing manual board cannot claim a provider finished or release its lease.
+      const forced = yield* Effect.result(
+        mutateHarnessPlan({
+          ...scope,
+          expectedRevision: 2,
+          change: { type: "transition", stepId: "implement", next: "completed" },
+        }),
+      );
+      assert.equal(forced._tag, "Failure");
+      assert.equal(
+        yield* settleNativeHarnessStep({
+          ...scope,
+          planId: "plan-native",
+          messageId: "message:wrong",
+          next: "completed",
+        }),
+        false,
+      );
+      assert.equal(
+        yield* settleNativeHarnessStep({
+          ...scope,
+          planId: "plan-native",
+          messageId: "message:native-start",
+          next: "completed",
+        }),
+        true,
+      );
+      assert.equal(
+        yield* settleNativeHarnessStep({
+          ...scope,
+          planId: "plan-native",
+          messageId: "message:native-start",
+          next: "completed",
+        }),
+        false,
+      );
+      const completed = yield* readHarnessPlan(scope);
+      assert.equal(completed?.steps[0]?.status, "completed");
+      assert.equal(completed?.steps[1]?.status, "pending");
+      const after = yield* mutateHarnessPlan({
+        ...scope,
+        expectedRevision: 3,
+        change: { type: "dispatch", stepId: "test", messageId: "message:native-test" },
+      });
+      assert.equal(after.steps[1]?.status, "running");
     }),
   );
   it.effect("blocks plan writes across different threads in one canonical checkout", () =>
