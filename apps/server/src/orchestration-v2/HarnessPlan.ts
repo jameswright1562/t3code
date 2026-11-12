@@ -211,12 +211,20 @@ export function checkpointHarnessPlan(plan: HarnessPlan): {
   readonly nextActions: readonly string[];
 } {
   validateHarnessSteps(plan.steps);
+  const completedStepIds: string[] = [];
+  const pendingStepIds: string[] = [];
+  const activeStepIds: string[] = [];
+  for (const step of plan.steps) {
+    if (step.status === "completed") completedStepIds.push(step.id);
+    if (step.status === "pending") pendingStepIds.push(step.id);
+    if (step.status === "running") activeStepIds.push(step.id);
+  }
   return {
     planId: plan.planId,
     planRevision: plan.revision,
-    completedStepIds: plan.steps.filter((step) => step.status === "completed").map((step) => step.id),
-    pendingStepIds: plan.steps.filter((step) => step.status === "pending").map((step) => step.id),
-    activeStepIds: plan.steps.filter((step) => step.status === "running").map((step) => step.id),
+    completedStepIds,
+    pendingStepIds,
+    activeStepIds,
     // Include only work actually eligible under the manual, sequential policy.
     // Pending steps with failed dependencies are not next actions.
     nextActions: readyHarnessSteps(plan.steps)
