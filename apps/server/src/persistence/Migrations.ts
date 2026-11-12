@@ -240,7 +240,15 @@ const reconcileKnownUpstreamMigrations = Effect.fn("reconcileKnownUpstreamMigrat
       if (forkMigration === undefined) continue;
       // Idempotent fork migrations 81–85 use guards for existing tables,
       // indexes and search columns. Failure aborts startup.
-      yield* sql.withTransaction(forkMigration);
+      yield* sql.withTransaction(forkMigration).pipe(
+        Effect.mapError(
+          (cause) =>
+            new Migrator.MigrationError({
+              kind: "BadState",
+              message: `Failed to reconcile fork migration ${row.migration_id} after upstream ${row.name}: ${String(cause)}`,
+            }),
+        ),
+      );
     }
   },
 );
