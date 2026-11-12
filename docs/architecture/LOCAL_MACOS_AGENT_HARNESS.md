@@ -15,17 +15,17 @@ branch `feat/macos-harness-release-gates`. It remains **draft and unmerged**.
 All changes below are on that branch; fork `main` remains unchanged.
 
 - [x] Fixed the Markdown formatting regression in `cc25eb3`. Linux
-  desktop/lint and focused memory/OpenCode validation passed on this commit.
+      desktop/lint and focused memory/OpenCode validation passed on this commit.
 - [x] Added a provider selector for new plan steps and editable provider/model
-  preferences for pending or failed steps in `288d0c4`. The four selectable
-  routes are Codex, native Claude Code (`claudeAgent`), Cursor and OpenCode
-  (which may use configured custom models). These are **stored preferences**,
-  not a claim of provider execution or custom API auto-configuration.
+      preferences for pending or failed steps in `288d0c4`. The four selectable
+      routes are Codex, native Claude Code (`claudeAgent`), Cursor and OpenCode
+      (which may use configured custom models). These are **stored preferences**,
+      not a claim of provider execution or custom API auto-configuration.
 - [x] Added regression coverage in `bc38295` for persisted per-step routing,
-  model selection and refusal to alter a running step's assignment.
+      model selection and refusal to alter a running step's assignment.
 - [x] Clarified the plan UI: migration 85 provides **persistent plan-only**
-  checkout leases, but native provider processes and MCP tool writes are not
-  yet attached to them. Manually marking a step as running does not launch it.
+      checkout leases, but native provider processes and MCP tool writes are not
+      yet attached to them. Manually marking a step as running does not launch it.
 
 **Latest validation:** the focused memory/plan checks and formatting/unused-code
 checks passed on `bc38295`; full desktop build, hosted macOS build and general
