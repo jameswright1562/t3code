@@ -55,6 +55,11 @@ changes are in draft PR #8; `main` is unchanged.
       Verified completed/failed/cancelled statuses use the existing
       identity-checked finalization path.
 
+- [x] Startup queue recovery now marks queued `harness:` native dispatches
+      as held within the canonical thread lock before processing ordinary
+      queued work. A crashed, ambiguous user-started step is not silently
+      replayed. This is conservative crash handling, not user-approved Resume.
+
 **Unfinished safety gates:** automated agent sequencing, comprehensive
 pause/cancel and delegation budgets, pre-handoff/compaction checkpoints,
 provider child-process supervision, human-approved replay with external-effect
