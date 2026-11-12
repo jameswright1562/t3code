@@ -15,6 +15,7 @@ import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
 import * as WorkspaceEntries from "../workspace/WorkspaceEntries.ts";
 import * as CheckpointCapture from "./CheckpointCaptureService.ts";
 import { checkpointHarnessPlan } from "./HarnessPlan.ts";
+import { listActiveCheckoutLeases, releaseCheckoutLease } from "./HarnessCheckoutLease.ts";
 import { readHarnessPlan, settleNativeHarnessStep } from "./HarnessPlanStore.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 
@@ -90,31 +91,57 @@ const make = Effect.gen(function* () {
         if (!run) return;
         const thread = yield* projections.getThread(input.threadId);
         const cwd = projection.checkpointScopes.find((scope) => scope.id === input.scopeId)?.cwd;
-        // A native run has settled only if the canonical event projection says
-        // so. Never trust a restored checkpoint or a client status click.
+        // Only committed terminal run projections can release a native checkout
+        // lease. A missing/corrupt run remains held for explicit operator review.
+        const terminalStatus =
+          run.status === "completed" || run.status === "failed" || run.status === "cancelled"
+            ? run.status
+            : null;
         const planRef = run.sourcePlanRef;
-        if (
+        const trustedCheckoutPath =
+          terminalStatus !== null && cwd !== undefined && Option.isSome(fileSystemOption)
+            ? yield* fileSystemOption.value
+                .realPath(cwd)
+                .pipe(Effect.orElseSucceed(() => null))
+            : null;
+        const planSettled =
+          terminalStatus !== null &&
           planRef?.threadId === input.threadId &&
-          (run.status === "completed" ||
-            run.status === "failed" ||
-            run.status === "cancelled") &&
-          cwd !== undefined &&
-          Option.isSome(fileSystemOption)
-        ) {
-          const trustedCheckoutPath = yield* fileSystemOption.value
-            .realPath(cwd)
-            .pipe(Effect.orElseSucceed(() => null));
-          if (trustedCheckoutPath !== null) {
-            yield* settleNativeHarnessStep({
-              projectId: thread.projectId,
-              threadId: input.threadId,
-              planId: planRef.planId,
-              messageId: run.userMessageId,
-              next: run.status,
-              trustedCheckoutPath,
-            }).pipe(
+          trustedCheckoutPath !== null
+            ? yield* settleNativeHarnessStep({
+                projectId: thread.projectId,
+                threadId: input.threadId,
+                planId: planRef.planId,
+                messageId: run.userMessageId,
+                next: terminalStatus,
+                trustedCheckoutPath,
+              }).pipe(
+                Effect.catchCause((cause) =>
+                  Effect.logWarning("Native plan step settlement requires review", {
+                    threadId: input.threadId,
+                    runId: input.runId,
+                    cause,
+                  }).pipe(Effect.as(false)),
+                ),
+              )
+            : false;
+        // Ordinary T3 provider turns also acquire durable checkout leases.
+        // Only their exact own ID may be released, and only after finalization.
+        if (terminalStatus !== null && !planSettled) {
+          const leaseId = "native-run:" + run.id;
+          const activeLeases = yield* listActiveCheckoutLeases();
+          if (activeLeases.some((lease) => lease.leaseId === leaseId)) {
+            yield* sqlOption.value.withTransaction(
+              releaseCheckoutLease({
+                leaseId,
+                projectId: thread.projectId,
+                threadId: input.threadId,
+                planId: leaseId,
+                stepId: "provider-root",
+              }),
+            ).pipe(
               Effect.catchCause((cause) =>
-                Effect.logWarning("Native plan step settlement requires review", {
+                Effect.logWarning("Native checkout lease release requires review", {
                   threadId: input.threadId,
                   runId: input.runId,
                   cause,
