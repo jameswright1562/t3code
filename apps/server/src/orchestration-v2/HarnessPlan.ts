@@ -205,6 +205,22 @@ export function terminalHarnessStepStatus(
   return null;
 }
 
+/** A queued harness dispatch is ambiguous after host restart: do not replay it. */
+export function queuedHarnessRecoveryRuns<
+  T extends {
+    readonly status: string;
+    readonly userMessageId: string;
+    readonly queueHeld?: boolean | undefined;
+  },
+>(runs: readonly T[]): readonly T[] {
+  return runs.filter(
+    (run) =>
+      run.status === "queued" &&
+      String(run.userMessageId).startsWith("harness:") &&
+      run.queueHeld !== true,
+  );
+}
+
 /** Only the exact native run created by the approved step may be stopped. */
 export function matchingActiveHarnessRun<
   T extends {
