@@ -65,6 +65,17 @@ export const HarnessPlanDispatchInput = Schema.Struct({
   expectedRevision: Schema.Int,
 });
 
+export const HarnessPlanLease = Schema.Struct({
+  leaseId: Schema.String,
+  checkoutPath: Schema.String,
+  projectId: Schema.String,
+  threadId: Schema.String,
+  planId: Schema.String,
+  stepId: Schema.String,
+  acquiredAt: Schema.String,
+});
+export type HarnessPlanLease = typeof HarnessPlanLease.Type;
+
 export class HarnessPlanError extends Schema.TaggedError<HarnessPlanError>()("HarnessPlanError", {
   message: Schema.String,
 }) {}
