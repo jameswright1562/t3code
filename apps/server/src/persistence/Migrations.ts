@@ -223,17 +223,17 @@ const reconcileKnownUpstreamMigrations = Effect.fn("reconcileKnownUpstreamMigrat
 ) {
   const sql = yield* SqlClient.SqlClient;
   const ledger = yield* sql`
-    SELECT 1 FROM sqlite_master
-    WHERE type = 'table' AND name = 'effect_sql_migrations'
-  `;
+      SELECT 1 FROM sqlite_master
+      WHERE type = 'table' AND name = 'effect_sql_migrations'
+    `;
   if (ledger.length === 0) return;
   const entries = yield* sql<{
     readonly migration_id: number;
     readonly name: string;
   }>`
-    SELECT migration_id, name FROM effect_sql_migrations
-    WHERE migration_id BETWEEN 81 AND 85 ORDER BY migration_id
-  `;
+      SELECT migration_id, name FROM effect_sql_migrations
+      WHERE migration_id BETWEEN 81 AND 85 ORDER BY migration_id
+    `;
   for (const row of entries) {
     if (throughId !== undefined && row.migration_id > throughId) continue;
     if (!isKnownUpstreamMigration(row.migration_id, row.name)) continue;
