@@ -47,6 +47,14 @@ jobs:
             apps/server/src/orchestration-v2/ProviderTurnStartService.ts \
             apps/server/src/orchestration-v2/RunFinalizationService.ts \
             apps/server/src/ws.ts \
+            apps/server/src/orchestration-v2/HarnessCheckoutLease.ts \
+            apps/server/src/orchestration-v2/HarnessCheckoutLease.test.ts \
+            apps/server/src/orchestration-v2/HarnessPlan.test.ts \
+            apps/server/src/persistence/Migrations.ts \
+            apps/server/src/persistence/ProjectionMessageSearchUpgrade.test.ts \
+            packages/contracts/src/harnessPlan.ts \
+            packages/contracts/src/rpc.ts \
+            packages/client-runtime/src/state/server.ts \
             apps/web/src/components/settings/HarnessPlanSettings.tsx \
             docs/architecture/LOCAL_MACOS_AGENT_HARNESS.md
       - name: Detect unused imports and exported symbols
