@@ -1220,6 +1220,10 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:harness:plan:mutate",
       tag: WS_METHODS.harnessPlanMutate,
     }),
+    harnessDispatchPlanStep: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:harness:plan:dispatch",
+      tag: WS_METHODS.harnessPlanDispatch,
+    }),
     harnessMemories: createEnvironmentQueryAtomFamily(runtime, {
       label: "environment-data:harness:memory:list",
       idleTtlMs: 0,
