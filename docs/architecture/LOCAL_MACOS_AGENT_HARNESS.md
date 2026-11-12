@@ -8,6 +8,47 @@
 
 > This is a specification and implementation plan, not a claim that every feature below is already implemented. The original fork main was last updated in May 2026. This integration branch is based on upstream commit d756fed (Nov 2026), preserving the old branch and porting the memory work. The May fork's custom OpenCode options must be reconciled before finishing. Keep the fork's earlier OpenCode work intact during that reconciliation.
 
+## Native plan execution integration — 12 November 2026
+
+**Implementation is experimental and not production release-certified.** All
+changes are in draft PR #8; `main` is unchanged.
+
+- [x] Added an explicit **Start agent** action to the saved multi-step plan
+      board. It routes each requested step through T3's existing native
+      `message.dispatch` intake, using the selected provider/model and a
+      bounded step prompt. Steps never chain automatically.
+- [x] A native plan start atomically records the source message identity,
+      advances the revisioned plan to running, and acquires an exclusive
+      SQLite checkout lease **before** calling the external provider. Stale
+      revisions and concurrent writers are refused.
+- [x] A matching terminal native run can settle its saved plan step and
+      release the lease; unrelated messages and manual terminal edits cannot.
+      A dispatch whose outcome is uncertain remains held for manual review.
+- [x] The provider start gate validates host-resolved checkout realpaths and
+      persistent lease ownership for harness runs. Ordinary native turns are
+      also leased where SQLite is available, but legacy test/runtime contexts
+      without a SQL service retain their previous behavior. Thus this does
+      **not** yet constitute a verified universal checkout-write lock.
+- [x] An authenticated, project/thread-scoped **read-only lease inspector**
+      exposes retained checkout ownership, timestamps and step IDs in
+      Settings. It deliberately provides no unsafe force-release action.
+- [x] New deterministic tests cover step dispatch intent, stale revision
+      refusal, manual settlement denial and run-identity-checked completion.
+
+**Unfinished safety gates:** automated agent sequencing, comprehensive
+pause/cancel and delegation budgets, pre-handoff/compaction checkpoints,
+provider child-process supervision, human-approved replay with external-effect
+provenance, credentialed MCP Keychain/OAuth proxy with invocation-time tool
+permissions, resolution of eight upstream merge conflicts, full CI and
+packaged authenticated macOS tests. The offline quota-analysis script remains
+unmeasured against genuine Claude subscription meters.
+
+**Verification:** a prior intermediate commit passed focused tests and server
+typechecks. Subsequent native runtime and UI changes are being validated in
+GitHub Actions. Do not infer release-readiness from the GitHub mergeable flag.
+
+---
+
 ## Continuation checkpoint — 12 November 2026
 
 **Active PR:** [#8](https://github.com/jameswright1562/t3code/pull/8),
