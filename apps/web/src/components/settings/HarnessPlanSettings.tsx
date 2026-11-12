@@ -31,6 +31,7 @@ export function HarnessPlanSettings() {
   const [newModel, setNewModel] = useState("");
   const [providerOverrides, setProviderOverrides] = useState<Record<string, string>>({});
   const [modelOverrides, setModelOverrides] = useState<Record<string, string>>({});
+  const [dependencyOverrides, setDependencyOverrides] = useState<Record<string, string[]>>({});
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const scope =
@@ -95,7 +96,7 @@ export function HarnessPlanSettings() {
         ? {
             id: existing.id,
             title,
-            dependsOn: existing.dependsOn,
+            dependsOn: dependencyOverrides[existing.id] ?? existing.dependsOn,
             checkoutKey: existing.checkoutKey,
             provider: providerOverrides[existing.id] ?? existing.provider,
             model: modelOverrides[existing.id] ?? existing.model,
@@ -134,6 +135,7 @@ export function HarnessPlanSettings() {
         setDraft("");
         setProviderOverrides({});
         setModelOverrides({});
+        setDependencyOverrides({});
         setMessage("Plan revision saved.");
         plan.refresh();
       }
@@ -252,6 +254,7 @@ export function HarnessPlanSettings() {
                   setDraft("");
                   setProviderOverrides({});
                   setModelOverrides({});
+                  setDependencyOverrides({});
                 }}
                 placeholder="Thread ID"
               />
@@ -325,6 +328,41 @@ export function HarnessPlanSettings() {
                           </label>
                         </div>
                       )}
+                      {(step.status === "pending" || step.status === "failed") && (
+                        <details className="mt-2 rounded-md border p-2 text-xs">
+                          <summary className="cursor-pointer">Edit step dependencies</summary>
+                          <p className="mt-2 text-muted-foreground">
+                            Choose prerequisite steps. Cycles and unfinished prerequisites for
+                            active work are rejected when you save.
+                          </p>
+                          <div className="mt-2 flex flex-col gap-1">
+                            {current.steps
+                              .filter((candidate) => candidate.id !== step.id)
+                              .map((candidate) => {
+                                const selected =
+                                  dependencyOverrides[step.id] ?? step.dependsOn;
+                                return (
+                                  <label key={candidate.id} className="flex items-center gap-2">
+                                    <input
+                                      type="checkbox"
+                                      disabled={busy}
+                                      checked={selected.includes(candidate.id)}
+                                      onChange={(event) =>
+                                        setDependencyOverrides((previous) => ({
+                                          ...previous,
+                                          [step.id]: event.target.checked
+                                            ? [...selected, candidate.id]
+                                            : selected.filter((id) => id !== candidate.id),
+                                        }))
+                                      }
+                                    />
+                                    {candidate.title}
+                                  </label>
+                                );
+                              })}
+                          </div>
+                        </details>
+                      )}
                       <div className="mt-2 flex flex-wrap gap-1">
                         {step.status === "pending" ? (
                           <>
@@ -333,7 +371,8 @@ export function HarnessPlanSettings() {
                               disabled={
                                 busy ||
                                 providerOverrides[step.id] !== undefined ||
-                                modelOverrides[step.id] !== undefined
+                                modelOverrides[step.id] !== undefined ||
+                                dependencyOverrides[step.id] !== undefined
                               }
                               onClick={() => void startNativeStep(step.id)}
                             >
