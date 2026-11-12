@@ -490,7 +490,9 @@ export function HarnessPlanSettings() {
                 <li key={lease.leaseId} className="rounded border p-2 text-xs">
                   <p>Lease: {lease.leaseId}</p>
                   <p>Checkout: {lease.checkoutPath}</p>
-                  <p>Plan/step: {lease.planId} / {lease.stepId}</p>
+                  <p>
+                    Plan/step: {lease.planId} / {lease.stepId}
+                  </p>
                   <p>Acquired: {lease.acquiredAt}</p>
                   <p className="text-muted-foreground">
                     No force-release is offered: a native child may still be writing here.
