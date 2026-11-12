@@ -32,7 +32,9 @@ export function validateHarnessMcpServer(
         (arg) =>
           /(?:^|[^a-z0-9])(?:bearer|authorization|password|passwd|secret|api[-_]?key|access[-_]?token|refresh[-_]?token|credential)(?:$|[^a-z0-9])/i.test(
             arg,
-          ) || /^(?:--(?:header|headers|http-header|env-file)|-H)(?:=|$)/i.test(arg),
+          ) ||
+          /^--(?:header|headers|http-header|env-file)(?:=|$)/i.test(arg) ||
+          /^-H(?:=|$)/.test(arg),
       )
     ) {
       return "Do not put access tokens, credential environment variables or headers in MCP command arguments";
