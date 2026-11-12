@@ -2550,6 +2550,14 @@ export const layerWsRpc = (
                 message: "Only pending plan steps can start native agents.",
               });
             }
+            const selectedInstance = yield* providerInstances.getInstance(
+              ProviderInstanceId.make(step.provider),
+            );
+            if (selectedInstance === undefined || !selectedInstance.enabled) {
+              return yield* new HarnessPlanError({
+                message: "The selected provider is not installed or enabled.",
+              });
+            }
             const requestedModel = step.model?.trim();
             const threadSelection = projection.thread.modelSelection;
             if (!requestedModel && step.provider !== threadSelection.instanceId) {
