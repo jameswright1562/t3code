@@ -1,12 +1,30 @@
 # Local macOS Agent Harness — Architecture, Durable Memory, Context & Implementation Plan
 
+## Latest upstream merge probe — 12 November 2026
+
+The most recent available dry-run workflow ([run 43242050293](https://github.com/jameswright1562/t3code/actions/runs/43242050293)) reports **nine** content conflicts, rather than the previously recorded eight:
+
+1. `README.md`
+2. `apps/server/src/orchestration-v2/ProviderSessionManager.ts`
+3. `apps/server/src/orchestration-v2/RunFinalizationService.ts`
+4. `apps/server/src/orchestration-v2/messageSearchIndex.ts`
+5. `apps/server/src/persistence/Migrations.ts`
+6. `apps/server/src/ws.ts`
+7. `apps/web/src/components/settings/SettingsPanels.tsx`
+8. `packages/provider-core/src/server/mcpSession.ts`
+9. `packages/shared/package.json`
+
+**Status:** diagnostic only; no upstream commit or conflict resolution has been merged into this branch. Migrations and storage must be reconciled with preservation of existing on-disk upgrade history. Runtime and MCP conflicts require semantic resolution with regression tests, not blanket `--ours` or `--theirs`. The PR remains draft.
+
+---
+
 ## Continuation — 12 November 2026 (PR #8)
 
 - [x] Corrected the startup queue-recovery formatter failure from Actions on `e646855`. The subsequently checked `b64f167` branch commit passed Linux desktop/lint and focused memory/OpenCode workflows.
 - [x] Reject obviously credential-bearing native MCP command arguments, including bearer headers and env secret flags. This is defence-in-depth pending a proper Keychain-backed, per-tool-authorized host gateway.
 - [x] Added a configurable direct **app-owned delegated child concurrency cap** (default 4, range 1–32) enforced before child-thread emission under the parent dispatch lock, plus policy tests and a Settings control. Cancelled/interrupted app-owned children keep their slots because process teardown is uncertain. This does **not** enforce limits for native provider-internal children, token usage or total recursive delegation.
 - [ ] Validate these latest concurrency changes in GitHub Actions. No on-device Mac E2E was possible because the connected Mac remains offline.
-- [ ] Still blocked for release: authenticated MCP OAuth/Keychain gateway, safe opt-in crash Resume and pre-compaction/handoff capture, native child-process supervision and quota attribution, eight upstream merge conflicts, full required CI and packaged macOS E2E. Keep PR in draft until verified.
+- [ ] Still blocked for release: authenticated MCP OAuth/Keychain gateway, safe opt-in crash Resume and pre-compaction/handoff capture, native child-process supervision and quota attribution, nine upstream merge conflicts, full required CI and packaged macOS E2E. Keep PR in draft until verified.
 
 ---
 
@@ -74,7 +92,7 @@ changes are in draft PR #8; `main` is unchanged.
 pause/cancel and delegation budgets, pre-handoff/compaction checkpoints,
 provider child-process supervision, human-approved replay with external-effect
 provenance, credentialed MCP Keychain/OAuth proxy with invocation-time tool
-permissions, resolution of eight upstream merge conflicts, full CI and
+permissions, resolution of nine upstream merge conflicts, full CI and
 packaged authenticated macOS tests. The offline quota-analysis script remains
 unmeasured against genuine Claude subscription meters.
 
@@ -121,7 +139,7 @@ execution and zero automatic triggers.
 - [x] Run finalization snapshots the canonical saved plan ID and revision.
 - [x] Checkpoints retain completed, pending and active step IDs plus bounded ready actions.
 - [x] Recovery inspection displays the saved plan and flags revision drift.
-- [x] Upstream merge probe reports eight content conflicts in the fork integration branch.
+- [x] Upstream merge probe reports nine content conflicts in the fork integration branch.
 - [ ] The probe is diagnostic only; no upstream merge has been committed.
 - [ ] No pre-compaction/handoff capture or external-effect-safe Resume is implemented.
 - [ ] Native provider checkout locks, credentialed MCP and quota A/B remain release blockers.
