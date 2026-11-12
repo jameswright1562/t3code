@@ -97,7 +97,9 @@ const make = Effect.gen(function* () {
           run.status === "completed" || run.status === "failed" || run.status === "cancelled"
             ? run.status
             : null;
-        const planRef = run.sourcePlanRef;
+        const { runs: fullRuns } = yield* projections.getThreadRecords(input.threadId, ["runs"]);
+        const fullRun = fullRuns.find((candidate) => candidate.id === input.runId);
+        const planRef = fullRun?.sourcePlanRef;
         const trustedCheckoutPath =
           terminalStatus !== null && cwd !== undefined && Option.isSome(fileSystemOption)
             ? yield* fileSystemOption.value
@@ -112,7 +114,7 @@ const make = Effect.gen(function* () {
                 projectId: thread.projectId,
                 threadId: input.threadId,
                 planId: planRef.planId,
-                messageId: run.userMessageId,
+                messageId: fullRun!.userMessageId,
                 next: terminalStatus,
                 trustedCheckoutPath,
               }).pipe(
