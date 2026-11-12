@@ -218,40 +218,40 @@ const knownUpstreamMigrationNames = new Map<number, string>([
 const isKnownUpstreamMigration = (id: number, name: string) =>
   knownUpstreamMigrationNames.get(id) === name;
 
-const reconcileKnownUpstreamMigrations = Effect.fn("reconcileKnownUpstreamMigrations")(
-  function* (throughId?: number) {
-    const sql = yield* SqlClient.SqlClient;
-    const ledger = yield* sql`
-      SELECT 1 FROM sqlite_master
-      WHERE type = 'table' AND name = 'effect_sql_migrations'
-    `;
-    if (ledger.length === 0) return;
-    const entries = yield* sql<{
-      readonly migration_id: number;
-      readonly name: string;
-    }>`
-      SELECT migration_id, name FROM effect_sql_migrations
-      WHERE migration_id BETWEEN 81 AND 85 ORDER BY migration_id
-    `;
-    for (const row of entries) {
-      if (throughId !== undefined && row.migration_id > throughId) continue;
-      if (!isKnownUpstreamMigration(row.migration_id, row.name)) continue;
-      const forkMigration = migrationEntries.find(([id]) => id === row.migration_id)?.[2];
-      if (forkMigration === undefined) continue;
-      // Idempotent fork migrations 81–85 use guards for existing tables,
-      // indexes and search columns. Failure aborts startup.
-      yield* sql.withTransaction(forkMigration).pipe(
-        Effect.mapError(
-          (cause) =>
-            new Migrator.MigrationError({
-              kind: "BadState",
-              message: `Failed to reconcile fork migration ${row.migration_id} after upstream ${row.name}: ${String(cause)}`,
-            }),
-        ),
-      );
-    }
-  },
-);
+const reconcileKnownUpstreamMigrations = Effect.fn("reconcileKnownUpstreamMigrations")(function* (
+  throughId?: number,
+) {
+  const sql = yield* SqlClient.SqlClient;
+  const ledger = yield* sql`
+    SELECT 1 FROM sqlite_master
+    WHERE type = 'table' AND name = 'effect_sql_migrations'
+  `;
+  if (ledger.length === 0) return;
+  const entries = yield* sql<{
+    readonly migration_id: number;
+    readonly name: string;
+  }>`
+    SELECT migration_id, name FROM effect_sql_migrations
+    WHERE migration_id BETWEEN 81 AND 85 ORDER BY migration_id
+  `;
+  for (const row of entries) {
+    if (throughId !== undefined && row.migration_id > throughId) continue;
+    if (!isKnownUpstreamMigration(row.migration_id, row.name)) continue;
+    const forkMigration = migrationEntries.find(([id]) => id === row.migration_id)?.[2];
+    if (forkMigration === undefined) continue;
+    // Idempotent fork migrations 81–85 use guards for existing tables,
+    // indexes and search columns. Failure aborts startup.
+    yield* sql.withTransaction(forkMigration).pipe(
+      Effect.mapError(
+        (cause) =>
+          new Migrator.MigrationError({
+            kind: "BadState",
+            message: `Failed to reconcile fork migration ${row.migration_id} after upstream ${row.name}: ${String(cause)}`,
+          }),
+      ),
+    );
+  }
+});
 
 const assertV2MigrationsCanRun = Effect.fn("assertV2MigrationsCanRun")(function* (
   throughId?: number,
@@ -326,8 +326,7 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
     if (expected === undefined) {
       return [`${row.migration_id}:${row.name} (unknown to this build)`];
     }
-    return expected === row.name ||
-      isKnownUpstreamMigration(row.migration_id, row.name)
+    return expected === row.name || isKnownUpstreamMigration(row.migration_id, row.name)
       ? []
       : [`${row.migration_id}:${row.name} (this build: ${expected})`];
   });
