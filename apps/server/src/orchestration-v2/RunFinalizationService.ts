@@ -102,9 +102,7 @@ const make = Effect.gen(function* () {
         const planRef = fullRun?.sourcePlanRef;
         const trustedCheckoutPath =
           terminalStatus !== null && cwd !== undefined && Option.isSome(fileSystemOption)
-            ? yield* fileSystemOption.value
-                .realPath(cwd)
-                .pipe(Effect.orElseSucceed(() => null))
+            ? yield* fileSystemOption.value.realPath(cwd).pipe(Effect.orElseSucceed(() => null))
             : null;
         const planSettled =
           terminalStatus !== null &&
@@ -133,23 +131,25 @@ const make = Effect.gen(function* () {
           const leaseId = "native-run:" + run.id;
           const activeLeases = yield* listActiveCheckoutLeases();
           if (activeLeases.some((lease) => lease.leaseId === leaseId)) {
-            yield* sqlOption.value.withTransaction(
-              releaseCheckoutLease({
-                leaseId,
-                projectId: thread.projectId,
-                threadId: input.threadId,
-                planId: leaseId,
-                stepId: "provider-root",
-              }),
-            ).pipe(
-              Effect.catchCause((cause) =>
-                Effect.logWarning("Native checkout lease release requires review", {
+            yield* sqlOption.value
+              .withTransaction(
+                releaseCheckoutLease({
+                  leaseId,
+                  projectId: thread.projectId,
                   threadId: input.threadId,
-                  runId: input.runId,
-                  cause,
+                  planId: leaseId,
+                  stepId: "provider-root",
                 }),
-              ),
-            );
+              )
+              .pipe(
+                Effect.catchCause((cause) =>
+                  Effect.logWarning("Native checkout lease release requires review", {
+                    threadId: input.threadId,
+                    runId: input.runId,
+                    cause,
+                  }),
+                ),
+              );
           }
         }
         const scopes = [
