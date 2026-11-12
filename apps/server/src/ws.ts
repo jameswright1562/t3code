@@ -5,6 +5,7 @@ import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as AgentHarnessMemory from "./memory/AgentMemory.ts";
 import * as HarnessPlanStore from "./orchestration-v2/HarnessPlanStore.ts";
 import { renderHarnessStepPrompt } from "./orchestration-v2/HarnessPlan.ts";
+import { listActiveCheckoutLeases } from "./orchestration-v2/HarnessCheckoutLease.ts";
 import * as AgentHarnessMemoryBackup from "./memory/MemoryBackup.ts";
 import { assessCheckpointGit } from "./memory/CheckpointGitGuard.ts";
 import { HarnessMemoryError, HarnessPlanError } from "@t3tools/contracts";
@@ -2615,6 +2616,34 @@ export const layerWsRpc = (
                 ? error
                 : new HarnessPlanError({
                     message: "Plan dispatch was refused; check the thread and saved lease.",
+                  }),
+            ),
+          ),
+        // Read-only incident inspection: show only this trusted thread's leases.
+        // No force-release is exposed; native children may survive a server crash.
+        // oxlint-disable-next-line t3code/prefer-effect-fn -- Scope comes from the RPC handler context.
+        [WS_METHODS.harnessPlanLeases]: (input) =>
+          Effect.gen(function* () {
+            const projection = yield* orchestrationEngine.getThreadProjection(
+              ThreadId.make(input.threadId),
+            );
+            if (projection.thread.projectId !== input.projectId) {
+              return yield* new HarnessPlanError({
+                message: "Checkout leases are not available outside the selected project.",
+              });
+            }
+            const leases = yield* listActiveCheckoutLeases().pipe(
+              Effect.provideService(SqlClient.SqlClient, sql),
+            );
+            return leases.filter(
+              (lease) => lease.projectId === input.projectId && lease.threadId === input.threadId,
+            );
+          }).pipe(
+            Effect.mapError((error) =>
+              isHarnessPlanError(error)
+                ? error
+                : new HarnessPlanError({
+                    message: "Could not inspect checkout leases for this thread.",
                   }),
             ),
           ),
