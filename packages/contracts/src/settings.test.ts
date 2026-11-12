@@ -56,6 +56,28 @@ describe("harness native run cap settings", () => {
   });
 });
 
+describe("harness delegated child concurrency cap settings", () => {
+  it("defaults to four for older installations and accepts bounded changes", () => {
+    expect(decodeServerSettings({}).harnessMaxConcurrentDelegatedTasks).toBe(4);
+    expect(decodeServerSettingsPatch({ harnessMaxConcurrentDelegatedTasks: 1 })).toEqual({
+      harnessMaxConcurrentDelegatedTasks: 1,
+    });
+    expect(
+      decodeServerSettings({ harnessMaxConcurrentDelegatedTasks: 32 })
+        .harnessMaxConcurrentDelegatedTasks,
+    ).toBe(32);
+    expect(() =>
+      decodeServerSettingsPatch({ harnessMaxConcurrentDelegatedTasks: 0 }),
+    ).toThrow();
+    expect(() =>
+      decodeServerSettingsPatch({ harnessMaxConcurrentDelegatedTasks: 33 }),
+    ).toThrow();
+    expect(() =>
+      decodeServerSettingsPatch({ harnessMaxConcurrentDelegatedTasks: 1.5 }),
+    ).toThrow();
+  });
+});
+
 describe("storage cleanup settings", () => {
   it("keeps cleanup disabled for existing installations", () => {
     expect(decodeServerSettings({}).worktreeCleanup).toBeNull();
