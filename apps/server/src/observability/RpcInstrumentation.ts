@@ -39,6 +39,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.harnessPlanRead]: "harness",
   [WS_METHODS.harnessPlanCreate]: "harness",
   [WS_METHODS.harnessPlanMutate]: "harness",
+  [WS_METHODS.harnessPlanDispatch]: "harness",
   [WS_METHODS.harnessMemoryList]: "harness",
   [WS_METHODS.harnessMemoryConfirm]: "harness",
   [WS_METHODS.harnessMemoryForget]: "harness",
