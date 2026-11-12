@@ -32,6 +32,7 @@ export function HarnessPlanSettings() {
   const [providerOverrides, setProviderOverrides] = useState<Record<string, string>>({});
   const [modelOverrides, setModelOverrides] = useState<Record<string, string>>({});
   const [dependencyOverrides, setDependencyOverrides] = useState<Record<string, string[]>>({});
+  const [criteriaOverrides, setCriteriaOverrides] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const scope =
@@ -51,6 +52,12 @@ export function HarnessPlanSettings() {
     .map((line) => line.trim())
     .filter(Boolean);
   const current = plan.data ?? null;
+  const availableProviders = [
+    ...PLAN_PROVIDERS,
+    ...Object.keys(target?.settings?.providerInstances ?? {})
+      .filter((providerId) => !PLAN_PROVIDERS.some((known) => known.id === providerId))
+      .map((providerId) => ({ id: providerId, label: providerId })),
+  ];
   const editLines = lines.length > 0 ? lines : (current?.steps.map((step) => step.title) ?? []);
 
   async function createPlan() {
@@ -100,7 +107,7 @@ export function HarnessPlanSettings() {
             checkoutKey: existing.checkoutKey,
             provider: providerOverrides[existing.id] ?? existing.provider,
             model: modelOverrides[existing.id] ?? existing.model,
-            acceptanceCriteria: existing.acceptanceCriteria,
+            acceptanceCriteria: criteriaOverrides[existing.id] ?? existing.acceptanceCriteria,
           }
         : {
             id: randomUUID(),
@@ -136,6 +143,7 @@ export function HarnessPlanSettings() {
         setProviderOverrides({});
         setModelOverrides({});
         setDependencyOverrides({});
+        setCriteriaOverrides({});
         setMessage("Plan revision saved.");
         plan.refresh();
       }
@@ -255,6 +263,7 @@ export function HarnessPlanSettings() {
                   setProviderOverrides({});
                   setModelOverrides({});
                   setDependencyOverrides({});
+                  setCriteriaOverrides({});
                 }}
                 placeholder="Thread ID"
               />
@@ -305,7 +314,7 @@ export function HarnessPlanSettings() {
                               {!PLAN_PROVIDERS.some((provider) => provider.id === step.provider) ? (
                                 <option value={step.provider}>{step.provider}</option>
                               ) : null}
-                              {PLAN_PROVIDERS.map((provider) => (
+                              {availableProviders.map((provider) => (
                                 <option key={provider.id} value={provider.id}>
                                   {provider.label}
                                 </option>
@@ -324,6 +333,20 @@ export function HarnessPlanSettings() {
                                 }))
                               }
                               placeholder="Provider default"
+                            />
+                          </label>
+                          <label className="flex min-w-48 flex-col gap-1 text-xs">
+                            Acceptance criteria
+                            <Input
+                              value={criteriaOverrides[step.id] ?? step.acceptanceCriteria}
+                              disabled={busy}
+                              onChange={(event) =>
+                                setCriteriaOverrides((previous) => ({
+                                  ...previous,
+                                  [step.id]: event.target.value,
+                                }))
+                              }
+                              placeholder="Expected result and required tests"
                             />
                           </label>
                         </div>
@@ -372,7 +395,8 @@ export function HarnessPlanSettings() {
                                 busy ||
                                 providerOverrides[step.id] !== undefined ||
                                 modelOverrides[step.id] !== undefined ||
-                                dependencyOverrides[step.id] !== undefined
+                                dependencyOverrides[step.id] !== undefined ||
+                                criteriaOverrides[step.id] !== undefined
                               }
                               onClick={() => void startNativeStep(step.id)}
                             >
