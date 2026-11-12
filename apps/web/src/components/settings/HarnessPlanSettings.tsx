@@ -362,8 +362,7 @@ export function HarnessPlanSettings() {
                             {current.steps
                               .filter((candidate) => candidate.id !== step.id)
                               .map((candidate) => {
-                                const selected =
-                                  dependencyOverrides[step.id] ?? step.dependsOn;
+                                const selected = dependencyOverrides[step.id] ?? step.dependsOn;
                                 return (
                                   <label key={candidate.id} className="flex items-center gap-2">
                                     <input
@@ -431,8 +430,8 @@ export function HarnessPlanSettings() {
                               Stop agent
                             </Button>
                             <p className="text-xs text-muted-foreground">
-                              Stopping requests an interrupt; it does not unlock the checkout
-                              until the native run is safely finalized.
+                              Stopping requests an interrupt; it does not unlock the checkout until
+                              the native run is safely finalized.
                             </p>
                           </>
                         ) : null}
