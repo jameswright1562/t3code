@@ -170,14 +170,14 @@ export const mutateHarnessPlan = Effect.fn("HarnessPlanStore.mutate")(function* 
               })),
             }
           : input.change;
-      const current = change.type === "edit"
-        ? null
-        : previous.steps.find((candidate) => candidate.id === change.stepId);
-      if (change.type === "settle" && (
-        !current ||
-        current.status !== "running" ||
-        current.dispatchMessageId !== change.messageId
-      )) {
+      const current =
+        change.type === "edit"
+          ? null
+          : previous.steps.find((candidate) => candidate.id === change.stepId);
+      if (
+        change.type === "settle" &&
+        (!current || current.status !== "running" || current.dispatchMessageId !== change.messageId)
+      ) {
         return yield* fail("Native run identity does not match the running plan step.");
       }
       if (
@@ -224,7 +224,9 @@ export const mutateHarnessPlan = Effect.fn("HarnessPlanStore.mutate")(function* 
       if (
         (change.type === "settle" ||
           (change.type === "transition" &&
-            (change.next === "completed" || change.next === "failed" || change.next === "cancelled"))) &&
+            (change.next === "completed" ||
+              change.next === "failed" ||
+              change.next === "cancelled"))) &&
         current?.status === "running"
       ) {
         yield* releaseCheckoutLease({
