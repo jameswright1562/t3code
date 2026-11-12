@@ -13,6 +13,8 @@ import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
 import * as WorkspaceEntries from "../workspace/WorkspaceEntries.ts";
 import * as CheckpointCapture from "./CheckpointCaptureService.ts";
+import { checkpointHarnessPlan } from "./HarnessPlan.ts";
+import { readHarnessPlan } from "./HarnessPlanStore.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 
 export class RunFinalizationError extends Schema.TaggedError<RunFinalizationError>()(
@@ -90,6 +92,20 @@ const make = Effect.gen(function* () {
           { scopeType: "thread" as const, scopeId: input.threadId },
         ];
         const memory = yield* listMemory(scopes, 50);
+        // Capture only the canonical saved plan for this thread and project.
+        // A malformed or absent plan must not prevent a source-backed checkpoint.
+        const plan = yield* readHarnessPlan({
+          projectId: thread.projectId,
+          threadId: input.threadId,
+        }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("Could not include plan in task-context checkpoint", {
+              threadId: input.threadId,
+              cause,
+            }).pipe(Effect.as(null)),
+          ),
+        );
+        const planContext = plan === null ? {} : checkpointHarnessPlan(plan);
         // Unlike run.ordinal, this is a canonical committed event sequence.
         // Capture before saving the checkpoint so future recovery can replay
         // events strictly newer than this high-water mark.
@@ -122,6 +138,7 @@ const make = Effect.gen(function* () {
             schemaVersion: 1,
             objective: thread.title || "Coding task",
             eventCursor,
+            ...planContext,
             ...(thread.branch === null ? {} : { branch: thread.branch }),
             ...(headCommit === null ? {} : { headCommit }),
             sourceEventRefs: [`t3:run:${input.runId}`],
