@@ -2627,6 +2627,70 @@ export const layerWsRpc = (
                   }),
             ),
           ),
+        // Explicit Stop from the plan board. Validate the canonical native run
+        // identity before forwarding T3's existing interrupt command. A stop
+        // request NEVER settles a step or releases its durable checkout lease.
+        // oxlint-disable-next-line t3code/prefer-effect-fn -- RpcGroup handler has contextual service errors.
+        [WS_METHODS.harnessPlanInterrupt]: (input) =>
+          Effect.gen(function* () {
+            const projection = yield* orchestrationEngine.getThreadProjection(
+              ThreadId.make(input.threadId),
+            );
+            if (projection.thread.projectId !== input.projectId) {
+              return yield* new HarnessPlanError({
+                message: "Plan thread does not belong to the selected project.",
+              });
+            }
+            const plan = yield* HarnessPlanStore.readHarnessPlan(input).pipe(
+              Effect.provideService(SqlClient.SqlClient, sql),
+            );
+            if (!plan || plan.revision !== input.expectedRevision) {
+              return yield* new HarnessPlanError({
+                message: "The plan changed. Reload before stopping this step.",
+              });
+            }
+            const step = plan.steps.find((candidate) => candidate.id === input.stepId);
+            if (!step || step.status !== "running" || !step.dispatchMessageId) {
+              return yield* new HarnessPlanError({
+                message: "This step has no confirmed native dispatch to interrupt.",
+              });
+            }
+            const run = projection.runs.find(
+              (candidate) =>
+                candidate.userMessageId === step.dispatchMessageId &&
+                candidate.sourcePlanRef?.planId === plan.planId &&
+                (candidate.status === "running" ||
+                  candidate.status === "starting" ||
+                  candidate.status === "queued"),
+            );
+            if (!run) {
+              return yield* new HarnessPlanError({
+                message:
+                  "No matching active native run. Review the thread and checkout lease; " +
+                  "a previous stop or crash may have left an uncertain outcome.",
+              });
+            }
+            const command: OrchestrationV2Command = {
+              type: "run.interrupt",
+              commandId: CommandId.make(yield* random.uuidV4()),
+              threadId: projection.thread.id,
+              runId: run.id,
+              reason: "Stopped by the user from the manual plan board",
+              holdQueue: true,
+            };
+            yield* startup.enqueueCommand(
+              ThreadMessageIntake.dispatchCommand(command).pipe(Effect.provide(intakeContext)),
+            );
+            return true;
+          }).pipe(
+            Effect.mapError((error) =>
+              isHarnessPlanError(error)
+                ? error
+                : new HarnessPlanError({
+                    message: "Could not confirm the native stop request. Inspect the run.",
+                  }),
+            ),
+          ),
         // Read-only incident inspection: show only this trusted thread's leases.
         // No force-release is exposed; native children may survive a server crash.
         // oxlint-disable-next-line t3code/prefer-effect-fn -- Scope comes from the RPC handler context.
