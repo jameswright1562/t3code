@@ -194,15 +194,13 @@ export function attachHarnessDispatch(
   );
 }
 
-/**
- * Native T3 run interruption is terminal only after provider finalization.
- * Map it to the plan's cancelled state, rather than holding an otherwise
- * verified finished run in "running" forever.
+/** An interrupted root can leave native child processes alive.
+ * Retain its checkout lease until child termination is independently verified.
  */
 export function terminalHarnessStepStatus(
   status: string,
 ): "completed" | "failed" | "cancelled" | null {
-  if (status === "interrupted") return "cancelled";
+  if (status === "interrupted") return null;
   if (status === "completed" || status === "failed" || status === "cancelled") return status;
   return null;
 }
