@@ -2,6 +2,7 @@ import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { layerMemory } from "../persistence/Sqlite.ts";
 import {
+  checkpointHarnessPlan,
   readyHarnessSteps,
   transitionHarnessStep,
   validateHarnessSteps,
@@ -42,6 +43,47 @@ it("rejects cycles and checkout conflicts without invoking agents", () => {
     () => transitionHarnessStep(running, "b", "running", { allowParallel: true }),
     /checkout concurrency/,
   );
+});
+
+it("checkpoints a plan revision with bounded eligible next steps and no execution", () => {
+  const steps = [
+    { ...draft("implement"), status: "pending" as const, artifactRefs: [] },
+    { ...draft("verify", ["implement"]), status: "pending" as const, artifactRefs: [] },
+  ];
+  const plan = {
+    schemaVersion: 1 as const,
+    planId: "plan:checkpoint",
+    projectId: "project:checkpoint",
+    threadId: "thread:checkpoint",
+    revision: 7,
+    steps,
+    updatedAt: "2026-11-12T00:00:00Z",
+  };
+  const original = checkpointHarnessPlan(plan);
+  assert.equal(original.planId, plan.planId);
+  assert.equal(original.planRevision, 7);
+  assert.deepStrictEqual(original.pendingStepIds, ["implement", "verify"]);
+  assert.deepStrictEqual(original.activeStepIds, []);
+  assert.deepStrictEqual(original.nextActions, ["Step implement"]);
+
+  const started = checkpointHarnessPlan({
+    ...plan,
+    revision: 8,
+    steps: transitionHarnessStep(steps, "implement", "running"),
+  });
+  assert.deepStrictEqual(started.activeStepIds, ["implement"]);
+  assert.deepStrictEqual(started.nextActions, []);
+  const finished = checkpointHarnessPlan({
+    ...plan,
+    revision: 9,
+    steps: transitionHarnessStep(
+      transitionHarnessStep(steps, "implement", "running"),
+      "implement",
+      "completed",
+    ),
+  });
+  assert.deepStrictEqual(finished.completedStepIds, ["implement"]);
+  assert.deepStrictEqual(finished.nextActions, ["Step verify"]);
 });
 
 const layer = it.layer(layerMemory);
