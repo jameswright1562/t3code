@@ -10,6 +10,9 @@ on:
       - "apps/server/src/orchestration-v2/Adapters/**"
       - "apps/server/src/mcp/McpHttpServer.ts"
       - "apps/server/src/ws.ts"
+      - "apps/server/src/orchestration-v2/HarnessPlan*.ts"
+      - "apps/server/src/orchestration-v2/RunFinalizationService.ts"
+      - "docs/architecture/LOCAL_MACOS_AGENT_HARNESS.md"
   workflow_dispatch:
 
 permissions:
