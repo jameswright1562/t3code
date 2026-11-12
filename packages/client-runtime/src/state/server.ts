@@ -1224,6 +1224,10 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:harness:plan:dispatch",
       tag: WS_METHODS.harnessPlanDispatch,
     }),
+    harnessInterruptPlanStep: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:harness:plan:interrupt",
+      tag: WS_METHODS.harnessPlanInterrupt,
+    }),
     harnessCheckoutLeases: createEnvironmentQueryAtomFamily(runtime, {
       label: "environment-data:harness:plan:leases",
       idleTtlMs: 0,
