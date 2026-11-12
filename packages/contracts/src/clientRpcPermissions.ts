@@ -25,6 +25,7 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.harnessPlanCreate]: AuthSettingsWriteScope,
   [WS_METHODS.harnessPlanMutate]: AuthSettingsWriteScope,
   [WS_METHODS.harnessPlanDispatch]: AuthOrchestrationOperateScope,
+  [WS_METHODS.harnessPlanInterrupt]: AuthOrchestrationOperateScope,
   [WS_METHODS.harnessPlanLeases]: AuthSettingsWriteScope,
   [WS_METHODS.harnessMemoryList]: AuthSettingsWriteScope,
   [WS_METHODS.harnessMemoryExport]: AuthSettingsWriteScope,
