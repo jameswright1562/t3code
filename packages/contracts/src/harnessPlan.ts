@@ -65,6 +65,9 @@ export const HarnessPlanDispatchInput = Schema.Struct({
   expectedRevision: Schema.Int,
 });
 
+/** Stop only the exact currently running native step; never release a lease on request. */
+export const HarnessPlanInterruptInput = HarnessPlanDispatchInput;
+
 export const HarnessPlanLease = Schema.Struct({
   leaseId: Schema.String,
   checkoutPath: Schema.String,
