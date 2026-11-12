@@ -194,6 +194,19 @@ export function attachHarnessDispatch(
   );
 }
 
+/**
+ * Native T3 run interruption is terminal only after provider finalization.
+ * Map it to the plan's cancelled state, rather than holding an otherwise
+ * verified finished run in "running" forever.
+ */
+export function terminalHarnessStepStatus(
+  status: string,
+): "completed" | "failed" | "cancelled" | null {
+  if (status === "interrupted") return "cancelled";
+  if (status === "completed" || status === "failed" || status === "cancelled") return status;
+  return null;
+}
+
 /** Only the exact native run created by the approved step may be stopped. */
 export function matchingActiveHarnessRun<
   T extends {
