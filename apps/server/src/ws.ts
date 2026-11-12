@@ -4,7 +4,10 @@ import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as AgentHarnessMemory from "./memory/AgentMemory.ts";
 import * as HarnessPlanStore from "./orchestration-v2/HarnessPlanStore.ts";
-import { renderHarnessStepPrompt } from "./orchestration-v2/HarnessPlan.ts";
+import {
+  matchingActiveHarnessRun,
+  renderHarnessStepPrompt,
+} from "./orchestration-v2/HarnessPlan.ts";
 import { listActiveCheckoutLeases } from "./orchestration-v2/HarnessCheckoutLease.ts";
 import * as AgentHarnessMemoryBackup from "./memory/MemoryBackup.ts";
 import { assessCheckpointGit } from "./memory/CheckpointGitGuard.ts";
@@ -2655,14 +2658,11 @@ export const layerWsRpc = (
                 message: "This step has no confirmed native dispatch to interrupt.",
               });
             }
-            const run = projection.runs.find(
-              (candidate) =>
-                candidate.userMessageId === step.dispatchMessageId &&
-                candidate.sourcePlanRef?.planId === plan.planId &&
-                (candidate.status === "running" ||
-                  candidate.status === "starting" ||
-                  candidate.status === "queued"),
-            );
+            const run = matchingActiveHarnessRun(projection.runs, {
+              threadId: input.threadId,
+              planId: plan.planId,
+              dispatchMessageId: step.dispatchMessageId,
+            });
             if (!run) {
               return yield* new HarnessPlanError({
                 message:
