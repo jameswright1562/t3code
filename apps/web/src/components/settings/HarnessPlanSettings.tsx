@@ -44,6 +44,7 @@ export function HarnessPlanSettings() {
   const create = useAtomCommand(serverEnvironment.harnessCreatePlan);
   const change = useAtomCommand(serverEnvironment.harnessMutatePlan);
   const dispatch = useAtomCommand(serverEnvironment.harnessDispatchPlanStep);
+  const interrupt = useAtomCommand(serverEnvironment.harnessInterruptPlanStep);
   const lines = draft
     .split("\n")
     .map((line) => line.trim())
@@ -167,6 +168,34 @@ export function HarnessPlanSettings() {
           "do not blindly retry.",
       );
       plan.refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function stopNativeStep(stepId: string) {
+    if (!scope || !current || busy) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const result = await interrupt({
+        ...scope,
+        input: { ...scope.input, stepId, expectedRevision: current.revision },
+      });
+      if (result._tag !== "Success") {
+        setMessage(
+          "Stop was not confirmed. Inspect the native thread; the checkout remains reserved.",
+        );
+      } else {
+        setMessage(
+          "Native stop requested. The plan step and checkout lease remain held until the " +
+            "matching provider run has safely finalized.",
+        );
+      }
+      plan.refresh();
+      leases.refresh();
+    } catch {
+      setMessage("Stop outcome is unknown. Inspect the native thread before retrying.");
     } finally {
       setBusy(false);
     }
@@ -329,10 +358,20 @@ export function HarnessPlanSettings() {
                           </>
                         ) : null}
                         {step.status === "running" && step.dispatchMessageId !== undefined ? (
-                          <p className="text-xs text-muted-foreground">
-                            Native run active or outcome unconfirmed. Stop through the thread UI;
-                            this checkout lease is released only after verified finalization.
-                          </p>
+                          <>
+                            <Button
+                              size="xs"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() => void stopNativeStep(step.id)}
+                            >
+                              Stop agent
+                            </Button>
+                            <p className="text-xs text-muted-foreground">
+                              Stopping requests an interrupt; it does not unlock the checkout
+                              until the native run is safely finalized.
+                            </p>
+                          </>
                         ) : null}
                         {step.status === "running" && step.dispatchMessageId === undefined ? (
                           <>
