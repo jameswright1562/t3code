@@ -40,6 +40,20 @@ full upstream merge and migration reconciliation; controlled Claude quota A/B;
 packaged macOS E2E/security smoke and protected-branch review. Keep manual-only
 execution and zero automatic triggers.
 
+### Additional recovery and upstream work — 12 November 2026
+
+- [x] Run finalization snapshots the canonical saved plan ID and revision.
+- [x] Checkpoints retain completed, pending and active step IDs plus bounded ready actions.
+- [x] Recovery inspection displays the saved plan and flags revision drift.
+- [x] Upstream merge probe reports eight content conflicts in the fork integration branch.
+- [ ] The probe is diagnostic only; no upstream merge has been committed.
+- [ ] No pre-compaction/handoff capture or external-effect-safe Resume is implemented.
+- [ ] Native provider checkout locks, credentialed MCP and quota A/B remain release blockers.
+- [ ] Hosted CI and a real packaged macOS restart/security run must be green.
+
+The new checkpoint fields preserve evidence, not an executable restart guarantee.
+No provider session is opened automatically from the recovery inspector.
+
 ---
 
 ## Historical delivery status — 11 November 2026
