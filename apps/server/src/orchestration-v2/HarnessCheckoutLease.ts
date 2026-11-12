@@ -65,14 +65,8 @@ export function checkoutPathsOverlap(left: string, right: string): boolean {
   );
 }
 
-/**
- * A harness-prefixed native message is a durable execution intent, not an
- * ordinary chat request. Missing/mismatched source plan state must never fall
- * through to the generic provider writer path. A crash retry is ambiguous,
- * so only an operator may review and decide what to do next.
- *
- * Returns null for ordinary T3 messages. For harness messages a non-null
- * rejection reason always prevents provider startup.
+/** Refuse orphan or ambiguous harness dispatch before opening a provider.
+ * A non-null reason means this native run must not start or auto-replay.
  */
 export function harnessNativeLeaseRejection(input: {
   readonly messageId: string;
