@@ -37,6 +37,7 @@ import { evaluateThreadRunBudget } from "./HarnessRunBudget.ts";
 import {
   acquireCheckoutLease,
   checkoutPathsOverlap,
+  harnessNativeLeaseRejection,
   listActiveCheckoutLeases,
 } from "./HarnessCheckoutLease.ts";
 import { readHarnessPlan } from "./HarnessPlanStore.ts";
@@ -756,6 +757,28 @@ export const layer: Layer.Layer<
                 (step) => step.status === "running" && step.dispatchMessageId === run.userMessageId,
               )
             : undefined;
+        const harnessRejection = harnessNativeLeaseRejection({
+          messageId: String(run.userMessageId),
+          providerInstanceId: String(run.providerInstanceId),
+          projectId: String(projection.thread.projectId),
+          threadId: String(projection.thread.id),
+          planId:
+            storedPlan !== null && storedPlan.planId === run.sourcePlanRef?.planId
+              ? storedPlan.planId
+              : null,
+          step: planStep,
+          overlapping,
+          willRetry: input.willRetry === true,
+        });
+        if (harnessRejection !== null) {
+          yield* settleStartFailure({
+            signal: "harness-plan-lease-mismatch",
+            title: "Unverified native plan dispatch",
+            error: new Error(harnessRejection),
+            message: "Review the saved plan and checkout lease before continuing.",
+          });
+          return;
+        }
         if (planStep !== undefined) {
           const owned = overlapping.some(
             (lease) =>
