@@ -66,15 +66,9 @@ describe("harness delegated child concurrency cap settings", () => {
       decodeServerSettings({ harnessMaxConcurrentDelegatedTasks: 32 })
         .harnessMaxConcurrentDelegatedTasks,
     ).toBe(32);
-    expect(() =>
-      decodeServerSettingsPatch({ harnessMaxConcurrentDelegatedTasks: 0 }),
-    ).toThrow();
-    expect(() =>
-      decodeServerSettingsPatch({ harnessMaxConcurrentDelegatedTasks: 33 }),
-    ).toThrow();
-    expect(() =>
-      decodeServerSettingsPatch({ harnessMaxConcurrentDelegatedTasks: 1.5 }),
-    ).toThrow();
+    expect(() => decodeServerSettingsPatch({ harnessMaxConcurrentDelegatedTasks: 0 })).toThrow();
+    expect(() => decodeServerSettingsPatch({ harnessMaxConcurrentDelegatedTasks: 33 })).toThrow();
+    expect(() => decodeServerSettingsPatch({ harnessMaxConcurrentDelegatedTasks: 1.5 })).toThrow();
   });
 });
 
