@@ -19,8 +19,12 @@ describe("per-thread provider-start budget", () => {
 
 describe("app-owned delegated child concurrency", () => {
   it("allows a new child below the limit", () => {
-    expect(evaluateDelegatedChildBudget({ activeChildren: 0, maxConcurrentChildren: 1 }).allowed).toBe(true);
-    expect(evaluateDelegatedChildBudget({ activeChildren: 3, maxConcurrentChildren: 4 }).allowed).toBe(true);
+    expect(
+      evaluateDelegatedChildBudget({ activeChildren: 0, maxConcurrentChildren: 1 }).allowed,
+    ).toBe(true);
+    expect(
+      evaluateDelegatedChildBudget({ activeChildren: 3, maxConcurrentChildren: 4 }).allowed,
+    ).toBe(true);
   });
   it("refuses another child at the concurrency cap", () => {
     const result = evaluateDelegatedChildBudget({ activeChildren: 4, maxConcurrentChildren: 4 });
@@ -28,8 +32,14 @@ describe("app-owned delegated child concurrency", () => {
     expect(result.reason).toContain("4");
   });
   it("refuses an invalid cap or invalid active-child count", () => {
-    expect(evaluateDelegatedChildBudget({ activeChildren: -1, maxConcurrentChildren: 4 }).allowed).toBe(false);
-    expect(evaluateDelegatedChildBudget({ activeChildren: 0, maxConcurrentChildren: 0 }).allowed).toBe(false);
-    expect(evaluateDelegatedChildBudget({ activeChildren: 0, maxConcurrentChildren: 33 }).allowed).toBe(false);
+    expect(
+      evaluateDelegatedChildBudget({ activeChildren: -1, maxConcurrentChildren: 4 }).allowed,
+    ).toBe(false);
+    expect(
+      evaluateDelegatedChildBudget({ activeChildren: 0, maxConcurrentChildren: 0 }).allowed,
+    ).toBe(false);
+    expect(
+      evaluateDelegatedChildBudget({ activeChildren: 0, maxConcurrentChildren: 33 }).allowed,
+    ).toBe(false);
   });
 });

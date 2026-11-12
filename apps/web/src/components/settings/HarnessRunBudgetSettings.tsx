@@ -56,7 +56,11 @@ export function HarnessRunBudgetSettings() {
         input: { patch: { harnessMaxConcurrentDelegatedTasks: limit } },
       });
       if (result._tag === "Success") setChildEdit(null);
-      setMessage(result._tag === "Success" ? "Child concurrency limit saved." : "Could not save child limit.");
+      setMessage(
+        result._tag === "Success"
+          ? "Child concurrency limit saved."
+          : "Could not save child limit.",
+      );
     } catch {
       setMessage("Could not save child limit.");
     } finally {
