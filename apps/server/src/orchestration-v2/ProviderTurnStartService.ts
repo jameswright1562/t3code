@@ -24,6 +24,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import * as AgentMemoryContextService from "../memory/AgentMemoryContextService.ts";
 import * as ServerConfig from "../config.ts";
@@ -33,6 +34,12 @@ import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { evaluateThreadRunBudget } from "./HarnessRunBudget.ts";
+import {
+  acquireCheckoutLease,
+  checkoutPathsOverlap,
+  listActiveCheckoutLeases,
+} from "./HarnessCheckoutLease.ts";
+import { readHarnessPlan } from "./HarnessPlanStore.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
 import * as EventSink from "./EventSink.ts";
 import * as ProviderUsageAnalytics from "../telemetry/ProviderUsageAnalytics.ts";
@@ -163,6 +170,7 @@ export const layer: Layer.Layer<
     const projects = yield* ProjectService.ProjectService;
     const providerAuth = yield* ProviderAuthService.ProviderAuthService;
     const harnessSettings = yield* ServerSettings.ServerSettingsService;
+    const harnessSql = yield* Effect.serviceOption(SqlClient.SqlClient);
     const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
     const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
     const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
@@ -692,6 +700,106 @@ export const layer: Layer.Layer<
               });
               return;
             }
+          }
+        }
+      }
+      // A native provider can write to the checkout independently of the plan
+      // board. Reserve its realpath before opening the provider session, and
+      // reject conflicting threads. Crash-held leases never expire on startup.
+      // The plan-run RPC has already reserved its own lease before dispatch.
+      const nativeCheckout = yield* fileSystem
+        .realPath(checkpointScope.cwd)
+        .pipe(Effect.orElseSucceed(() => null));
+      if (nativeCheckout === null || Option.isNone(harnessSql)) {
+        if (run.sourcePlanRef !== undefined) {
+          yield* settleStartFailure({
+            signal: "harness-checkout-unverified",
+            title: "Could not verify native checkout lease",
+            error: new Error("Missing host checkout realpath or durable lease ledger."),
+            message: "Plan agent start requires a verified checkout and durable SQLite lease.",
+          });
+          return;
+        }
+      } else {
+        const existingLeases = yield* listActiveCheckoutLeases().pipe(
+          Effect.provideService(SqlClient.SqlClient, harnessSql.value),
+          Effect.result,
+        );
+        if (existingLeases._tag === "Failure") {
+          yield* settleStartFailure({
+            signal: "harness-lease-read-failure",
+            title: "Could not inspect native checkout leases",
+            error: new Error("Persistent checkout lease ledger unavailable."),
+          });
+          return;
+        }
+        const overlapping = existingLeases.success.filter((lease) =>
+          checkoutPathsOverlap(lease.checkoutPath, nativeCheckout),
+        );
+        const storedPlan = run.sourcePlanRef === undefined
+          ? null
+          : yield* readHarnessPlan({
+              projectId: projection.thread.projectId,
+              threadId: projection.thread.id,
+            }).pipe(
+              Effect.provideService(SqlClient.SqlClient, harnessSql.value),
+              Effect.catchCause(() => Effect.succeed(null)),
+            );
+        const planStep =
+          storedPlan !== null && storedPlan.planId === run.sourcePlanRef?.planId
+            ? storedPlan.steps.find(
+                (step) =>
+                  step.status === "running" &&
+                  step.dispatchMessageId === run.userMessageId,
+              )
+            : undefined;
+        if (planStep !== undefined) {
+          const owned = overlapping.some(
+            (lease) =>
+              lease.projectId === projection.thread.projectId &&
+              lease.threadId === projection.thread.id &&
+              lease.planId === storedPlan?.planId &&
+              lease.stepId === planStep.id,
+          );
+          if (!owned || overlapping.length !== 1 || input.willRetry === true) {
+            yield* settleStartFailure({
+              signal: "harness-plan-lease-mismatch",
+              title: "Plan checkout lease needs review",
+              error: new Error("Native plan lease is missing, contested or was retried."),
+              message: "Review this plan and its checkout before manually continuing.",
+            });
+            return;
+          }
+        } else {
+          // Unknown sourcePlanRef may belong to T3's native proposed-plan
+          // feature. Treat it as an ordinary run, not a privileged harness run.
+          if (overlapping.length > 0) {
+            yield* settleStartFailure({
+              signal: "harness-checkout-held",
+              title: "Checkout is held by another running step or provider",
+              error: new Error("Persistent checkout lease conflict."),
+              message: "Use an isolated worktree or review the existing checkout lease.",
+            });
+            return;
+          }
+          const lease = {
+            leaseId: "native-run:" + run.id,
+            checkoutPath: nativeCheckout,
+            projectId: projection.thread.projectId,
+            threadId: projection.thread.id,
+            planId: "native-run:" + run.id,
+            stepId: "provider-root",
+          };
+          const acquired = yield* harnessSql.value.withTransaction(
+            acquireCheckoutLease(lease),
+          ).pipe(Effect.provideService(SqlClient.SqlClient, harnessSql.value), Effect.result);
+          if (acquired._tag === "Failure") {
+            yield* settleStartFailure({
+              signal: "harness-checkout-race",
+              title: "Checkout was acquired by another provider",
+              error: new Error("Persistent checkout lease could not be acquired."),
+            });
+            return;
           }
         }
       }
