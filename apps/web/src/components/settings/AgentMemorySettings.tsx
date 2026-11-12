@@ -64,11 +64,28 @@ export function AgentMemorySettings() {
     checkpointHistory.data?.checkpoints[0] ??
     recovery.data?.checkpoint ??
     null;
+  // RPC intentionally returns checkpoint JSON as untrusted unknown data.
+  // Narrow it for presentation without relying on unvalidated properties.
+  const savedPlan =
+    selectedCheckpoint !== null &&
+    typeof selectedCheckpoint.checkpoint === "object" &&
+    selectedCheckpoint.checkpoint !== null &&
+    !Array.isArray(selectedCheckpoint.checkpoint)
+      ? (selectedCheckpoint.checkpoint as Record<string, unknown>)
+      : null;
+  const savedPlanId = typeof savedPlan?.planId === "string" ? savedPlan.planId : null;
+  const savedPlanRevision =
+    typeof savedPlan?.planRevision === "number" &&
+    Number.isSafeInteger(savedPlan.planRevision)
+      ? savedPlan.planRevision
+      : null;
+  const list = (value: unknown) =>
+    Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 
   const currentPlan = useEnvironmentQuery(
     environmentId !== null &&
       projectId !== null &&
-      selectedCheckpoint?.checkpoint.planId !== undefined
+      savedPlanId !== null
       ? serverEnvironment.harnessPlan({
           environmentId,
           input: { projectId, threadId: threadId.trim() },
@@ -550,26 +567,25 @@ export function AgentMemorySettings() {
                   Saved {selectedCheckpoint.createdAt}. This preview does not resume execution.
                   External side effects and file revisions still require human review.
                 </p>
-                {selectedCheckpoint.checkpoint.planId !== undefined ? (
+                {savedPlanId !== null ? (
                   <div className="rounded-md border p-3 text-xs">
                     <p className="font-medium">
-                      Saved plan {selectedCheckpoint.checkpoint.planId} · revision{" "}
-                      {selectedCheckpoint.checkpoint.planRevision ?? "unknown"}
+                      Saved plan {savedPlanId} · revision {savedPlanRevision ?? "unknown"}
                     </p>
                     <p>
-                      Completed: {selectedCheckpoint.checkpoint.completedStepIds?.length ?? 0} ·
-                      Pending: {selectedCheckpoint.checkpoint.pendingStepIds?.length ?? 0} ·
-                      Active at capture: {selectedCheckpoint.checkpoint.activeStepIds?.length ?? 0}
+                      Completed: {list(savedPlan?.completedStepIds).length} ·
+                      Pending: {list(savedPlan?.pendingStepIds).length} ·
+                      Active at capture: {list(savedPlan?.activeStepIds).length}
                     </p>
-                    {(selectedCheckpoint.checkpoint.nextActions?.length ?? 0) > 0 ? (
+                    {list(savedPlan?.nextActions).length > 0 ? (
                       <p>
-                        Next eligible action: {selectedCheckpoint.checkpoint.nextActions?.join(", ")}
+                        Next eligible action: {list(savedPlan?.nextActions).join(", ")}
                       </p>
                     ) : null}
                     {currentPlan.error ? <p role="alert">{currentPlan.error}</p> : null}
                     {!currentPlan.isPending && !currentPlan.error ? (
-                      currentPlan.data?.planId !== selectedCheckpoint.checkpoint.planId ||
-                      currentPlan.data?.revision !== selectedCheckpoint.checkpoint.planRevision ? (
+                      currentPlan.data?.planId !== savedPlanId ||
+                      currentPlan.data?.revision !== savedPlanRevision ? (
                         <p role="alert">
                           Saved plan and current plan differ or are unavailable. Review before
                           any manual continuation; do not replay steps automatically.
