@@ -435,6 +435,7 @@ import {
   HarnessPlanReadInput,
   HarnessPlanCreateInput,
   HarnessPlanMutationInput,
+  HarnessPlanDispatchInput,
   HarnessPlanError,
 } from "./harnessPlan.ts";
 
@@ -464,6 +465,7 @@ export const WS_METHODS = {
   harnessPlanRead: "harness.plan.read",
   harnessPlanCreate: "harness.plan.create",
   harnessPlanMutate: "harness.plan.mutate",
+  harnessPlanDispatch: "harness.plan.dispatch",
   harnessMemoryList: "harness.memory.list",
   harnessMemoryConfirm: "harness.memory.confirm",
   harnessMemoryForget: "harness.memory.forget",
@@ -697,6 +699,11 @@ const WsHarnessPlanCreateRpc = Rpc.make(WS_METHODS.harnessPlanCreate, {
 });
 const WsHarnessPlanMutateRpc = Rpc.make(WS_METHODS.harnessPlanMutate, {
   payload: HarnessPlanMutationInput,
+  success: HarnessPlan,
+  error: Schema.Union([HarnessPlanError, EnvironmentAuthorizationError]),
+});
+const WsHarnessPlanDispatchRpc = Rpc.make(WS_METHODS.harnessPlanDispatch, {
+  payload: HarnessPlanDispatchInput,
   success: HarnessPlan,
   error: Schema.Union([HarnessPlanError, EnvironmentAuthorizationError]),
 });
@@ -2183,6 +2190,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsHarnessPlanReadRpc,
   WsHarnessPlanCreateRpc,
   WsHarnessPlanMutateRpc,
+  WsHarnessPlanDispatchRpc,
   WsHarnessMemoryListRpc,
   WsHarnessMemoryConfirmRpc,
   WsHarnessMemoryForgetRpc,
