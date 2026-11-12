@@ -2552,7 +2552,7 @@ export const layerWsRpc = (
               });
             }
             const checkoutPath = yield* resolveTrustedPlanCheckout(input);
-            const messageId = MessageId.make(yield* random.uuidV4());
+            const messageId = MessageId.make("harness:" + (yield* random.uuidV4()));
             const command: OrchestrationV2Command = {
               type: "message.dispatch",
               commandId: CommandId.make(yield* random.uuidV4()),
