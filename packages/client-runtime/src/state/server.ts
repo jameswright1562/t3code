@@ -1224,6 +1224,13 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:harness:plan:dispatch",
       tag: WS_METHODS.harnessPlanDispatch,
     }),
+    harnessCheckoutLeases: createEnvironmentQueryAtomFamily(runtime, {
+      label: "environment-data:harness:plan:leases",
+      idleTtlMs: 0,
+      staleTimeMs: 0,
+      execute: (input: EnvironmentRpcInput<typeof WS_METHODS.harnessPlanLeases>) =>
+        requestGuarded(WS_METHODS.harnessPlanLeases, input),
+    }),
     harnessMemories: createEnvironmentQueryAtomFamily(runtime, {
       label: "environment-data:harness:memory:list",
       idleTtlMs: 0,
