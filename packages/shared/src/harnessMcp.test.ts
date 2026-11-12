@@ -62,6 +62,10 @@ describe("shared MCP provider routing", () => {
         args: ["--api-key", "secret"],
       }),
       unsafeCwd: server({ transport: "stdio", url: "", command: "npx", cwd: "bad\npath" }),
+      bearerHeader: server({ transport: "stdio", url: "", command: "npx", args: ["--header", "Authorization: Bearer example-token"] }),
+      headerFlag: server({ transport: "stdio", url: "", command: "npx", args: ["--header=Content-Type: application/json"] }),
+      envSecret: server({ transport: "stdio", url: "", command: "npx", args: ["--env", "MCP_ACCESS_TOKEN=example"] }),
+      safeArg: server({ transport: "stdio", url: "", command: "npx", args: ["-y", "@example/mcp-server"] }),
     };
     expect(
       Object.keys(
@@ -71,9 +75,12 @@ describe("shared MCP provider routing", () => {
           "alpha" as ProjectId,
         ),
       ),
-    ).toEqual(["clean"]);
+    ).toEqual(["clean", "safeArg"]);
     expect(validateHarnessMcpServer("userinfo", registry.userinfo)).toMatch(/credentials/);
     expect(validateHarnessMcpServer("unsafeArg", registry.unsafeArg)).toMatch(/tokens/);
+    expect(validateHarnessMcpServer("bearerHeader", registry.bearerHeader)).toMatch(/tokens/);
+    expect(validateHarnessMcpServer("headerFlag", registry.headerFlag)).toMatch(/headers/);
+    expect(validateHarnessMcpServer("envSecret", registry.envSecret)).toMatch(/credential/);
   });
 
   it("serializes HTTP and stdio servers to native runtime formats", () => {
