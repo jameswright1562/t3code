@@ -16,6 +16,7 @@ import * as WorkspaceEntries from "../workspace/WorkspaceEntries.ts";
 import * as CheckpointCapture from "./CheckpointCaptureService.ts";
 import { checkpointHarnessPlan } from "./HarnessPlan.ts";
 import { listActiveCheckoutLeases, releaseCheckoutLease } from "./HarnessCheckoutLease.ts";
+import { terminalHarnessStepStatus } from "./HarnessPlan.ts";
 import { readHarnessPlan, settleNativeHarnessStep } from "./HarnessPlanStore.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 
@@ -93,10 +94,7 @@ const make = Effect.gen(function* () {
         const cwd = projection.checkpointScopes.find((scope) => scope.id === input.scopeId)?.cwd;
         // Only committed terminal run projections can release a native checkout
         // lease. A missing/corrupt run remains held for explicit operator review.
-        const terminalStatus =
-          run.status === "completed" || run.status === "failed" || run.status === "cancelled"
-            ? run.status
-            : null;
+        const terminalStatus = terminalHarnessStepStatus(run.status);
         const { runs: fullRuns } = yield* projections.getThreadRecords(input.threadId, ["runs"]);
         const fullRun = fullRuns.find((candidate) => candidate.id === input.runId);
         const planRef = fullRun?.sourcePlanRef;
