@@ -46,6 +46,15 @@ changes are in draft PR #8; `main` is unchanged.
       must still undergo finalization or manual review. Stop does not
       guarantee an external child process has exited.
 
+- [x] The plan editor can now modify prerequisite DAG edges and acceptance
+      criteria for pending/failed steps, and select any configured provider
+      instance. Server validation still rejects cycles and stale writes.
+- [x] Native root `interrupted` status is **not** sufficient evidence that
+      external child processes have stopped. These checkout leases remain
+      held for operator review rather than being auto-released as cancelled.
+      Verified completed/failed/cancelled statuses use the existing
+      identity-checked finalization path.
+
 **Unfinished safety gates:** automated agent sequencing, comprehensive
 pause/cancel and delegation budgets, pre-handoff/compaction checkpoints,
 provider child-process supervision, human-approved replay with external-effect
