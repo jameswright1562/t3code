@@ -736,21 +736,20 @@ export const layer: Layer.Layer<
         const overlapping = existingLeases.success.filter((lease) =>
           checkoutPathsOverlap(lease.checkoutPath, nativeCheckout),
         );
-        const storedPlan = run.sourcePlanRef === undefined
-          ? null
-          : yield* readHarnessPlan({
-              projectId: projection.thread.projectId,
-              threadId: projection.thread.id,
-            }).pipe(
-              Effect.provideService(SqlClient.SqlClient, harnessSql.value),
-              Effect.catchCause(() => Effect.succeed(null)),
-            );
+        const storedPlan =
+          run.sourcePlanRef === undefined
+            ? null
+            : yield* readHarnessPlan({
+                projectId: projection.thread.projectId,
+                threadId: projection.thread.id,
+              }).pipe(
+                Effect.provideService(SqlClient.SqlClient, harnessSql.value),
+                Effect.catchCause(() => Effect.succeed(null)),
+              );
         const planStep =
           storedPlan !== null && storedPlan.planId === run.sourcePlanRef?.planId
             ? storedPlan.steps.find(
-                (step) =>
-                  step.status === "running" &&
-                  step.dispatchMessageId === run.userMessageId,
+                (step) => step.status === "running" && step.dispatchMessageId === run.userMessageId,
               )
             : undefined;
         if (planStep !== undefined) {
@@ -790,9 +789,9 @@ export const layer: Layer.Layer<
             planId: "native-run:" + run.id,
             stepId: "provider-root",
           };
-          const acquired = yield* harnessSql.value.withTransaction(
-            acquireCheckoutLease(lease),
-          ).pipe(Effect.provideService(SqlClient.SqlClient, harnessSql.value), Effect.result);
+          const acquired = yield* harnessSql.value
+            .withTransaction(acquireCheckoutLease(lease))
+            .pipe(Effect.provideService(SqlClient.SqlClient, harnessSql.value), Effect.result);
           if (acquired._tag === "Failure") {
             yield* settleStartFailure({
               signal: "harness-checkout-race",
