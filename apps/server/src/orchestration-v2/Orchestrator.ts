@@ -12,6 +12,7 @@ import {
   usageLimitBlockedRun,
 } from "@t3tools/shared/orchestrationV2ThreadError";
 import { canonicalizeGitCafePullRequestUrl } from "@t3tools/source-control-definitions/registry";
+import { queuedHarnessRecoveryRuns } from "./HarnessPlan.ts";
 import { threadPullRequestsOf } from "../sourceControl/threadPullRequests.ts";
 import {
   normalizeThreadPullRequestKey,
@@ -2756,12 +2757,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           threadId,
           Effect.gen(function* () {
             const projection = yield* readCommandProjection(threadId);
-            const uncertainHarnessRuns = projection.runs.filter(
-              (run) =>
-                run.status === "queued" &&
-                String(run.userMessageId).startsWith("harness:") &&
-                run.queueHeld !== true,
-            );
+            const uncertainHarnessRuns = queuedHarnessRecoveryRuns(projection.runs);
             if (uncertainHarnessRuns.length > 0) {
               // A crash makes provider dispatch ambiguous. Retain the original
               // user-approved intent, but never restart it automatically.
