@@ -3,7 +3,15 @@ import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as AgentHarnessMemory from "./memory/AgentMemory.ts";
-import { HarnessMemoryError } from "@t3tools/contracts";
+import * as HarnessPlanStore from "./orchestration-v2/HarnessPlanStore.ts";
+import {
+  matchingActiveHarnessRun,
+  renderHarnessStepPrompt,
+} from "./orchestration-v2/HarnessPlan.ts";
+import { listActiveCheckoutLeases } from "./orchestration-v2/HarnessCheckoutLease.ts";
+import * as AgentHarnessMemoryBackup from "./memory/MemoryBackup.ts";
+import { assessCheckpointGit } from "./memory/CheckpointGitGuard.ts";
+import { HarnessMemoryError, HarnessPlanError } from "@t3tools/contracts";
 import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
 import * as PeerLinks from "./peer/PeerLinks.ts";
 
@@ -44,7 +52,7 @@ import {
   type OrchestrationV2Command,
   type GitActionProgressEvent,
   type GitManagerServiceError,
-  type MessageId,
+  MessageId,
   type AcpRegistryImportSessionInput,
   type AcpRegistryDeleteSessionInput,
   type AcpRegistryDisableProviderInput,
@@ -98,7 +106,8 @@ import {
   EnvironmentAuthorizationError,
   type ProjectId,
   type ProviderDriverKind,
-  type ProviderInstanceId,
+  ProviderInstanceId,
+  PlanId,
   ThreadId,
   type TerminalMetadataStreamEvent,
   type PullRequestRef,
@@ -1396,6 +1405,9 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
   },
 );
 
+// Compile schema guards once; plan RPC error paths do not pay a per-call compile cost.
+const isHarnessPlanError = Schema.is(HarnessPlanError);
+
 export const layerWsRpc = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   clientAnalyticsProps: Readonly<Record<string, unknown>>,
@@ -1458,6 +1470,35 @@ export const layerWsRpc = (
       const deviceHostContext =
         yield* Effect.context<Effect.Services<ReturnType<typeof remoteSshDeviceHosts>>>();
       const orchestrationEngine = yield* Orchestrator.OrchestratorV2;
+      const resolveTrustedPlanCheckout = Effect.fn("WsRpc.resolveTrustedPlanCheckout")(
+        function* (input: { readonly projectId: string; readonly threadId: string }) {
+          const projection = yield* orchestrationEngine.getThreadProjection(
+            ThreadId.make(input.threadId),
+          );
+          if (projection.thread.projectId !== input.projectId) {
+            return yield* new HarnessPlanError({
+              message: "Plan thread does not belong to the selected project.",
+            });
+          }
+          const project = yield* projectStore.get(projection.thread.projectId);
+          if (Option.isNone(project)) {
+            return yield* new HarnessPlanError({
+              message: "The project checkout is unavailable.",
+            });
+          }
+          const filesystem = yield* FileSystem.FileSystem;
+          return yield* filesystem
+            .realPath(projection.thread.worktreePath ?? project.value.workspaceRoot)
+            .pipe(
+              Effect.mapError(
+                () =>
+                  new HarnessPlanError({
+                    message: "Could not verify the host checkout realpath.",
+                  }),
+              ),
+            );
+        },
+      );
       const random = yield* SecureRandom.SecureRandom;
       // RPC client ids are only unique within one socket; terminals share viewers across sockets.
       const terminalViewerPrefix = yield* random.uuidV4();
@@ -2387,40 +2428,435 @@ export const layerWsRpc = (
           Effect.annotateCurrentSpan({ "scheduled_task.id": input.id }).pipe(
             Effect.andThen(scheduledTasks.getWebhookDelivery(input)),
           ),
+        // Read and mutation scopes are checked against the trusted thread projection.
+        // oxlint-disable-next-line t3code/prefer-effect-fn -- Single-use RpcGroup handler receives contextual error types from its contract.
+        [WS_METHODS.harnessPlanRead]: (input) =>
+          Effect.gen(function* () {
+            const projection = yield* orchestrationEngine.getThreadProjection(
+              ThreadId.make(input.threadId),
+            );
+            if (projection.thread.projectId !== input.projectId) {
+              return yield* new HarnessPlanError({
+                message: "Plan thread does not belong to the selected project.",
+              });
+            }
+            return yield* HarnessPlanStore.readHarnessPlan(input).pipe(
+              Effect.provideService(SqlClient.SqlClient, sql),
+              Effect.mapError(
+                (error) =>
+                  new HarnessPlanError({ message: error.message || "Could not read plan" }),
+              ),
+            );
+          }).pipe(
+            Effect.mapError((error) =>
+              isHarnessPlanError(error)
+                ? error
+                : new HarnessPlanError({ message: "Plan read is unavailable for this thread." }),
+            ),
+          ),
+        // Read and mutation scopes are checked against the trusted thread projection.
+        // oxlint-disable-next-line t3code/prefer-effect-fn -- Single-use RpcGroup handler receives contextual error types from its contract.
+        [WS_METHODS.harnessPlanCreate]: (input) =>
+          Effect.gen(function* () {
+            const projection = yield* orchestrationEngine.getThreadProjection(
+              ThreadId.make(input.threadId),
+            );
+            if (projection.thread.projectId !== input.projectId) {
+              return yield* new HarnessPlanError({
+                message: "Plan thread does not belong to the selected project.",
+              });
+            }
+            return yield* HarnessPlanStore.createHarnessPlan({
+              ...input,
+              trustedCheckoutPath: yield* resolveTrustedPlanCheckout(input),
+            }).pipe(
+              Effect.provideService(SqlClient.SqlClient, sql),
+              Effect.mapError(
+                (error) =>
+                  new HarnessPlanError({ message: error.message || "Could not create plan" }),
+              ),
+            );
+          }).pipe(
+            Effect.mapError((error) =>
+              isHarnessPlanError(error)
+                ? error
+                : new HarnessPlanError({
+                    message: "Plan creation is unavailable for this thread.",
+                  }),
+            ),
+          ),
+        // Read and mutation scopes are checked against the trusted thread projection.
+        // oxlint-disable-next-line t3code/prefer-effect-fn -- Single-use RpcGroup handler receives contextual error types from its contract.
+        [WS_METHODS.harnessPlanMutate]: (input) =>
+          Effect.gen(function* () {
+            const projection = yield* orchestrationEngine.getThreadProjection(
+              ThreadId.make(input.threadId),
+            );
+            if (projection.thread.projectId !== input.projectId) {
+              return yield* new HarnessPlanError({
+                message: "Plan thread does not belong to the selected project.",
+              });
+            }
+            return yield* HarnessPlanStore.mutateHarnessPlan({
+              ...input,
+              trustedCheckoutPath: yield* resolveTrustedPlanCheckout(input),
+            }).pipe(
+              Effect.provideService(SqlClient.SqlClient, sql),
+              Effect.mapError(
+                (error) =>
+                  new HarnessPlanError({ message: error.message || "Could not update plan" }),
+              ),
+            );
+          }).pipe(
+            Effect.mapError((error) =>
+              isHarnessPlanError(error)
+                ? error
+                : new HarnessPlanError({ message: "Plan update is unavailable for this thread." }),
+            ),
+          ),
+        // Explicit user click only: write durable dispatch intent + checkout lease
+        // BEFORE passing the command to T3's normal provider intake. If the
+        // connection drops after that commit, the lease stays for human review;
+        // we must not replay an ambiguous external write on restart.
+        // oxlint-disable-next-line t3code/prefer-effect-fn -- RpcGroup handler has contextual service errors.
+        [WS_METHODS.harnessPlanDispatch]: (input) =>
+          Effect.gen(function* () {
+            const projection = yield* orchestrationEngine.getThreadProjection(
+              ThreadId.make(input.threadId),
+            );
+            if (projection.thread.projectId !== input.projectId) {
+              return yield* new HarnessPlanError({
+                message: "Plan thread does not belong to the selected project.",
+              });
+            }
+            if (
+              projection.runs.some(
+                (run) =>
+                  run.status === "running" || run.status === "starting" || run.status === "queued",
+              )
+            ) {
+              return yield* new HarnessPlanError({
+                message: "The thread already has an active provider run; stop or finish it first.",
+              });
+            }
+            const plan = yield* HarnessPlanStore.readHarnessPlan(input).pipe(
+              Effect.provideService(SqlClient.SqlClient, sql),
+            );
+            if (!plan || plan.revision !== input.expectedRevision) {
+              return yield* new HarnessPlanError({
+                message: "The plan changed. Reload before starting a step.",
+              });
+            }
+            const step = plan.steps.find((candidate) => candidate.id === input.stepId);
+            if (!step || step.status !== "pending") {
+              return yield* new HarnessPlanError({
+                message: "Only pending plan steps can start native agents.",
+              });
+            }
+            const selectedInstance = yield* providerInstances.getInstance(
+              ProviderInstanceId.make(step.provider),
+            );
+            if (selectedInstance === undefined || !selectedInstance.enabled) {
+              return yield* new HarnessPlanError({
+                message: "The selected provider is not installed or enabled.",
+              });
+            }
+            const requestedModel = step.model?.trim();
+            const threadSelection = projection.thread.modelSelection;
+            if (!requestedModel && step.provider !== threadSelection.instanceId) {
+              return yield* new HarnessPlanError({
+                message: "Choose a model for this step's provider before starting it.",
+              });
+            }
+            const checkoutPath = yield* resolveTrustedPlanCheckout(input);
+            const messageId = MessageId.make("harness:" + (yield* random.uuidV4()));
+            const command: OrchestrationV2Command = {
+              type: "message.dispatch",
+              commandId: CommandId.make(yield* random.uuidV4()),
+              threadId: projection.thread.id,
+              messageId,
+              text: renderHarnessStepPrompt(step),
+              attachments: [],
+              createdBy: "user",
+              creationSource: "web",
+              sourcePlanRef: {
+                threadId: projection.thread.id,
+                planId: PlanId.make(plan.planId),
+              },
+              dispatchMode: { type: "queue_after_active" },
+              modelSelection: {
+                instanceId: ProviderInstanceId.make(step.provider),
+                model: requestedModel || threadSelection.model,
+                ...(step.provider === threadSelection.instanceId &&
+                threadSelection.options !== undefined
+                  ? { options: threadSelection.options }
+                  : {}),
+              },
+            };
+            const updated = yield* HarnessPlanStore.mutateHarnessPlan({
+              ...input,
+              trustedCheckoutPath: checkoutPath,
+              change: { type: "dispatch", stepId: step.id, messageId },
+            }).pipe(Effect.provideService(SqlClient.SqlClient, sql));
+            yield* startup
+              .enqueueCommand(
+                ThreadMessageIntake.dispatchCommand(command).pipe(Effect.provide(intakeContext)),
+              )
+              .pipe(
+                Effect.catchCause((cause) =>
+                  Effect.logWarning("Native plan step dispatch was not confirmed", {
+                    threadId: input.threadId,
+                    planId: plan.planId,
+                    stepId: step.id,
+                    cause,
+                  }).pipe(
+                    Effect.andThen(
+                      new HarnessPlanError({
+                        message:
+                          "Provider dispatch was not confirmed. The checkout lease is retained " +
+                          "for manual review; do not retry the step blindly.",
+                      }),
+                    ),
+                  ),
+                ),
+              );
+            return updated;
+          }).pipe(
+            Effect.mapError((error) =>
+              isHarnessPlanError(error)
+                ? error
+                : new HarnessPlanError({
+                    message: "Plan dispatch was refused; check the thread and saved lease.",
+                  }),
+            ),
+          ),
+        // Explicit Stop from the plan board. Validate the canonical native run
+        // identity before forwarding T3's existing interrupt command. A stop
+        // request NEVER settles a step or releases its durable checkout lease.
+        // oxlint-disable-next-line t3code/prefer-effect-fn -- RpcGroup handler has contextual service errors.
+        [WS_METHODS.harnessPlanInterrupt]: (input) =>
+          Effect.gen(function* () {
+            const projection = yield* orchestrationEngine.getThreadProjection(
+              ThreadId.make(input.threadId),
+            );
+            if (projection.thread.projectId !== input.projectId) {
+              return yield* new HarnessPlanError({
+                message: "Plan thread does not belong to the selected project.",
+              });
+            }
+            const plan = yield* HarnessPlanStore.readHarnessPlan(input).pipe(
+              Effect.provideService(SqlClient.SqlClient, sql),
+            );
+            if (!plan || plan.revision !== input.expectedRevision) {
+              return yield* new HarnessPlanError({
+                message: "The plan changed. Reload before stopping this step.",
+              });
+            }
+            const step = plan.steps.find((candidate) => candidate.id === input.stepId);
+            if (!step || step.status !== "running" || !step.dispatchMessageId) {
+              return yield* new HarnessPlanError({
+                message: "This step has no confirmed native dispatch to interrupt.",
+              });
+            }
+            const run = matchingActiveHarnessRun(projection.runs, {
+              threadId: input.threadId,
+              planId: plan.planId,
+              dispatchMessageId: step.dispatchMessageId,
+            });
+            if (!run) {
+              return yield* new HarnessPlanError({
+                message:
+                  "No matching active native run. Review the thread and checkout lease; " +
+                  "a previous stop or crash may have left an uncertain outcome.",
+              });
+            }
+            const command: OrchestrationV2Command = {
+              type: "run.interrupt",
+              commandId: CommandId.make(yield* random.uuidV4()),
+              threadId: projection.thread.id,
+              runId: run.id,
+              reason: "Stopped by the user from the manual plan board",
+              holdQueue: true,
+            };
+            yield* startup.enqueueCommand(
+              ThreadMessageIntake.dispatchCommand(command).pipe(Effect.provide(intakeContext)),
+            );
+            return true;
+          }).pipe(
+            Effect.mapError((error) =>
+              isHarnessPlanError(error)
+                ? error
+                : new HarnessPlanError({
+                    message: "Could not confirm the native stop request. Inspect the run.",
+                  }),
+            ),
+          ),
+        // Read-only incident inspection: show only this trusted thread's leases.
+        // No force-release is exposed; native children may survive a server crash.
+        // oxlint-disable-next-line t3code/prefer-effect-fn -- Scope comes from the RPC handler context.
+        [WS_METHODS.harnessPlanLeases]: (input) =>
+          Effect.gen(function* () {
+            const projection = yield* orchestrationEngine.getThreadProjection(
+              ThreadId.make(input.threadId),
+            );
+            if (projection.thread.projectId !== input.projectId) {
+              return yield* new HarnessPlanError({
+                message: "Checkout leases are not available outside the selected project.",
+              });
+            }
+            const leases = yield* listActiveCheckoutLeases().pipe(
+              Effect.provideService(SqlClient.SqlClient, sql),
+            );
+            return leases.filter(
+              (lease) => lease.projectId === input.projectId && lease.threadId === input.threadId,
+            );
+          }).pipe(
+            Effect.mapError((error) =>
+              isHarnessPlanError(error)
+                ? error
+                : new HarnessPlanError({
+                    message: "Could not inspect checkout leases for this thread.",
+                  }),
+            ),
+          ),
         [WS_METHODS.harnessMemoryList]: ({ scope, limit }) =>
           AgentHarnessMemory.listMemory([scope], limit).pipe(
             Effect.provideService(SqlClient.SqlClient, sql),
-            Effect.mapError(() => new HarnessMemoryError({ message: "Could not list memory for this scope." })),
+            Effect.mapError(
+              () => new HarnessMemoryError({ message: "Could not list memory for this scope." }),
+            ),
           ),
         [WS_METHODS.harnessMemoryConfirm]: (input) =>
           AgentHarnessMemory.confirmMemory(input).pipe(
             Effect.provideService(SqlClient.SqlClient, sql),
-            Effect.mapError(() => new HarnessMemoryError({ message: "Could not confirm memory in this scope." })),
+            Effect.mapError(
+              () => new HarnessMemoryError({ message: "Could not confirm memory in this scope." }),
+            ),
           ),
         [WS_METHODS.harnessMemoryForget]: (input) =>
           AgentHarnessMemory.forgetMemory(input).pipe(
             Effect.provideService(SqlClient.SqlClient, sql),
-            Effect.mapError(() => new HarnessMemoryError({ message: "Could not remove memory in this scope." })),
+            Effect.mapError(
+              () => new HarnessMemoryError({ message: "Could not remove memory in this scope." }),
+            ),
           ),
         [WS_METHODS.harnessMemoryPin]: (input) =>
           AgentHarnessMemory.pinMemory(input).pipe(
             Effect.provideService(SqlClient.SqlClient, sql),
-            Effect.mapError(() => new HarnessMemoryError({ message: "Could not change memory pin in this scope." })),
+            Effect.mapError(
+              () =>
+                new HarnessMemoryError({ message: "Could not change memory pin in this scope." }),
+            ),
           ),
         [WS_METHODS.harnessMemoryRevise]: (input) =>
           AgentHarnessMemory.reviseMemory(input).pipe(
             Effect.provideService(SqlClient.SqlClient, sql),
-            Effect.mapError(() => new HarnessMemoryError({ message: "Could not revise memory in this scope." })),
+            Effect.mapError(
+              () => new HarnessMemoryError({ message: "Could not revise memory in this scope." }),
+            ),
           ),
         [WS_METHODS.harnessMemoryExport]: ({ scope }) =>
           AgentHarnessMemory.exportMemory([scope]).pipe(
             Effect.provideService(SqlClient.SqlClient, sql),
-            Effect.mapError(() => new HarnessMemoryError({ message: "Could not export memory for this scope." })),
+            Effect.mapError(
+              () => new HarnessMemoryError({ message: "Could not export memory for this scope." }),
+            ),
+          ),
+        [WS_METHODS.harnessMemoryBackup]: ({ scope }) =>
+          AgentHarnessMemoryBackup.exportMemoryBackup(scope).pipe(
+            Effect.provideService(SqlClient.SqlClient, sql),
+            Effect.mapError(
+              () => new HarnessMemoryError({ message: "Could not back up memory for this scope." }),
+            ),
+          ),
+        [WS_METHODS.harnessMemoryRestore]: (input) =>
+          AgentHarnessMemoryBackup.importMemoryBackup(input).pipe(
+            Effect.provideService(SqlClient.SqlClient, sql),
+            Effect.mapError(
+              () =>
+                new HarnessMemoryError({
+                  message: "Could not restore backup: invalid, conflicting or out of scope.",
+                }),
+            ),
+          ),
+        [WS_METHODS.harnessCheckpointHistory]: (input) =>
+          AgentHarnessMemory.listCheckpointHistory(input).pipe(
+            Effect.provideService(SqlClient.SqlClient, sql),
+            Effect.mapError(
+              () =>
+                new HarnessMemoryError({ message: "Could not load scoped checkpoint history." }),
+            ),
+          ),
+        // oxlint-disable-next-line t3code/prefer-effect-fn -- Single-use RPC handler receives contextual types from RpcGroup, not a reusable Effect function.
+        [WS_METHODS.harnessCheckpointVerifyGit]: (input) =>
+          Effect.gen(function* () {
+            // The host projection, not the caller-provided scope, is the
+            // authority for which project owns the requested thread.
+            const projection = yield* orchestrationEngine.getThreadProjection(
+              ThreadId.make(input.threadId),
+            );
+            if (projection.thread.projectId !== input.projectId) {
+              return yield* new HarnessMemoryError({
+                message: "Checkpoint does not belong to the selected project.",
+              });
+            }
+            const history = yield* AgentHarnessMemory.listCheckpointHistory({
+              projectId: input.projectId,
+              threadId: input.threadId,
+              limit: 100,
+            }).pipe(Effect.provideService(SqlClient.SqlClient, sql));
+            const checkpoint =
+              input.checkpointId === undefined
+                ? history.checkpoints[0]
+                : history.checkpoints.find((saved) => saved.id === input.checkpointId);
+            const savedHeadCommit = checkpoint?.checkpoint.headCommit ?? null;
+            const savedBranch = checkpoint?.checkpoint.branch ?? null;
+            const unverifiable = (reason: string) =>
+              assessCheckpointGit({
+                savedHeadCommit,
+                savedBranch,
+                currentHeadCommit: null,
+                currentBranch: null,
+                hasWorkingTreeChanges: false,
+                unavailableReason: reason,
+              });
+            if (checkpoint === undefined) return unverifiable("No valid checkpoint was selected.");
+            const project = yield* projectStore.get(projection.thread.projectId);
+            if (Option.isNone(project)) return unverifiable("Project workspace is unavailable.");
+            const cwd = projection.thread.worktreePath ?? project.value.workspaceRoot;
+            // Only inspect a canonical project's checked-out path. Never
+            // execute paths, shell commands or instructions from imported backup JSON.
+            return yield* Effect.gen(function* () {
+              const driver = yield* GitVcsDriver.GitVcsDriver;
+              const head = yield* driver.resolveCommit({ cwd, revision: "HEAD" });
+              const status = yield* driver.statusDetailsLocal(cwd);
+              return assessCheckpointGit({
+                savedHeadCommit,
+                savedBranch,
+                currentHeadCommit: head.commitSha,
+                currentBranch: status.branch,
+                hasWorkingTreeChanges: status.hasWorkingTreeChanges,
+              });
+            }).pipe(
+              Effect.provide(GitVcsDriver.layer),
+              Effect.orElseSucceed(() =>
+                unverifiable("Current repository status could not be read."),
+              ),
+            );
+          }).pipe(
+            Effect.mapError(
+              () =>
+                new HarnessMemoryError({
+                  message: "Could not verify the checkpoint against the trusted project.",
+                }),
+            ),
           ),
         [WS_METHODS.harnessCheckpointRecover]: (input) =>
           AgentHarnessMemory.recoverCheckpoint(input).pipe(
             Effect.provideService(SqlClient.SqlClient, sql),
-            Effect.mapError(() => new HarnessMemoryError({ message: "Could not inspect checkpoints." })),
+            Effect.mapError(
+              () => new HarnessMemoryError({ message: "Could not inspect checkpoints." }),
+            ),
           ),
         [WS_METHODS.serverProbe]: (_input) => Effect.succeed({}),
         [WS_METHODS.serverGetConfig]: (_input) =>

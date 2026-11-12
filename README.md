@@ -1,7 +1,6 @@
 # T3 Code
 
-> **Fork work in progress:** This branch adds persistent source-backed memory, context checkpoints, OpenCode custom configuration and a local macOS orchestration plan. See the [architecture and implementation status](./docs/architecture/LOCAL_MACOS_AGENT_HARNESS.md) and [draft PR #3](https://github.com/jameswright1562/t3code/pull/3). The Memory UI and custom HTTP/stdio MCP server manager are not implemented yet; do not treat this branch as a stable release.
-
+> **Fork work in progress:** This fork includes persistent source-backed memory, context checkpoints, OpenCode custom configuration and a local macOS orchestration design. See the [architecture and implementation status](./docs/architecture/LOCAL_MACOS_AGENT_HARNESS.md) and [merged PR #3](https://github.com/jameswright1562/t3code/pull/3) and [follow-up PR #8](https://github.com/jameswright1562/t3code/pull/8). The Memory UI and custom HTTP/stdio MCP registry were merged in PR #3; credentialed MCP connections, crash-safe resume, task scheduler, quota benchmarking and release validation are still unfinished. Do not treat this fork as a stable release.
 
 T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
 

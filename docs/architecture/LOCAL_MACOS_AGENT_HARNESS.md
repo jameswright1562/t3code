@@ -1,6 +1,34 @@
 # Local macOS Agent Harness — Architecture, Durable Memory, Context & Implementation Plan
 
-**Status:** Living implementation specification — upstream integration and memory runtime underway; not production-ready  
+## Latest upstream merge probe — 12 November 2026
+
+The most recent available dry-run workflow ([run 43242050293](https://github.com/jameswright1562/t3code/actions/runs/43242050293)) reports **nine** content conflicts, rather than the previously recorded eight:
+
+1. `README.md`
+2. `apps/server/src/orchestration-v2/ProviderSessionManager.ts`
+3. `apps/server/src/orchestration-v2/RunFinalizationService.ts`
+4. `apps/server/src/orchestration-v2/messageSearchIndex.ts`
+5. `apps/server/src/persistence/Migrations.ts`
+6. `apps/server/src/ws.ts`
+7. `apps/web/src/components/settings/SettingsPanels.tsx`
+8. `packages/provider-core/src/server/mcpSession.ts`
+9. `packages/shared/package.json`
+
+**Status:** diagnostic only; no upstream commit or conflict resolution has been merged into this branch. Migrations and storage must be reconciled with preservation of existing on-disk upgrade history. Runtime and MCP conflicts require semantic resolution with regression tests, not blanket `--ours` or `--theirs`. The PR remains draft.
+
+---
+
+## Continuation — 12 November 2026 (PR #8)
+
+- [x] Corrected the startup queue-recovery formatter failure from Actions on `e646855`. The subsequently checked `b64f167` branch commit passed Linux desktop/lint and focused memory/OpenCode workflows.
+- [x] Reject obviously credential-bearing native MCP command arguments, including bearer headers and env secret flags. This is defence-in-depth pending a proper Keychain-backed, per-tool-authorized host gateway.
+- [x] Added a configurable direct **app-owned delegated child concurrency cap** (default 4, range 1–32) enforced before child-thread emission under the parent dispatch lock, plus policy tests and a Settings control. Cancelled/interrupted app-owned children keep their slots because process teardown is uncertain. This does **not** enforce limits for native provider-internal children, token usage or total recursive delegation.
+- [ ] Validate these latest concurrency changes in GitHub Actions. No on-device Mac E2E was possible because the connected Mac remains offline.
+- [ ] Still blocked for release: authenticated MCP OAuth/Keychain gateway, safe opt-in crash Resume and pre-compaction/handoff capture, native child-process supervision and quota attribution, nine upstream merge conflicts, full required CI and packaged macOS E2E. Keep PR in draft until verified.
+
+---
+
+**Status:** Living implementation specification — PR #3 merged, PR #8 active and not production-ready  
 **Base:** fork of [T3 Code](https://github.com/pingdotgg/t3code)  
 **Target:** macOS-first, local execution while the Mac is awake  
 **Owner repo:** [jameswright1562/t3code](https://github.com/jameswright1562/t3code)  
@@ -8,9 +36,223 @@
 
 > This is a specification and implementation plan, not a claim that every feature below is already implemented. The original fork main was last updated in May 2026. This integration branch is based on upstream commit d756fed (Nov 2026), preserving the old branch and porting the memory work. The May fork's custom OpenCode options must be reconciled before finishing. Keep the fork's earlier OpenCode work intact during that reconciliation.
 
-## Implementation snapshot — 10 November 2026
+## Native plan execution integration — 12 November 2026
 
-**Active integration branch:** `feat/macos-orchestrator-upstream-base`, draft [PR #3](https://github.com/jameswright1562/t3code/pull/3), based on upstream `d756fed7`. The older May 2026 fork main and draft PR #2 are preserved, not overwritten.
+**Implementation is experimental and not production release-certified.** All
+changes are in draft PR #8; `main` is unchanged.
+
+- [x] Added an explicit **Start agent** action to the saved multi-step plan
+      board. It routes each requested step through T3's existing native
+      `message.dispatch` intake, using the selected provider/model and a
+      bounded step prompt. Steps never chain automatically.
+- [x] A native plan start atomically records the source message identity,
+      advances the revisioned plan to running, and acquires an exclusive
+      SQLite checkout lease **before** calling the external provider. Stale
+      revisions and concurrent writers are refused.
+- [x] A matching terminal native run can settle its saved plan step and
+      release the lease; unrelated messages and manual terminal edits cannot.
+      A dispatch whose outcome is uncertain remains held for manual review.
+- [x] The provider start gate validates host-resolved checkout realpaths and
+      persistent lease ownership for harness runs. Ordinary native turns are
+      also leased where SQLite is available, but legacy test/runtime contexts
+      without a SQL service retain their previous behavior. Thus this does
+      **not** yet constitute a verified universal checkout-write lock.
+- [x] An authenticated, project/thread-scoped **read-only lease inspector**
+      exposes retained checkout ownership, timestamps and step IDs in
+      Settings. It deliberately provides no unsafe force-release action.
+- [x] New deterministic tests cover step dispatch intent, stale revision
+      refusal, manual settlement denial and run-identity-checked completion.
+
+- [x] A native dispatch marked `harness:` now fails closed if its durable
+      plan step, approved provider or exclusive lease is missing/mismatched.
+      A retried ambiguous native start is refused rather than being recast as
+      an ordinary thread message. Tests cover orphan and contested starts.
+- [x] **Stop agent** requests T3's existing native run interrupt through a
+      new authenticated RPC. The server requires the exact current plan
+      revision, project/thread and message-to-run ownership. The request
+      never releases its checkout lease; an interrupted or uncertain run
+      must still undergo finalization or manual review. Stop does not
+      guarantee an external child process has exited.
+
+- [x] The plan editor can now modify prerequisite DAG edges and acceptance
+      criteria for pending/failed steps, and select any configured provider
+      instance. Server validation still rejects cycles and stale writes.
+- [x] Native root `interrupted` status is **not** sufficient evidence that
+      external child processes have stopped. These checkout leases remain
+      held for operator review rather than being auto-released as cancelled.
+      Verified completed/failed/cancelled statuses use the existing
+      identity-checked finalization path.
+
+- [x] Startup queue recovery now marks queued `harness:` native dispatches
+      as held within the canonical thread lock before processing ordinary
+      queued work. A crashed, ambiguous user-started step is not silently
+      replayed. This is conservative crash handling, not user-approved Resume.
+
+**Unfinished safety gates:** automated agent sequencing, comprehensive
+pause/cancel and delegation budgets, pre-handoff/compaction checkpoints,
+provider child-process supervision, human-approved replay with external-effect
+provenance, credentialed MCP Keychain/OAuth proxy with invocation-time tool
+permissions, resolution of nine upstream merge conflicts, full CI and
+packaged authenticated macOS tests. The offline quota-analysis script remains
+unmeasured against genuine Claude subscription meters.
+
+**Verification:** a prior intermediate commit passed focused tests and server
+typechecks. Subsequent native runtime and UI changes are being validated in
+GitHub Actions. Do not infer release-readiness from the GitHub mergeable flag.
+
+---
+
+## Continuation checkpoint — 12 November 2026
+
+**Active PR:** [#8](https://github.com/jameswright1562/t3code/pull/8),
+branch `feat/macos-harness-release-gates`. It remains **draft and unmerged**.
+All changes below are on that branch; fork `main` remains unchanged.
+
+- [x] Fixed the Markdown formatting regression in `cc25eb3`. Linux
+      desktop/lint and focused memory/OpenCode validation passed on this commit.
+- [x] Added a provider selector for new plan steps and editable provider/model
+      preferences for pending or failed steps in `288d0c4`. The four selectable
+      routes are Codex, native Claude Code (`claudeAgent`), Cursor and OpenCode
+      (which may use configured custom models). These are **stored preferences**,
+      not a claim of provider execution or custom API auto-configuration.
+- [x] Added regression coverage in `bc38295` for persisted per-step routing,
+      model selection and refusal to alter a running step's assignment.
+- [x] Clarified the plan UI: migration 85 provides **persistent plan-only**
+      checkout leases, but native provider processes and MCP tool writes are not
+      yet attached to them. Manually marking a step as running does not launch it.
+
+**Latest validation:** the focused memory/plan checks and formatting/unused-code
+checks passed on `bc38295`; full desktop build, hosted macOS build and general
+CI must complete before claiming an all-green release candidate. The connected
+Mac was offline during this checkpoint, so no live Keychain/Claude subscription
+or packaged macOS crash-resume test has been performed here.
+
+**Unfinished P0 work:** user-initiated provider execution with checkout leases,
+cancel/pause and child budgets; pre-handoff and pre-compaction checkpoints plus
+human-approved side-effect-safe resume; scoped Keychain/OAuth MCP connections;
+full upstream merge and migration reconciliation; controlled Claude quota A/B;
+packaged macOS E2E/security smoke and protected-branch review. Keep manual-only
+execution and zero automatic triggers.
+
+### Additional recovery and upstream work — 12 November 2026
+
+- [x] Run finalization snapshots the canonical saved plan ID and revision.
+- [x] Checkpoints retain completed, pending and active step IDs plus bounded ready actions.
+- [x] Recovery inspection displays the saved plan and flags revision drift.
+- [x] Upstream merge probe reports nine content conflicts in the fork integration branch.
+- [ ] The probe is diagnostic only; no upstream merge has been committed.
+- [ ] No pre-compaction/handoff capture or external-effect-safe Resume is implemented.
+- [ ] Native provider checkout locks, credentialed MCP and quota A/B remain release blockers.
+- [ ] Hosted CI and a real packaged macOS restart/security run must be green.
+
+The new checkpoint fields preserve evidence, not an executable restart guarantee.
+No provider session is opened automatically from the recovery inspector.
+
+---
+
+## Historical delivery status — 11 November 2026
+
+**Canonical working PR:** [#8 — macOS harness release gates](https://github.com/jameswright1562/t3code/pull/8) ·
+branch `feat/macos-harness-release-gates` · verified implementation commit `448d82d` ·
+**draft, unmerged, not production ready**. PR #3 was merged previously. This
+section records the 11 November state; the continuation checkpoint above
+supersedes it, and later historical sections retain earlier design snapshots.
+
+### Implemented and tested in fork-specific CI
+
+- [x] Persistent **project/thread-scoped memory**, source references, proposal
+      versus verified status, browser/approval/revision/pinning/forgetting UI,
+      bounded context search and injection on fresh native sessions.
+- [x] Full **scoped memory backup/restore** with audit events, revision ancestors,
+      tombstones, checksum, idempotence and conflict refusal; no external Git objects
+      or provider-native sessions are included.
+- [x] **Checkpoint capture after finalization**, Git branch/HEAD validation,
+      persisted thread event cursor, corrupt-latest fallback, checkpoint history and
+      read-only recovery inspector. The inspector **does not** resume execution.
+- [x] Configurable shared MCP **registry and Settings UI** for selected providers
+      and projects, with conservative URL/stdio validation. This is not a complete
+      credentialed MCP connection manager.
+- [x] Per-thread **maximum native provider run count** (optional; 0 = unlimited).
+      This is **not** a hard cap on native child turns, tokens or subscription usage.
+- [x] Offline paired Claude quota **analysis script**, using recorded subscription
+      percentages. No real paid-model A/B measurements have been taken.
+- [x] **Migration 81 collision handling**: preserve fork memory migrations
+      81/82 and install upstream message-search upgrade as 83, with regression tests.
+- [x] Durable **revisioned plans** (migration 84), dependency/cycle validation,
+      optimistic edit guards, sequential-ready selection and logical checkout-key
+      collision refusal. Manual plan editor and authenticated, thread-owned RPCs
+      are connected. **No real agent scheduling or filesystem lock is attached.**
+- [x] Hosted **macOS unsigned desktop build** and preload smoke, Linux desktop
+      build/lint/unused export checks, focused memory/plan/migration tests, server,
+      contracts and client typechecks, plus web build.
+
+**CI evidence at `448d82d`:** [fork memory/OpenCode checks](https://github.com/jameswright1562/t3code/actions/runs/43016432685),
+[fork desktop/lint checks](https://github.com/jameswright1562/t3code/actions/runs/43016432683) and
+[hosted macOS build smoke](https://github.com/jameswright1562/t3code/actions/runs/43016432705)
+all completed successfully. General monorepo CI was still **pending**, so these
+passing focused checks are not an all-green branch-protection result.
+
+### Unfinished release blockers
+
+| Priority | Requirement                           | Status / acceptance gate                                                                                                                                                                                                                                                                                           |
+| -------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| P0       | **Upstream synchronization**          | Fork `main` at `f097733`; upstream `main` at `6700cf6`, **98 newer upstream commits** since `04f6cfc`. Merge/reconcile without rewriting applied fork migrations 81–84; retain OpenCode/MCP customizations, run migrations and full CI, then update fork `main` only through an approved merge.                    |
+| P0       | **Real agent plan runner**            | Manual state tracking only. Connect user-initiated provider dispatch, true checkout/worktree identity and filesystem exclusivity, explicit parallelism, child delegation, pause/cancel/retry, artifact provenance and recovery. Do not auto-run after app launch.                                                  |
+| P0       | **Crash-safe user-approved resume**   | Add pre-compaction, handoff, delegation and shutdown capture; validate file fingerprints and Git state; reconcile committed events; ledger ambiguous external effects; require explicit resume approval before any retry. Existing read-only recovery is not equivalent.                                           |
+| P0       | **MCP credentials and tooling**       | Implement macOS Keychain secret references, OAuth PKCE/state, HTTP and stdio connection test, tool discovery/health/reconnect, provider-project-tool allowlists enforced per invocation. Avoid persisting raw credentials in SQLite or logs.                                                                       |
+| P0       | **Token and subscription efficiency** | Add per-step/child/turn/concurrency limits where adapters expose counters, measured versus unknown usage labeling, usage attribution and explicit budget stops. Run controlled native-Claude-versus-T3 macOS A/B with actual five-hour and weekly quota percentages; do not infer subscription meters from tokens. |
+| P0       | **Release validation**                | Full monorepo CI, migration replay against fork and upstream DB copies, packaged/signed macOS restart and security tests, credentialed provider/MCP smoke, independent PR review and branch protection. GitHub-hosted unsigned build is not a packaged test.                                                       |
+
+**Local validation limitation:** the connected Mac development machine was offline
+when checked on 11 November 2026. Live Keychain/Claude-authenticated benchmarks
+and personal packaged-app testing cannot be certified from hosted CI.
+
+**Design invariants:** one integration PR; no automatic triggers; only run while
+Mac is active; default to sequential execution; avoid duplicate LLM calls and
+silent quota drain; no unauthorized parallel writers; never fabricate usage or
+claim exactly-once effects without a proven external effect ledger.
+
+---
+
+### Incremental checkout protection (migration 85; not yet provider-integrated)
+
+- [x] Added a persistent SQLite exclusive checkout lease ledger with canonical
+      absolute-path checks, parent/child path overlap refusal, owner verification
+      and no automatic lock expiry. A crashed server must not silently release a
+      potentially live native child writer. Unit and migration tests cover overlap,
+      idempotence, cross-owner release refusal and persistence.
+- [ ] Wire trusted realpaths, acquisition and release into provider dispatch,
+      finalization, cancellation and crash review. Until that wiring is complete,
+      this module **does not protect arbitrary native-provider writes**. The plan
+      board remains a manual tracker, not a lock-enforced execution engine.
+
+### Plan-board checkout lease integration (migration 85; requires CI)
+
+Manual step transitions now resolve each checkout from the **trusted host**
+project/worktree realpath. The server ignores caller-supplied checkout keys on
+creation and edits. Marking a step as running atomically acquires a persistent
+exclusive plan lease; completing/failing/cancelling it releases that lease
+in the same transaction as the step status update. Parent/child paths and
+cross-thread plan writers are blocked. A lease left by a crash does not expire
+automatically; a missing lease or moved checkout fails closed for manual review.
+**These are plan-board leases only:** existing native provider sessions and
+external tool executions are not yet covered by this gate. The UI still marks
+steps manually and does not dispatch agents or prove a provider has stopped.
+
+### Upstream native merge diagnostic (11 November 2026)
+
+The full three-way Git-tree comparison from common upstream `3a8c250` to
+upstream `6700cf6` found **453 upstream-only path changes** and **13 paths
+edited independently in the fork** (all other paths are already identical or
+fork-only). The new `.github/workflows/fork-upstream-merge-probe.yml` runs an
+actual `git merge --no-commit` on a public runner, prints and uploads any
+unresolved hunks, then aborts. It never rewrites fork `main` or pushes an
+untested merge. A successful probe only demonstrates mechanical mergeability;
+all migrations, MCP behavior, native adapters and full CI must still be checked.
+
+## Historical implementation snapshot — 10 November 2026
+
+**Historical integration branch (since merged):** `feat/macos-orchestrator-upstream-base`, [PR #3](https://github.com/jameswright1562/t3code/pull/3), based on upstream `d756fed7`. The older May 2026 fork main and draft PR #2 are preserved, not overwritten.
 
 **Committed, subject to validation:**
 
@@ -71,7 +313,7 @@ Our new modules should remain orthogonal to the provider runner, so they can be 
 
 ## 3. Architecture
 
-~~~text
+```text
 T3 Code macOS Desktop
   ├─ Thread UI / plan board / usage dashboard
   ├─ Settings / MCP registry / memory browser
@@ -100,7 +342,7 @@ Local durable persistence (SQLite, WAL)
   └─ idempotency records for actions
 Local artifact store (files, diffs, large transcripts, hashes)
 macOS Keychain (tokens/credentials)
-~~~
+```
 
 Single-user local deployment first. A future team/cloud edition can introduce separate workers, Temporal or a server database, but none are needed for this scope.
 
@@ -114,7 +356,7 @@ Keep the raw user messages, tool call metadata, significant tool results, agent 
 
 ### 4.2 Durable structured memory
 
-Facts, decisions, user preferences, project conventions, file references, constraints, failed approaches and unresolved questions are individually queryable records with scope, source, validity, confidence and revision history. A model may *propose* a memory; it cannot silently mark a proposal as verified.
+Facts, decisions, user preferences, project conventions, file references, constraints, failed approaches and unresolved questions are individually queryable records with scope, source, validity, confidence and revision history. A model may _propose_ a memory; it cannot silently mark a proposal as verified.
 
 ### 4.3 Context checkpoints
 
@@ -130,17 +372,17 @@ The current model's messages, prompt cache, tool exposure, speculative reasoning
 
 Types:
 
-| Kind | Examples | Typical retention |
-| --- | --- | --- |
-| fact | A service is written in C#; a repository contains a component | Until contradicted or expired |
-| decision | The team chose a provider adapter and why | Durable with supersession |
-| preference | Coding conventions, preferred review style | User/project scoped, editable |
-| constraint | Do not modify production resources | Task/project until revoked |
-| file_reference | Path, symbol, commit, design frame | Verify staleness before reuse |
-| failed_approach | A migration strategy failed and its failure mode | Durable until obsolete |
-| open_question | A design decision is unresolved | Until answered |
-| procedure | Verified command or workflow | Versioned; never assume universal |
-| outcome | Tests passed at commit X | Immutable evidence scoped to X |
+| Kind            | Examples                                                      | Typical retention                 |
+| --------------- | ------------------------------------------------------------- | --------------------------------- |
+| fact            | A service is written in C#; a repository contains a component | Until contradicted or expired     |
+| decision        | The team chose a provider adapter and why                     | Durable with supersession         |
+| preference      | Coding conventions, preferred review style                    | User/project scoped, editable     |
+| constraint      | Do not modify production resources                            | Task/project until revoked        |
+| file_reference  | Path, symbol, commit, design frame                            | Verify staleness before reuse     |
+| failed_approach | A migration strategy failed and its failure mode              | Durable until obsolete            |
+| open_question   | A design decision is unresolved                               | Until answered                    |
+| procedure       | Verified command or workflow                                  | Versioned; never assume universal |
+| outcome         | Tests passed at commit X                                      | Immutable evidence scoped to X    |
 
 Scopes, in order of isolation:
 
@@ -195,7 +437,7 @@ Users can inspect, pin, edit, delete and export memories. Deletion marks the ite
 
 A checkpoint is a versioned, durable snapshot of sufficient state to safely resume.
 
-~~~json
+```json
 {
   "checkpointId": "cp_...",
   "schemaVersion": 1,
@@ -240,7 +482,7 @@ A checkpoint is a versioned, durable snapshot of sufficient state to safely resu
     "spentEstimated": 0
   }
 }
-~~~
+```
 
 Checkpoint writes must be atomic: either the old checkpoint remains valid or a complete new checkpoint appears. Append-only checkpoints are preferable. The latest is determined by sequence/revision, not solely timestamps. Recover from the last valid checkpoint and replay later events.
 
@@ -298,7 +540,7 @@ Keep native execution modes distinct from raw API calls. A subscription-authenti
 
 Suggested adapter contract:
 
-~~~ts
+```ts
 interface NativeAgentAdapter {
   start(run: AgentRunRequest): Promise<AgentSession>;
   resume(nativeSessionId: string, input: AgentInput): Promise<AgentResult>;
@@ -306,7 +548,7 @@ interface NativeAgentAdapter {
   getCapabilities(): Promise<AgentCapabilities>;
   getUsage?(nativeSessionId: string): Promise<ObservedUsage | undefined>;
 }
-~~~
+```
 
 For providers without reliable native session export, store a durable harness-owned handoff packet. Label imported summaries clearly; do not claim lossless resumption.
 
@@ -367,7 +609,7 @@ Use T3's SQLite database with WAL and migrations. Large artifacts go on disk wit
 
 Initial proposed tables:
 
-~~~sql
+```sql
 CREATE TABLE agent_memory_items (
   id TEXT PRIMARY KEY,
   scope_type TEXT NOT NULL,
@@ -406,7 +648,7 @@ CREATE TABLE agent_memory_events (
   payload_json TEXT NOT NULL,
   occurred_at TEXT NOT NULL
 );
-~~~
+```
 
 Add scope, status, chronological and checkpoint indexes. Use FTS5 in a follow-up migration if the bundled SQLite build supports it; retain non-FTS fallback.
 
@@ -451,6 +693,7 @@ Memory and context data should always be exportable into a versioned JSON/Markdo
 ## 16. Acceptance tests
 
 **Memory:**
+
 - Save a verified project decision, restart T3, retrieve the same ID and provenance.
 - Save two conflicting candidate facts; neither silently deletes the other.
 - A task for Project B cannot retrieve Project A facts without an explicit shared scope.
@@ -461,12 +704,14 @@ Memory and context data should always be exportable into a versioned JSON/Markdo
 - Save large raw tool artifacts externally and retrieve by checksum.
 
 **Context:**
+
 - A delegated agent gets a bounded context payload, not the full history.
 - Provider change preserves plan, decisions and unresolved issues.
 - Relevance ordering, pinning and budget limits are deterministic for given inputs.
 - Compaction preserves source refs and task outcome.
 
 **MCP:**
+
 - stdio and HTTP connections can be configured from UI without manual JSON.
 - Enabled server reaches selected providers only.
 - OAuth/header credentials never enter logs or prompt text.
@@ -474,6 +719,7 @@ Memory and context data should always be exportable into a versioned JSON/Markdo
 - Reconnection removes stale registrations.
 
 **Orchestration:**
+
 - Plan edit increments revision and invalidates stale scheduled steps.
 - Dependent step never runs before prerequisites complete.
 - Concurrent same-checkout writers serialize or require worktrees.
@@ -481,6 +727,7 @@ Memory and context data should always be exportable into a versioned JSON/Markdo
 - Closed/reopened app displays the exact durable plan state.
 
 **Quota:**
+
 - Monitor probes do not silently consume inference tokens.
 - Task budget prevents unbounded child spawning.
 - Claude 5h usage is benchmarked against native CLI with the merged fix.
@@ -572,7 +819,7 @@ The first usable release must let the user start a multi-step task in T3 on macO
 
 ## 21. Consolidated PR #3 gap closure and release gates (2026-11-10)
 
-All feature work belongs on **one integration branch and PR #3**, not four competing implementation PRs. Issues #4–#7 remain tracked requirements, not proof that any feature is complete. Do not merge this draft just because a particular focused test passes.
+Historical consolidation note: PR #3 has merged. Continue all release-gate implementation in **draft PR #8**; do not open competing feature PRs. Issues #4–#7 remain tracked requirements, not proof that any feature is complete. Do not merge this draft just because a particular focused test passes.
 
 ### Verified implementation increments
 
@@ -583,14 +830,14 @@ All feature work belongs on **one integration branch and PR #3**, not four compe
 
 ### Required before production-ready claim
 
-| Area | Required implementation | Gate |
-| --- | --- | --- |
-| Memory UI | Accessible browser, authenticated confirm/decline, edit-as-revision, pin, supersede, tombstone, full export/import with audit and source links | Browser E2E + scope/privilege/restart tests |
-| MCP UI | UI CRUD/test/health for HTTP + stdio, canonical server-scoped credential references via macOS Keychain, OAuth PKCE/state, explicit provider/project authorization and tool allowlists | Real stdio/HTTP integration tests, credential redaction, disconnect/reconnect, cross-provider tests |
-| Crash resilience | Checkpoint before compaction/delegation/handoff and at safe boundaries, event cursor, idempotent effect ledger, Git HEAD/file fingerprint check, checkpoint browser + user-approved Resume | Kill/relaunch matrix at every side-effect boundary, corruption and divergent HEAD tests |
-| Plans | Persist editable plan steps/revisions/dependencies/artifacts; scheduler rejects stale revisions, defaults sequential; checkout locks/worktree isolation; cancellation/retry semantics | Deterministic state machine and concurrent-writer tests |
-| Token efficiency | Separate native subscription vs metered API paths, per-run/task/child hard caps where observable, provider-specific telemetry with unknown labels, no token-spending polling | Controlled Claude Code vs T3 A/B macOS runs; no unaudited inference/background agents |
-| Compatibility | Source-checkout and packaged Mac smoke runs; Cursor/OpenCode/Claude/Codex/custom routes; full mono-repo typecheck/lint/tests and upstream integration audit | Required CI green plus manual Mac launch and provider smoke tests |
+| Area             | Required implementation                                                                                                                                                                    | Gate                                                                                                |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| Memory UI        | Accessible browser, authenticated confirm/decline, edit-as-revision, pin, supersede, tombstone, full export/import with audit and source links                                             | Browser E2E + scope/privilege/restart tests                                                         |
+| MCP UI           | UI CRUD/test/health for HTTP + stdio, canonical server-scoped credential references via macOS Keychain, OAuth PKCE/state, explicit provider/project authorization and tool allowlists      | Real stdio/HTTP integration tests, credential redaction, disconnect/reconnect, cross-provider tests |
+| Crash resilience | Checkpoint before compaction/delegation/handoff and at safe boundaries, event cursor, idempotent effect ledger, Git HEAD/file fingerprint check, checkpoint browser + user-approved Resume | Kill/relaunch matrix at every side-effect boundary, corruption and divergent HEAD tests             |
+| Plans            | Persist editable plan steps/revisions/dependencies/artifacts; scheduler rejects stale revisions, defaults sequential; checkout locks/worktree isolation; cancellation/retry semantics      | Deterministic state machine and concurrent-writer tests                                             |
+| Token efficiency | Separate native subscription vs metered API paths, per-run/task/child hard caps where observable, provider-specific telemetry with unknown labels, no token-spending polling               | Controlled Claude Code vs T3 A/B macOS runs; no unaudited inference/background agents               |
+| Compatibility    | Source-checkout and packaged Mac smoke runs; Cursor/OpenCode/Claude/Codex/custom routes; full mono-repo typecheck/lint/tests and upstream integration audit                                | Required CI green plus manual Mac launch and provider smoke tests                                   |
 
 ### Explicit recovery decision model
 
@@ -619,3 +866,90 @@ All feature work belongs on **one integration branch and PR #3**, not four compe
 - Enforce adapter-visible turn/delegation/parallelism caps even when native providers do not report authoritative token usage. Where a strict token cap cannot be measured, mark it **unavailable**, never pretend to enforce one.
 - Do not claim Claude five-hour subscription quota parity until controlled A/B telemetry is recorded; estimated tokens are not subscription quota percentages.
 
+---
+
+## 22. Post-merge work (PR #3 merged; new release-gates branch)
+
+The merged PR #3 supplies the memory browser, live-only export, scoped checkpoint inspection and a configurable MCP registry. Those are foundations, **not** production release gates.
+
+The new `feat/macos-harness-release-gates` branch adds a **full memory ledger backup/restore** distinct from the older live-only export. The version-2 scoped JSON includes source provenance, audit events, all revision ancestors, superseded entries, tombstones, and project-scoped checkpoint rows (not external Git artifacts or provider-native sessions). The import path checks a SHA-256 integrity checksum, requires an exact selected scope, rejects conflicting IDs, is atomic across entries/events, and is safe to retry. Its frontend is exposed under project Memory settings. A checksum prevents accidental corruption; it does not authenticate an untrusted backup. Backup remains a manual user action; it never copies one project's data into another.
+
+New tests cover tombstoned/revised history, project checkpoint restoration, scoped checkpoint history browsing with corrupt-entry fallback, repeated import, corruption, and cross-project restore refusal. Memory UI filters now include kind, verification, and pinned status; checkpoint selection is inspection only, not execution resume. CI results and a real macOS application smoke test are necessary before treating these as validated.
+
+A read-only checkpoint inspector now compares the saved HEAD and branch with the current trusted project worktree and marks a mismatch or dirty checkout. It reports unverified state if the saved commit or current Git state cannot be read, and never resumes/replays agent work.
+
+New final-run context checkpoints also record the Git HEAD SHA when the local checkout is readable. This is evidence for a future divergence check, **not** automatic recovery approval or a substitute for changed-file fingerprints.
+
+**Still required:** native macOS Keychain/OAuth MCP support and health checks; pre-handoff checkpoints, event-cursor replay and Git divergence guards; persisted editable dependency plans, scheduling and checkout locks; trustworthy turn budgets and a measured native Claude A/B comparison; full release smoke and security verification. Do not mark these complete just because memory backup has landed.
+
+## 23. Further post-merge safeguards
+
+- Final-run memory checkpoints now record the canonical thread event high-water
+  mark (separate from the run ordinal), as well as Git HEAD when available.
+  This allows future recovery to replay only later committed events, but does
+  **not** imply automatic side-effect-safe replay.
+- The UI offers project- and thread-scoped memory browsing. Common plaintext
+  credentials are refused during memory creation, revision and backup import;
+  this is a heuristic safety guard, not full DLP or a replacement for Keychain.
+- The optional persisted **maximum native provider runs per thread** setting
+  stops further native run starts once the canonical run ordinal exceeds the
+  cap. Zero is unlimited. Native child turns within one provider run, task-wide
+  budgets, cancellation and delegation concurrency are not yet capped.
+- `scripts/claudeQuotaBenchmark.ts` accepts recorded native Claude Code/T3
+  subscription meter deltas in paired, alternating order, with identical model,
+  effort, prompt/context fingerprints and token telemetry. It never calls a
+  model or converts token counts into subscription quota claims. The actual
+  macOS A/B data has not been collected; no quota parity is claimed.
+
+**Release blockers remain:** upstream Mac smoke tests, shared credentialed
+MCP/OAuth and health, pre-handoff/compaction/shutdown capture, safe user-approved
+resume with file/side-effect verification, editable dependency scheduler and
+native child-agent budgets. Keep PR #8 draft until real validation passes.
+
+## 24. Upstream migration collision (11 November 2026)
+
+Upstream introduced `081_ProjectionMessageSearchText` after this fork assigned
+migration 81 to AgentMemory and 82 to AgentMemorySearch. **Do not overwrite the
+fork's migration 81**: existing users have already committed that history.
+This branch carries the upstream message-search upgrade as fork migration 83,
+including idempotent search-text backfill and trigger recreation. A database
+whose migration journal contains upstream `81_ProjectionMessageSearchText`
+is explicitly reconciled by creating the fork's memory tables before migration
+82, without rewriting its journal. Unknown divergent histories still fail closed.
+
+This migration is necessary for upstream compatibility but does **not** mean
+all upstream commits have been merged. After an upstream merge, retain these
+fork migration IDs, audit the newest upstream migration manifest for further
+collisions, and run migration tests on a copy of both fork-upgraded and
+upstream-upgraded SQLite databases before release.
+
+## 25. Persisted plan state-machine foundation (11 November 2026)
+
+Migration 84 stores scoped, revisioned multi-step plans per thread. The pure
+state-machine rejects cycles, missing dependencies, stale revisions, deleting
+active/completed steps and simultaneous writers in one checkout. The default
+ready queue is sequential. Explicit parallel selection requires independent
+steps and distinct host-verified checkout identities. Persisted changes use an
+optimistic expected-revision guard. Tests exercise dependency order, persistence
+and isolation. **This does not launch agents, lock a real filesystem, cancel a
+provider or provide the editable plan UI.** Those remain P0 release blockers.
+
+## 26. User-facing plan editor (11 November 2026)
+
+Authenticated, project/thread-verified RPC endpoints expose create/read/edit and
+state transitions for revisioned harness plans. The project Settings plan editor
+can create a linear plan, edit pending steps and track step status. Host-side
+scope checks enforce thread ownership before reading or writing plan data.
+This is **manual plan tracking**, not automatic provider execution or native
+subagent delegation. No on-launch auto-run, automatic triggers, or background
+agent is introduced. Real agent scheduler integration and crash-safe resume
+remain release blockers.
+
+## 27. Hosted macOS build gate (11 November 2026)
+
+A dedicated `.github/workflows/fork-macos-smoke.yml` workflow compiles the
+desktop using a GitHub-hosted macOS runner and validates its preload bundle
+plus plan/migration/memory regressions. This requires no credentials and does
+not call paid agents. Passing this workflow is **not** equivalent to a signed
+macOS package, real Keychain/OAuth tests, provider sessions, crash/restart E2E
+or an actual Claude subscription quota benchmark. Those release gates remain.

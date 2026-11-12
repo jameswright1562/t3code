@@ -75,3 +75,4 @@ export * from "./settingsSecretValue.ts";
 export * from "./clientRpcPermissions.ts";
 
 export * from "./harnessMemory.ts";
+export * from "./harnessPlan.ts";

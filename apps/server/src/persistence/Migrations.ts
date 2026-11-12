@@ -84,6 +84,14 @@ import Migration0078 from "./Migrations/078_DropOrchestrationEventCorrelationInd
 import Migration0079 from "./Migrations/079_DelegatedRecoveryIndexes.ts";
 import Migration0080 from "./Migrations/080_ScheduledTaskThreadMode.ts";
 import Migration0081 from "./Migrations/081_AgentMemory.ts";
+import Migration0082 from "./Migrations/082_AgentMemorySearch.ts";
+import Migration0083 from "./Migrations/083_UpstreamProjectionMessageSearchText.ts";
+import Migration0084 from "./Migrations/084_HarnessPlans.ts";
+import Migration0085 from "./Migrations/085_HarnessCheckoutLeases.ts";
+import Migration0086 from "./Migrations/086_UpstreamTurnItemConversationIndex.ts";
+import Migration0087 from "./Migrations/087_UpstreamCommandReadIndexes.ts";
+import Migration0088 from "./Migrations/088_UpstreamLastExecutedRunIndex.ts";
+import Migration0089 from "./Migrations/089_UpstreamTurnItemCounts.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -168,6 +176,14 @@ const migrationEntries = [
   [79, "DelegatedRecoveryIndexes", Migration0079],
   [80, "ScheduledTaskThreadMode", Migration0080],
   [81, "AgentMemory", Migration0081],
+  [82, "AgentMemorySearch", Migration0082],
+  [83, "UpstreamProjectionMessageSearchText", Migration0083],
+  [84, "HarnessPlans", Migration0084],
+  [85, "HarnessCheckoutLeases", Migration0085],
+  [86, "UpstreamTurnItemConversationIndex", Migration0086],
+  [87, "UpstreamCommandReadIndexes", Migration0087],
+  [88, "UpstreamLastExecutedRunIndex", Migration0088],
+  [89, "UpstreamTurnItemCounts", Migration0089],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
@@ -184,6 +200,55 @@ const makeMigrationLoader = (throughId?: number) =>
 const FIRST_V2_MIGRATION_ID = 55;
 
 // Migrators skip ids up to the highest recorded; reject collisions that would skip V2 schema.
+/** Preserve the deployed upstream 81–85 and fork 81–85 journals unchanged.
+ * Reconcile missing fork schema transactionally and port upstream 82–85 as 86–89.
+ */
+const knownUpstreamMigrationNames = new Map<number, string>([
+  [81, "ProjectionMessageSearchText"],
+  [82, "TurnItemConversationIndex"],
+  [83, "CommandReadIndexes"],
+  [84, "LastExecutedRunIndex"],
+  [85, "TurnItemCounts"],
+]);
+
+const isKnownUpstreamMigration = (id: number, name: string) =>
+  knownUpstreamMigrationNames.get(id) === name;
+
+const reconcileKnownUpstreamMigrations = Effect.fn("reconcileKnownUpstreamMigrations")(function* (
+  throughId?: number,
+) {
+  const sql = yield* SqlClient.SqlClient;
+  const ledger = yield* sql`
+      SELECT 1 FROM sqlite_master
+      WHERE type = 'table' AND name = 'effect_sql_migrations'
+    `;
+  if (ledger.length === 0) return;
+  const entries = yield* sql<{
+    readonly migration_id: number;
+    readonly name: string;
+  }>`
+      SELECT migration_id, name FROM effect_sql_migrations
+      WHERE migration_id BETWEEN 81 AND 85 ORDER BY migration_id
+    `;
+  for (const row of entries) {
+    if (throughId !== undefined && row.migration_id > throughId) continue;
+    if (!isKnownUpstreamMigration(row.migration_id, row.name)) continue;
+    const forkMigration = migrationEntries.find(([id]) => id === row.migration_id)?.[2];
+    if (forkMigration === undefined) continue;
+    // Idempotent fork migrations 81–85 use guards for existing tables,
+    // indexes and search columns. Failure aborts startup.
+    yield* sql.withTransaction(forkMigration).pipe(
+      Effect.mapError(
+        (cause) =>
+          new Migrator.MigrationError({
+            kind: "BadState",
+            message: `Failed to reconcile fork migration ${row.migration_id} after upstream ${row.name}: ${String(cause)}`,
+          }),
+      ),
+    );
+  }
+});
+
 const assertV2MigrationsCanRun = Effect.fn("assertV2MigrationsCanRun")(function* (
   throughId?: number,
 ) {
@@ -207,6 +272,7 @@ const assertV2MigrationsCanRun = Effect.fn("assertV2MigrationsCanRun")(function*
       return [];
     const recordedName = recordedNames.get(id);
     if (recordedName === name) return [];
+    if (recordedName !== undefined && isKnownUpstreamMigration(id, recordedName)) return [];
     return [`${id}_${name} (recorded: ${recordedName ?? "nothing"})`];
   });
   if (skipped.length === 0) return;
@@ -229,7 +295,12 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
     toMigrationInclusive === undefined || toMigrationInclusive >= FIRST_V2_MIGRATION_ID;
   const previewMigrations = includesV2 ? yield* reconcileV2PreviewMigration() : [];
   if (includesV2) {
+    // Validate the entire journal before touching even a recognized upstream
+    // collision. Unknown divergent histories must not be partially repaired.
     yield* assertV2MigrationsCanRun(toMigrationInclusive);
+    if (toMigrationInclusive === undefined || toMigrationInclusive >= 81) {
+      yield* reconcileKnownUpstreamMigrations(toMigrationInclusive);
+    }
   }
   const executedMigrations = [
     ...previewMigrations,
@@ -251,7 +322,7 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
     if (expected === undefined) {
       return [`${row.migration_id}:${row.name} (unknown to this build)`];
     }
-    return expected === row.name
+    return expected === row.name || isKnownUpstreamMigration(row.migration_id, row.name)
       ? []
       : [`${row.migration_id}:${row.name} (this build: ${expected})`];
   });

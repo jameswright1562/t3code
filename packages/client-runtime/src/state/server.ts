@@ -1205,12 +1205,49 @@ export function createServerEnvironmentAtoms<R, E>(
 
   return {
     configValueAtom,
+    harnessPlan: createEnvironmentQueryAtomFamily(runtime, {
+      label: "environment-data:harness:plan:read",
+      idleTtlMs: 0,
+      staleTimeMs: 0,
+      execute: (input: EnvironmentRpcInput<typeof WS_METHODS.harnessPlanRead>) =>
+        requestGuarded(WS_METHODS.harnessPlanRead, input),
+    }),
+    harnessCreatePlan: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:harness:plan:create",
+      tag: WS_METHODS.harnessPlanCreate,
+    }),
+    harnessMutatePlan: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:harness:plan:mutate",
+      tag: WS_METHODS.harnessPlanMutate,
+    }),
+    harnessDispatchPlanStep: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:harness:plan:dispatch",
+      tag: WS_METHODS.harnessPlanDispatch,
+    }),
+    harnessInterruptPlanStep: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:harness:plan:interrupt",
+      tag: WS_METHODS.harnessPlanInterrupt,
+    }),
+    harnessCheckoutLeases: createEnvironmentQueryAtomFamily(runtime, {
+      label: "environment-data:harness:plan:leases",
+      idleTtlMs: 0,
+      staleTimeMs: 0,
+      execute: (input: EnvironmentRpcInput<typeof WS_METHODS.harnessPlanLeases>) =>
+        requestGuarded(WS_METHODS.harnessPlanLeases, input),
+    }),
     harnessMemories: createEnvironmentQueryAtomFamily(runtime, {
       label: "environment-data:harness:memory:list",
       idleTtlMs: 0,
       staleTimeMs: 0,
       execute: (input: EnvironmentRpcInput<typeof WS_METHODS.harnessMemoryList>) =>
         requestGuarded(WS_METHODS.harnessMemoryList, input),
+    }),
+    harnessVerifyCheckpointGit: createEnvironmentQueryAtomFamily(runtime, {
+      label: "environment-data:harness:checkpoint:git",
+      idleTtlMs: 0,
+      staleTimeMs: 0,
+      execute: (input: EnvironmentRpcInput<typeof WS_METHODS.harnessCheckpointVerifyGit>) =>
+        requestGuarded(WS_METHODS.harnessCheckpointVerifyGit, input),
     }),
     harnessRecoverCheckpoint: createEnvironmentQueryAtomFamily(runtime, {
       label: "environment-data:harness:checkpoint:recover",
@@ -1234,6 +1271,21 @@ export function createServerEnvironmentAtoms<R, E>(
     harnessReviseMemory: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:harness:memory:revise",
       tag: WS_METHODS.harnessMemoryRevise,
+    }),
+    harnessBackupMemory: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:harness:memory:backup",
+      tag: WS_METHODS.harnessMemoryBackup,
+    }),
+    harnessCheckpointHistory: createEnvironmentQueryAtomFamily(runtime, {
+      label: "environment-data:harness:checkpoint:history",
+      idleTtlMs: 0,
+      staleTimeMs: 0,
+      execute: (input: EnvironmentRpcInput<typeof WS_METHODS.harnessCheckpointHistory>) =>
+        requestGuarded(WS_METHODS.harnessCheckpointHistory, input),
+    }),
+    harnessRestoreMemory: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:harness:memory:restore",
+      tag: WS_METHODS.harnessMemoryRestore,
     }),
     harnessExportMemory: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:harness:memory:export",

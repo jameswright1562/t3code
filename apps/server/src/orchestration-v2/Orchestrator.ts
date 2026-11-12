@@ -12,6 +12,7 @@ import {
   usageLimitBlockedRun,
 } from "@t3tools/shared/orchestrationV2ThreadError";
 import { canonicalizeGitCafePullRequestUrl } from "@t3tools/source-control-definitions/registry";
+import { queuedHarnessRecoveryRuns } from "./HarnessPlan.ts";
 import { threadPullRequestsOf } from "../sourceControl/threadPullRequests.ts";
 import {
   normalizeThreadPullRequestKey,
@@ -176,6 +177,7 @@ import * as RunExecutionService from "./RunExecutionService.ts";
 import { ProviderSessionManagerV2 } from "./ProviderSessionManager.ts";
 import { ProviderSwitchServiceV2 } from "./ProviderSwitchService.ts";
 import { isAutomaticCompletionRun, queuedRunsInDeliveryOrder } from "./QueuedRunOrder.ts";
+import { evaluateDelegatedChildBudget, retainsDelegatedChildSlot } from "./HarnessRunBudget.ts";
 import { isRuntimePolicyAboveCeilingError, RuntimePolicyV2 } from "./RuntimePolicy.ts";
 import {
   endOrphanedNativeSubagent,
@@ -2751,18 +2753,40 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const threadIds = yield* projectionStore.getRecoveryThreadIds("queued-runs");
     let resumed = 0;
     for (const threadId of threadIds) {
-      const resumedThread = yield* Effect.gen(function* () {
-        if (!(yield* projectionStore.canStartQueuedRun(threadId))) return false;
-        yield* threadDispatch.withLock(threadId, startNextQueuedRun(threadId));
-        return true;
-      }).pipe(
-        Effect.catch((cause) =>
-          Effect.logWarning("Failed to resume queued V2 run after recovery", {
-            threadId,
-            cause,
-          }).pipe(Effect.as(false)),
-        ),
-      );
+      const resumedThread = yield* threadDispatch
+        .withLock(
+          threadId,
+          Effect.gen(function* () {
+            const projection = yield* readCommandProjection(threadId);
+            const uncertainHarnessRuns = queuedHarnessRecoveryRuns(projection.runs);
+            if (uncertainHarnessRuns.length > 0) {
+              // A crash makes provider dispatch ambiguous. Retain the original
+              // user-approved intent, but never restart it automatically.
+              const now = yield* DateTime.now;
+              yield* writeSystemEvents(
+                uncertainHarnessRuns.map((run) => ({
+                  type: "run.updated" as const,
+                  threadId,
+                  runId: run.id,
+                  providerInstanceId: run.providerInstanceId,
+                  occurredAt: now,
+                  payload: { ...run, queueHeld: true },
+                })),
+              );
+            }
+            if (!(yield* projectionStore.canStartQueuedRun(threadId))) return false;
+            yield* startNextQueuedRun(threadId);
+            return true;
+          }),
+        )
+        .pipe(
+          Effect.catch((cause) =>
+            Effect.logWarning("Failed to resume queued V2 run after recovery", {
+              threadId,
+              cause,
+            }).pipe(Effect.as(false)),
+          ),
+        );
       if (resumedThread) {
         resumed += 1;
       }
@@ -8200,7 +8224,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const parentProjection = yield* projectionStore
         .getThreadRecords(
           command.parentThreadId,
-          ["runs", "nodes", "providerThreads", "providerTurns", "attempts"],
+          ["runs", "nodes", "providerThreads", "providerTurns", "attempts", "subagents"],
           // The parent node must belong to the active run, whose nodes this keeps.
           { omitSettledLeafNodes: true },
         )
@@ -8242,6 +8266,26 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           commandId: command.commandId,
           commandType: command.type,
           cause: `Parent node ${command.parentNodeId} is not part of active run ${parentRun.id}.`,
+        });
+      }
+
+      // Count persisted children while holding the parent thread dispatch lock.
+      // Failed admission must not emit a child thread or start a provider.
+      const settings = yield* serverSettings.getSettings.pipe(Effect.orDie);
+      const budget = evaluateDelegatedChildBudget({
+        activeChildren: parentProjection.subagents.filter(
+          (child) =>
+            child.runId === parentRun.id &&
+            child.origin === "app_owned" &&
+            retainsDelegatedChildSlot(child.status),
+        ).length,
+        maxConcurrentChildren: settings.harnessMaxConcurrentDelegatedTasks,
+      });
+      if (!budget.allowed) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: budget.reason,
         });
       }
 

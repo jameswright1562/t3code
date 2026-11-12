@@ -10890,7 +10890,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               : {
                   ...mcpOverrides,
                   mcpServers: {
-                    ...(mcpOverrides.mcpServers ?? {}),
+                    ...mcpOverrides.mcpServers,
                     ...externalMcpServers,
                   },
                 };

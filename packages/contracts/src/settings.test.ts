@@ -41,6 +41,37 @@ const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const encodeServerSettingsPatch = Schema.encodeSync(ServerSettingsPatch);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 
+describe("harness native run cap settings", () => {
+  it("defaults off for existing settings and persists bounded updates", () => {
+    expect(decodeServerSettings({}).harnessMaxRunsPerThread).toBe(0);
+    expect(decodeServerSettingsPatch({ harnessMaxRunsPerThread: 20 })).toEqual({
+      harnessMaxRunsPerThread: 20,
+    });
+    expect(decodeServerSettings({ harnessMaxRunsPerThread: 1000 }).harnessMaxRunsPerThread).toBe(
+      1000,
+    );
+    expect(() => decodeServerSettingsPatch({ harnessMaxRunsPerThread: -1 })).toThrow();
+    expect(() => decodeServerSettingsPatch({ harnessMaxRunsPerThread: 1.25 })).toThrow();
+    expect(() => decodeServerSettingsPatch({ harnessMaxRunsPerThread: 1001 })).toThrow();
+  });
+});
+
+describe("harness delegated child concurrency cap settings", () => {
+  it("defaults to four for older installations and accepts bounded changes", () => {
+    expect(decodeServerSettings({}).harnessMaxConcurrentDelegatedTasks).toBe(4);
+    expect(decodeServerSettingsPatch({ harnessMaxConcurrentDelegatedTasks: 1 })).toEqual({
+      harnessMaxConcurrentDelegatedTasks: 1,
+    });
+    expect(
+      decodeServerSettings({ harnessMaxConcurrentDelegatedTasks: 32 })
+        .harnessMaxConcurrentDelegatedTasks,
+    ).toBe(32);
+    expect(() => decodeServerSettingsPatch({ harnessMaxConcurrentDelegatedTasks: 0 })).toThrow();
+    expect(() => decodeServerSettingsPatch({ harnessMaxConcurrentDelegatedTasks: 33 })).toThrow();
+    expect(() => decodeServerSettingsPatch({ harnessMaxConcurrentDelegatedTasks: 1.5 })).toThrow();
+  });
+});
+
 describe("storage cleanup settings", () => {
   it("keeps cleanup disabled for existing installations", () => {
     expect(decodeServerSettings({}).worktreeCleanup).toBeNull();

@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import type { HarnessMcpServerConfig, ProjectId, ProviderInstanceId } from "@t3tools/contracts";
 import {
   selectHarnessMcpServers,
+  validateHarnessMcpServer,
   toClaudeHarnessMcpServers,
   toCodexHarnessMcpConfig,
 } from "./harnessMcp.ts";
@@ -32,15 +33,84 @@ describe("shared MCP provider routing", () => {
       malformed: server({ url: "invalid" }),
       local: server({ url: "http://127.0.0.1:8765/mcp" }),
     };
-    expect(Object.keys(selectHarnessMcpServers(registry, "claudeAgent" as ProviderInstanceId, "alpha" as ProjectId))).toEqual(["allowed", "local"]);
-    expect(Object.keys(selectHarnessMcpServers(registry, "claudeAgent" as ProviderInstanceId, "beta" as ProjectId))).toEqual(["otherProject"]);
+    expect(
+      Object.keys(
+        selectHarnessMcpServers(
+          registry,
+          "claudeAgent" as ProviderInstanceId,
+          "alpha" as ProjectId,
+        ),
+      ),
+    ).toEqual(["allowed", "local"]);
+    expect(
+      Object.keys(
+        selectHarnessMcpServers(registry, "claudeAgent" as ProviderInstanceId, "beta" as ProjectId),
+      ),
+    ).toEqual(["otherProject"]);
+  });
+
+  it("refuses inline credentials and invalid stdio arguments before native injection", () => {
+    const registry = {
+      clean: server({ url: "https://mcp.example.org/mcp?tenant=abc" }),
+      userinfo: server({ url: "https://user:secret@mcp.example.org/mcp" }),
+      tokenQuery: server({ url: "https://mcp.example.org/mcp?access_token=secret" }),
+      fragment: server({ url: "https://mcp.example.org/mcp#secret" }),
+      unsafeArg: server({
+        transport: "stdio",
+        url: "",
+        command: "npx",
+        args: ["--api-key", "secret"],
+      }),
+      unsafeCwd: server({ transport: "stdio", url: "", command: "npx", cwd: "bad\npath" }),
+      bearerHeader: server({
+        transport: "stdio",
+        url: "",
+        command: "npx",
+        args: ["--header", "Authorization: Bearer example-token"],
+      }),
+      headerFlag: server({
+        transport: "stdio",
+        url: "",
+        command: "npx",
+        args: ["--header=Content-Type: application/json"],
+      }),
+      envSecret: server({
+        transport: "stdio",
+        url: "",
+        command: "npx",
+        args: ["--env", "MCP_ACCESS_TOKEN=example"],
+      }),
+      safeArg: server({
+        transport: "stdio",
+        url: "",
+        command: "npx",
+        args: ["-y", "@example/mcp-server"],
+      }),
+    };
+    expect(
+      Object.keys(
+        selectHarnessMcpServers(
+          registry,
+          "claudeAgent" as ProviderInstanceId,
+          "alpha" as ProjectId,
+        ),
+      ),
+    ).toEqual(["clean", "safeArg"]);
+    expect(validateHarnessMcpServer("userinfo", registry.userinfo)).toMatch(/credentials/);
+    expect(validateHarnessMcpServer("unsafeArg", registry.unsafeArg)).toMatch(/tokens/);
+    expect(validateHarnessMcpServer("bearerHeader", registry.bearerHeader)).toMatch(/tokens/);
+    expect(validateHarnessMcpServer("headerFlag", registry.headerFlag)).toMatch(/headers/);
+    expect(validateHarnessMcpServer("envSecret", registry.envSecret)).toMatch(/credential/);
   });
 
   it("serializes HTTP and stdio servers to native runtime formats", () => {
     const selected = {
       external: server({ projectIds: [] }),
       compiler: server({
-        transport: "stdio", url: "", command: "npx", args: ["-y", "mcp-test"],
+        transport: "stdio",
+        url: "",
+        command: "npx",
+        args: ["-y", "mcp-test"],
         allowedTools: ["search"],
       }),
     };
@@ -50,7 +120,11 @@ describe("shared MCP provider routing", () => {
     });
     expect(toCodexHarnessMcpConfig(selected)).toMatchObject({
       "mcp_servers.external": { url: "https://mcp.example.org/mcp" },
-      "mcp_servers.compiler": { command: "npx", args: ["-y", "mcp-test"], enabled_tools: ["search"] },
+      "mcp_servers.compiler": {
+        command: "npx",
+        args: ["-y", "mcp-test"],
+        enabled_tools: ["search"],
+      },
     });
   });
 });

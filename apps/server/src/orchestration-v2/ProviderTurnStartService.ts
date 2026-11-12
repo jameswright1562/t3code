@@ -24,6 +24,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import * as AgentMemoryContextService from "../memory/AgentMemoryContextService.ts";
 import * as ServerConfig from "../config.ts";
@@ -32,6 +33,14 @@ import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import { evaluateThreadRunBudget } from "./HarnessRunBudget.ts";
+import {
+  acquireCheckoutLease,
+  checkoutPathsOverlap,
+  harnessNativeLeaseRejection,
+  listActiveCheckoutLeases,
+} from "./HarnessCheckoutLease.ts";
+import { readHarnessPlan } from "./HarnessPlanStore.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
 import * as EventSink from "./EventSink.ts";
 import * as ProviderUsageAnalytics from "../telemetry/ProviderUsageAnalytics.ts";
@@ -152,13 +161,19 @@ export const layer: Layer.Layer<
     const eventSink = yield* EventSink.EventSinkV2;
     const turnAnalytics = yield* ProviderUsageAnalytics.ProviderTurnAnalytics;
     const contextHandoffService = yield* ContextHandoffService.ContextHandoffServiceV2;
-    const agentMemoryContext = yield* Effect.serviceOption(AgentMemoryContextService.AgentMemoryContextService);
+    const agentMemoryContext = yield* Effect.serviceOption(
+      AgentMemoryContextService.AgentMemoryContextService,
+    );
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
     const projects = yield* ProjectService.ProjectService;
     const providerAuth = yield* ProviderAuthService.ProviderAuthService;
+    const harnessSettings = yield* ServerSettings.ServerSettingsService;
+    // The legacy provider test harness has no database; actual harness dispatch
+    // requires durable storage and fails closed if this service is absent.
+    const harnessSql = yield* Effect.serviceOption(SqlClient.SqlClient);
     const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
     const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
     const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
@@ -635,6 +650,20 @@ export const layer: Layer.Layer<
           return;
         }
       }
+      const { harnessMaxRunsPerThread } = yield* harnessSettings.getSettings;
+      const runBudgetDecision = evaluateThreadRunBudget({
+        runOrdinal: run.ordinal,
+        maxRuns: harnessMaxRunsPerThread,
+      });
+      if (!runBudgetDecision.allowed) {
+        yield* settleStartFailure({
+          signal: "harness-thread-run-budget",
+          title: "Thread run budget reached",
+          error: new Error(runBudgetDecision.reason),
+          message: runBudgetDecision.reason,
+        });
+        return;
+      }
       const { worktreePath, branch } = projection.thread;
       if (worktreePath !== null && branch !== null) {
         const exists = yield* fileSystem
@@ -674,6 +703,129 @@ export const layer: Layer.Layer<
               });
               return;
             }
+          }
+        }
+      }
+      // A native provider can write to the checkout independently of the plan
+      // board. Reserve its realpath before opening the provider session, and
+      // reject conflicting threads. Crash-held leases never expire on startup.
+      // The plan-run RPC has already reserved its own lease before dispatch.
+      const nativeCheckout = yield* fileSystem
+        .realPath(checkpointScope.cwd)
+        .pipe(Effect.orElseSucceed(() => null));
+      if (nativeCheckout === null || Option.isNone(harnessSql)) {
+        if (String(run.userMessageId).startsWith("harness:")) {
+          yield* settleStartFailure({
+            signal: "harness-checkout-unverified",
+            title: "Could not verify native checkout lease",
+            error: new Error("Missing trusted checkout realpath or durable SQL lease ledger."),
+            message: "Plan agent start requires a verified checkout and durable lease.",
+          });
+          return;
+        }
+        // Legacy turns without a harness context retain T3's original behavior.
+        // They are not claimed to be globally checkout-lock protected.
+      } else {
+        const existingLeases = yield* listActiveCheckoutLeases().pipe(
+          Effect.provideService(SqlClient.SqlClient, harnessSql.value),
+          Effect.result,
+        );
+        if (existingLeases._tag === "Failure") {
+          yield* settleStartFailure({
+            signal: "harness-lease-read-failure",
+            title: "Could not inspect native checkout leases",
+            error: new Error("Persistent checkout lease ledger unavailable."),
+          });
+          return;
+        }
+        const overlapping = existingLeases.success.filter((lease) =>
+          checkoutPathsOverlap(lease.checkoutPath, nativeCheckout),
+        );
+        const storedPlan =
+          run.sourcePlanRef === undefined
+            ? null
+            : yield* readHarnessPlan({
+                projectId: projection.thread.projectId,
+                threadId: projection.thread.id,
+              }).pipe(
+                Effect.provideService(SqlClient.SqlClient, harnessSql.value),
+                Effect.catchCause(() => Effect.succeed(null)),
+              );
+        const planStep =
+          storedPlan !== null && storedPlan.planId === run.sourcePlanRef?.planId
+            ? storedPlan.steps.find(
+                (step) => step.status === "running" && step.dispatchMessageId === run.userMessageId,
+              )
+            : undefined;
+        const harnessRejection = harnessNativeLeaseRejection({
+          messageId: String(run.userMessageId),
+          providerInstanceId: String(run.providerInstanceId),
+          projectId: String(projection.thread.projectId),
+          threadId: String(projection.thread.id),
+          planId:
+            storedPlan !== null && storedPlan.planId === run.sourcePlanRef?.planId
+              ? storedPlan.planId
+              : null,
+          step: planStep,
+          overlapping,
+          willRetry: input.willRetry === true,
+        });
+        if (harnessRejection !== null) {
+          yield* settleStartFailure({
+            signal: "harness-plan-lease-mismatch",
+            title: "Unverified native plan dispatch",
+            error: new Error(harnessRejection),
+            message: "Review the saved plan and checkout lease before continuing.",
+          });
+          return;
+        }
+        if (planStep !== undefined) {
+          const owned = overlapping.some(
+            (lease) =>
+              lease.projectId === projection.thread.projectId &&
+              lease.threadId === projection.thread.id &&
+              lease.planId === storedPlan?.planId &&
+              lease.stepId === planStep.id,
+          );
+          if (!owned || overlapping.length !== 1 || input.willRetry === true) {
+            yield* settleStartFailure({
+              signal: "harness-plan-lease-mismatch",
+              title: "Plan checkout lease needs review",
+              error: new Error("Native plan lease is missing, contested or was retried."),
+              message: "Review this plan and its checkout before manually continuing.",
+            });
+            return;
+          }
+        } else {
+          // Unknown sourcePlanRef may belong to T3's native proposed-plan
+          // feature. Treat it as an ordinary run, not a privileged harness run.
+          if (overlapping.length > 0) {
+            yield* settleStartFailure({
+              signal: "harness-checkout-held",
+              title: "Checkout is held by another running step or provider",
+              error: new Error("Persistent checkout lease conflict."),
+              message: "Use an isolated worktree or review the existing checkout lease.",
+            });
+            return;
+          }
+          const lease = {
+            leaseId: "native-run:" + run.id,
+            checkoutPath: nativeCheckout,
+            projectId: projection.thread.projectId,
+            threadId: projection.thread.id,
+            planId: "native-run:" + run.id,
+            stepId: "provider-root",
+          };
+          const acquired = yield* harnessSql.value
+            .withTransaction(acquireCheckoutLease(lease))
+            .pipe(Effect.provideService(SqlClient.SqlClient, harnessSql.value), Effect.result);
+          if (acquired._tag === "Failure") {
+            yield* settleStartFailure({
+              signal: "harness-checkout-race",
+              title: "Checkout was acquired by another provider",
+              error: new Error("Persistent checkout lease could not be acquired."),
+            });
+            return;
           }
         }
       }
@@ -1582,7 +1734,9 @@ export const layer: Layer.Layer<
       });
       // Attach stored memory once to each fresh native provider session, not to every turn.
       const savedProjectMemoryContext =
-        runningProviderThread.nativeThreadRef === null && !goalCommand && Option.isSome(agentMemoryContext)
+        runningProviderThread.nativeThreadRef === null &&
+        !goalCommand &&
+        Option.isSome(agentMemoryContext)
           ? yield* agentMemoryContext.value.prepare({
               projectId: projection.thread.projectId,
               threadId: projection.thread.id,

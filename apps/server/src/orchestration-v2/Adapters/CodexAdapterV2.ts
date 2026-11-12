@@ -1447,7 +1447,7 @@ function codexThreadRuntimeParams(input: {
               omit_tools_from: ["code_mode", "deferred"],
             },
           }),
-      ...(input.extraMcpConfig ?? {}),
+      ...input.extraMcpConfig,
     },
   };
 }
@@ -8121,7 +8121,9 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               }
               // thread/revert requires the thread loaded in this app-server; resume after restart or idle release.
               if (!loaded) {
-                const nativeMcpSession = yield* readMcpSession(threadInput.providerThread.appThreadId);
+                const nativeMcpSession = yield* readMcpSession(
+                  threadInput.providerThread.appThreadId,
+                );
                 const extraMcpConfig = yield* sharedMcpConfig(nativeMcpSession);
                 yield* resumeNativeThread(threadId, {
                   excludeTurns: true,

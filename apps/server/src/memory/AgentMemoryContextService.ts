@@ -9,7 +9,8 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import { listMemory, type MemoryScope } from "./AgentMemory.ts";
+import type { MemoryScope } from "./AgentMemory.ts";
+import { searchMemoryCandidates } from "./MemorySearch.ts";
 import { selectMemoryForContext } from "./MemoryContext.ts";
 
 export interface PrepareAgentMemoryContextInput {
@@ -40,9 +41,11 @@ const make = Effect.gen(function* () {
       { scopeType: "project", scopeId: input.projectId },
       { scopeType: "thread", scopeId: input.threadId },
     ];
-    const memories = yield* listMemory(scopes, 100).pipe(
-      Effect.provideService(SqlClient.SqlClient, sql),
-    );
+    const memories = yield* searchMemoryCandidates({
+      scopes,
+      query: input.query,
+      limitPerScope: 250,
+    }).pipe(Effect.provideService(SqlClient.SqlClient, sql));
     const selection = selectMemoryForContext(memories, {
       query: input.query,
       allowedScopes: scopes,
@@ -84,7 +87,8 @@ const make = Effect.gen(function* () {
             cause,
           }).pipe(Effect.as("")),
         ),
-      )),
+      ),
+    ),
   });
 });
 

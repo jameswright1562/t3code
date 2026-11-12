@@ -210,7 +210,13 @@ const layerCheckpointCaptureServiceProvided = CheckpointCaptureService.layer.pip
   ),
 );
 const layerRunFinalizationServiceProvided = RunFinalizationService.layer.pipe(
-  Layer.provide(Layer.merge(layerCheckpointCaptureServiceProvided, ProjectionStore.layer)),
+  Layer.provide(
+    Layer.mergeAll(
+      layerCheckpointCaptureServiceProvided,
+      ProjectionStore.layer,
+      GitVcsDriver.layer,
+    ),
+  ),
 );
 
 const layerOrchestratorProvided = Orchestrator.layer.pipe(

@@ -23,7 +23,8 @@ export interface MemorySelection {
 const terms = (text: string): Set<string> =>
   new Set(
     (text.toLocaleLowerCase("en").match(/[a-z0-9_.-]{3,}/g) ?? []).filter(
-      (word) => !["the", "and", "for", "with", "from", "this", "that", "into", "are"].includes(word),
+      (word) =>
+        !["the", "and", "for", "with", "from", "this", "that", "into", "are"].includes(word),
     ),
   );
 
@@ -40,7 +41,9 @@ export const selectMemoryForContext = (
   entries: readonly MemoryEntry[],
   options: SelectMemoryOptions,
 ): MemorySelection => {
-  const allowed = new Set(options.allowedScopes.map((scope) => scope.scopeType + ":" + scope.scopeId));
+  const allowed = new Set(
+    options.allowedScopes.map((scope) => scope.scopeType + ":" + scope.scopeId),
+  );
   const requestedTerms = terms(options.query);
   const eligible = entries.filter((entry) => {
     if (!allowed.has(entry.scopeType + ":" + entry.scopeId)) return false;
@@ -61,7 +64,12 @@ export const selectMemoryForContext = (
       (entry.kind === "constraint" || entry.kind === "decision" ? 3 : 0);
     return { entry, score };
   });
-  scored.sort((a, b) => b.score - a.score || b.entry.updatedAt.localeCompare(a.entry.updatedAt) || a.entry.id.localeCompare(b.entry.id));
+  scored.sort(
+    (a, b) =>
+      b.score - a.score ||
+      b.entry.updatedAt.localeCompare(a.entry.updatedAt) ||
+      a.entry.id.localeCompare(b.entry.id),
+  );
 
   const maxEstimatedTokens = Math.max(0, Math.floor(options.maxEstimatedTokens));
   const maxEntries = Math.max(0, Math.floor(options.maxEntries ?? 30));

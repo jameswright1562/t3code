@@ -1,0 +1,72 @@
+name: Fork desktop and lint validation
+
+on:
+  pull_request:
+  push:
+    branches:
+      - "feat/macos-harness-release-gates"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-desktop-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Lint and unsigned desktop build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - name: Install desktop build libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsecret-1-dev pkg-config xvfb
+      - name: Setup workspace
+        uses: ./.github/actions/setup-ci-deps
+        with:
+          save-pnpm-store: "false"
+      - name: Lint and formatting
+        run: vp check
+      - name: Show formatter's proposed fix on failure
+        if: failure()
+        run: |
+          vp check --fix || true
+          git diff -- \
+            apps/server/src/orchestration-v2/Orchestrator.ts \
+            apps/server/src/orchestration-v2/HarnessPlanStore.ts \
+            apps/server/src/orchestration-v2/HarnessPlan.ts \
+            apps/server/src/orchestration-v2/ProviderTurnStartService.ts \
+            apps/server/src/orchestration-v2/RunFinalizationService.ts \
+            apps/server/src/ws.ts \
+            apps/server/src/orchestration-v2/HarnessCheckoutLease.ts \
+            apps/server/src/orchestration-v2/HarnessCheckoutLease.test.ts \
+            apps/server/src/orchestration-v2/HarnessPlan.test.ts \
+            apps/server/src/persistence/Migrations.ts \
+            apps/server/src/persistence/ProjectionMessageSearchUpgrade.test.ts \
+            packages/contracts/src/harnessPlan.ts \
+            packages/contracts/src/rpc.ts \
+            packages/client-runtime/src/state/server.ts \
+            apps/web/src/components/settings/HarnessPlanSettings.tsx \
+            apps/web/src/components/settings/HarnessRunBudgetSettings.tsx \
+            apps/server/src/orchestration-v2/HarnessRunBudget.test.ts \
+            packages/shared/src/harnessMcp.ts \
+            packages/shared/src/harnessMcp.test.ts \
+            docs/architecture/LOCAL_MACOS_AGENT_HARNESS.md
+      - name: Detect unused imports and exported symbols
+        run: vp run knip:check
+      - name: Install Electron runtime
+        run: vp run --filter @t3tools/desktop ensure:electron
+      - name: Build desktop
+        run: vp run build:desktop
+      - name: Verify preload bundle
+        run: node apps/desktop/scripts/verify-preload-bundle.mjs

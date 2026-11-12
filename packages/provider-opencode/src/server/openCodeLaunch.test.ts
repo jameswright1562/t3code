@@ -1,9 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
 // @effect-diagnostics-next-line nodeBuiltinImport:off - synchronous temporary fixture files in a unit test.
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
 // @effect-diagnostics-next-line nodeBuiltinImport:off - test fixture paths.
-import path from "node:path";
+import * as NodePath from "node:path";
 
 import { buildOpenCodeProcessEnvironment, resolveOpenCodeLaunchSpec } from "./openCodeLaunch.ts";
 
@@ -17,33 +17,33 @@ describe("resolveOpenCodeLaunchSpec", () => {
   });
 
   it("starts a source checkout's Node script", () => {
-    const root = mkdtempSync(path.join(tmpdir(), "t3-opencode-test-"));
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-opencode-test-"));
     try {
-      const filename = path.join(root, "packages", "opencode", "bin", "opencode");
-      mkdirSync(path.dirname(filename), { recursive: true });
-      writeFileSync(filename, "#!/usr/bin/env node\nconsole.log('opencode');\n");
+      const filename = NodePath.join(root, "packages", "opencode", "bin", "opencode");
+      NodeFS.mkdirSync(NodePath.dirname(filename), { recursive: true });
+      NodeFS.writeFileSync(filename, "#!/usr/bin/env node\nconsole.log('opencode');\n");
       expect(resolveOpenCodeLaunchSpec(root)).toEqual({
         executable: process.execPath,
         args: [filename],
         displayBinaryPath: root,
       });
     } finally {
-      rmSync(root, { recursive: true, force: true });
+      NodeFS.rmSync(root, { recursive: true, force: true });
     }
   });
 
   it("does not misidentify a native file named opencode as a script", () => {
-    const root = mkdtempSync(path.join(tmpdir(), "t3-opencode-bin-"));
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-opencode-bin-"));
     try {
-      const executable = path.join(root, "opencode");
-      writeFileSync(executable, Buffer.from([0x7f, 0x45, 0x4c, 0x46]));
+      const executable = NodePath.join(root, "opencode");
+      NodeFS.writeFileSync(executable, Buffer.from([0x7f, 0x45, 0x4c, 0x46]));
       expect(resolveOpenCodeLaunchSpec(executable)).toEqual({
         executable,
         args: [],
         displayBinaryPath: executable,
       });
     } finally {
-      rmSync(root, { recursive: true, force: true });
+      NodeFS.rmSync(root, { recursive: true, force: true });
     }
   });
 });
