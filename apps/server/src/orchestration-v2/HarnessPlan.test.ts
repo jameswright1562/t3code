@@ -233,7 +233,11 @@ layer("persistent harness plans", (it) => {
           expectedRevision: 2,
           change: {
             type: "edit",
-            steps: [draft("prepare", ["review"]), draft("test", ["prepare"]), draft("review", ["prepare"])],
+            steps: [
+              draft("prepare", ["review"]),
+              draft("test", ["prepare"]),
+              draft("review", ["prepare"]),
+            ],
           },
         }),
       );
