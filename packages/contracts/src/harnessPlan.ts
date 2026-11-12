@@ -21,6 +21,7 @@ export const HarnessPlanStep = Schema.Struct({
   ...HarnessPlanStepDraft.fields,
   status: HarnessPlanStepStatus,
   artifactRefs: Schema.Array(Schema.String),
+  dispatchMessageId: Schema.optional(Schema.String),
 });
 export type HarnessPlanStep = typeof HarnessPlanStep.Type;
 export const HarnessPlan = Schema.Struct({
@@ -58,6 +59,12 @@ export const HarnessPlanMutationInput = Schema.Struct({
     }),
   ]),
 });
+export const HarnessPlanDispatchInput = Schema.Struct({
+  ...HarnessPlanReadInput.fields,
+  stepId: Schema.String,
+  expectedRevision: Schema.Int,
+});
+
 export class HarnessPlanError extends Schema.TaggedError<HarnessPlanError>()("HarnessPlanError", {
   message: Schema.String,
 }) {}
