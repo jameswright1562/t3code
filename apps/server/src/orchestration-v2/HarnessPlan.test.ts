@@ -7,6 +7,7 @@ import {
   matchingActiveHarnessRun,
   readyHarnessSteps,
   renderHarnessStepPrompt,
+  terminalHarnessStepStatus,
   transitionHarnessStep,
   validateHarnessSteps,
   type HarnessStepDraft,
@@ -92,6 +93,16 @@ it("checkpoints a plan revision with bounded eligible next steps and no executio
   });
   assert.deepStrictEqual(finished.completedStepIds, ["implement"]);
   assert.deepStrictEqual(finished.nextActions, ["Step verify"]);
+});
+
+it("maps only verified terminal native run states to plan settlement", () => {
+  assert.equal(terminalHarnessStepStatus("completed"), "completed");
+  assert.equal(terminalHarnessStepStatus("failed"), "failed");
+  assert.equal(terminalHarnessStepStatus("cancelled"), "cancelled");
+  assert.equal(terminalHarnessStepStatus("interrupted"), "cancelled");
+  for (const active of ["starting", "queued", "running", "waiting", "preparing"]) {
+    assert.equal(terminalHarnessStepStatus(active), null);
+  }
 });
 
 it("stops only the exact active run for the same durable plan and thread", () => {
