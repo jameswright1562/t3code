@@ -140,3 +140,29 @@ it.effect("upgrades fork migration 85 through upstream schema ports 86–89", ()
     assert.deepStrictEqual(migrated.map((entry) => entry.migration_id), [86, 87, 88, 89]);
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );
+
+it.effect("refuses unknown migration 82 before mutating an upstream 81 database", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* runMigrations({ toMigrationInclusive: 80 });
+    yield* sql`
+      INSERT INTO effect_sql_migrations (migration_id, name)
+      VALUES (81, 'ProjectionMessageSearchText'), (82, 'UnknownMigration')
+    `;
+    const result = yield* Effect.exit(runMigrations());
+    assert.equal(result._tag, "Failure");
+    const tables = yield* sql`
+      SELECT name FROM sqlite_master
+      WHERE name IN ('agent_memory_items', 'harness_thread_plans')
+    `;
+    assert.equal(tables.length, 0);
+    const ledger = yield* sql<{ readonly migration_id: number; readonly name: string }>`
+      SELECT migration_id, name FROM effect_sql_migrations
+      WHERE migration_id IN (81, 82) ORDER BY migration_id
+    `;
+    assert.deepStrictEqual(ledger, [
+      { migration_id: 81, name: "ProjectionMessageSearchText" },
+      { migration_id: 82, name: "UnknownMigration" },
+    ]);
+  }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+);
