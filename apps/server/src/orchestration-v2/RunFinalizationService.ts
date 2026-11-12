@@ -1,6 +1,7 @@
 import { CheckpointScopeId, ProjectId, RunId, ThreadId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as FiberMap from "effect/FiberMap";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -14,7 +15,7 @@ import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
 import * as WorkspaceEntries from "../workspace/WorkspaceEntries.ts";
 import * as CheckpointCapture from "./CheckpointCaptureService.ts";
 import { checkpointHarnessPlan } from "./HarnessPlan.ts";
-import { readHarnessPlan } from "./HarnessPlanStore.ts";
+import { readHarnessPlan, settleNativeHarnessStep } from "./HarnessPlanStore.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 
 export class RunFinalizationError extends Schema.TaggedError<RunFinalizationError>()(
@@ -58,6 +59,7 @@ export class RunFinalizationService extends Context.Service<
 const make = Effect.gen(function* () {
   const checkpointCapture = yield* CheckpointCapture.CheckpointCaptureServiceV2;
   const sqlOption = yield* Effect.serviceOption(SqlClient.SqlClient);
+  const fileSystemOption = yield* Effect.serviceOption(FileSystem.FileSystem);
   const gitOption = yield* Effect.serviceOption(GitVcsDriver.GitVcsDriver);
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const observer = yield* RunFinalizationObserver;
@@ -87,6 +89,40 @@ const make = Effect.gen(function* () {
         const run = projection.runs.find((candidate) => candidate.id === input.runId);
         if (!run) return;
         const thread = yield* projections.getThread(input.threadId);
+        const cwd = projection.checkpointScopes.find((scope) => scope.id === input.scopeId)?.cwd;
+        // A native run has settled only if the canonical event projection says
+        // so. Never trust a restored checkpoint or a client status click.
+        const planRef = run.sourcePlanRef;
+        if (
+          planRef?.threadId === input.threadId &&
+          (run.status === "completed" ||
+            run.status === "failed" ||
+            run.status === "cancelled") &&
+          cwd !== undefined &&
+          Option.isSome(fileSystemOption)
+        ) {
+          const trustedCheckoutPath = yield* fileSystemOption.value
+            .realPath(cwd)
+            .pipe(Effect.orElseSucceed(() => null));
+          if (trustedCheckoutPath !== null) {
+            yield* settleNativeHarnessStep({
+              projectId: thread.projectId,
+              threadId: input.threadId,
+              planId: planRef.planId,
+              messageId: run.userMessageId,
+              next: run.status,
+              trustedCheckoutPath,
+            }).pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("Native plan step settlement requires review", {
+                  threadId: input.threadId,
+                  runId: input.runId,
+                  cause,
+                }),
+              ),
+            );
+          }
+        }
         const scopes = [
           { scopeType: "project" as const, scopeId: thread.projectId },
           { scopeType: "thread" as const, scopeId: input.threadId },
@@ -120,7 +156,6 @@ const make = Effect.gen(function* () {
         // Git is the authoritative worktree state, not a model-generated note.
         // Save a concrete HEAD fingerprint for later divergence verification.
         // Bare/uninitialized/non-Git workspaces retain a checkpoint without HEAD.
-        const cwd = projection.checkpointScopes.find((scope) => scope.id === input.scopeId)?.cwd;
         const headCommit =
           cwd !== undefined && Option.isSome(gitOption)
             ? yield* gitOption.value.resolveCommit({ cwd, revision: "HEAD" }).pipe(
