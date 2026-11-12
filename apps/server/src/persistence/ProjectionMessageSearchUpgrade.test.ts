@@ -92,7 +92,10 @@ it.effect("reconciles an upstream-upgraded 81–85 database without rewriting it
       SELECT migration_id, name FROM effect_sql_migrations
       WHERE migration_id BETWEEN 81 AND 89 ORDER BY migration_id
     `;
-    assert.deepStrictEqual(journal.slice(0, 5).map((entry) => entry.name), upstreamNames);
+    assert.deepStrictEqual(
+      journal.slice(0, 5).map((entry) => entry.name),
+      upstreamNames,
+    );
     assert.deepStrictEqual(
       journal.slice(5).map((entry) => entry.name),
       [
@@ -137,7 +140,10 @@ it.effect("upgrades fork migration 85 through upstream schema ports 86–89", ()
       SELECT migration_id FROM effect_sql_migrations
       WHERE migration_id BETWEEN 86 AND 89 ORDER BY migration_id
     `;
-    assert.deepStrictEqual(migrated.map((entry) => entry.migration_id), [86, 87, 88, 89]);
+    assert.deepStrictEqual(
+      migrated.map((entry) => entry.migration_id),
+      [86, 87, 88, 89],
+    );
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );
 
