@@ -65,6 +65,17 @@ export function AgentMemorySettings() {
     recovery.data?.checkpoint ??
     null;
 
+  const currentPlan = useEnvironmentQuery(
+    environmentId !== null &&
+      projectId !== null &&
+      selectedCheckpoint?.checkpoint.planId !== undefined
+      ? serverEnvironment.harnessPlan({
+          environmentId,
+          input: { projectId, threadId: threadId.trim() },
+        })
+      : null,
+  );
+
   const gitVerification = useEnvironmentQuery(
     environmentId !== null && projectId !== null && selectedCheckpoint !== null
       ? serverEnvironment.harnessVerifyCheckpointGit({
@@ -539,6 +550,36 @@ export function AgentMemorySettings() {
                   Saved {selectedCheckpoint.createdAt}. This preview does not resume execution.
                   External side effects and file revisions still require human review.
                 </p>
+                {selectedCheckpoint.checkpoint.planId !== undefined ? (
+                  <div className="rounded-md border p-3 text-xs">
+                    <p className="font-medium">
+                      Saved plan {selectedCheckpoint.checkpoint.planId} · revision{" "}
+                      {selectedCheckpoint.checkpoint.planRevision ?? "unknown"}
+                    </p>
+                    <p>
+                      Completed: {selectedCheckpoint.checkpoint.completedStepIds?.length ?? 0} ·
+                      Pending: {selectedCheckpoint.checkpoint.pendingStepIds?.length ?? 0} ·
+                      Active at capture: {selectedCheckpoint.checkpoint.activeStepIds?.length ?? 0}
+                    </p>
+                    {(selectedCheckpoint.checkpoint.nextActions?.length ?? 0) > 0 ? (
+                      <p>
+                        Next eligible action: {selectedCheckpoint.checkpoint.nextActions?.join(", ")}
+                      </p>
+                    ) : null}
+                    {currentPlan.error ? <p role="alert">{currentPlan.error}</p> : null}
+                    {!currentPlan.isPending && !currentPlan.error ? (
+                      currentPlan.data?.planId !== selectedCheckpoint.checkpoint.planId ||
+                      currentPlan.data?.revision !== selectedCheckpoint.checkpoint.planRevision ? (
+                        <p role="alert">
+                          Saved plan and current plan differ or are unavailable. Review before
+                          any manual continuation; do not replay steps automatically.
+                        </p>
+                      ) : (
+                        <p role="status">Saved plan revision matches current plan.</p>
+                      )
+                    ) : null}
+                  </div>
+                ) : null}
                 {gitVerification.error ? <p role="alert">{gitVerification.error}</p> : null}
                 {gitVerification.data ? (
                   <p className="text-xs" role="status">
