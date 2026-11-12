@@ -62,10 +62,30 @@ describe("shared MCP provider routing", () => {
         args: ["--api-key", "secret"],
       }),
       unsafeCwd: server({ transport: "stdio", url: "", command: "npx", cwd: "bad\npath" }),
-      bearerHeader: server({ transport: "stdio", url: "", command: "npx", args: ["--header", "Authorization: Bearer example-token"] }),
-      headerFlag: server({ transport: "stdio", url: "", command: "npx", args: ["--header=Content-Type: application/json"] }),
-      envSecret: server({ transport: "stdio", url: "", command: "npx", args: ["--env", "MCP_ACCESS_TOKEN=example"] }),
-      safeArg: server({ transport: "stdio", url: "", command: "npx", args: ["-y", "@example/mcp-server"] }),
+      bearerHeader: server({
+        transport: "stdio",
+        url: "",
+        command: "npx",
+        args: ["--header", "Authorization: Bearer example-token"],
+      }),
+      headerFlag: server({
+        transport: "stdio",
+        url: "",
+        command: "npx",
+        args: ["--header=Content-Type: application/json"],
+      }),
+      envSecret: server({
+        transport: "stdio",
+        url: "",
+        command: "npx",
+        args: ["--env", "MCP_ACCESS_TOKEN=example"],
+      }),
+      safeArg: server({
+        transport: "stdio",
+        url: "",
+        command: "npx",
+        args: ["-y", "@example/mcp-server"],
+      }),
     };
     expect(
       Object.keys(
