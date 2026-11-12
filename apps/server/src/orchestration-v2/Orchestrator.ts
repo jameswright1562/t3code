@@ -2752,38 +2752,40 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const threadIds = yield* projectionStore.getRecoveryThreadIds("queued-runs");
     let resumed = 0;
     for (const threadId of threadIds) {
-      const resumedThread = yield* threadDispatch.withLock(
-        threadId,
-        Effect.gen(function* () {
-          const projection = yield* readCommandProjection(threadId);
-          const uncertainHarnessRuns = queuedHarnessRecoveryRuns(projection.runs);
-          if (uncertainHarnessRuns.length > 0) {
-            // A crash makes provider dispatch ambiguous. Retain the original
-            // user-approved intent, but never restart it automatically.
-            const now = yield* DateTime.now;
-            yield* writeSystemEvents(
-              uncertainHarnessRuns.map((run) => ({
-                type: "run.updated" as const,
-                threadId,
-                runId: run.id,
-                providerInstanceId: run.providerInstanceId,
-                occurredAt: now,
-                payload: { ...run, queueHeld: true },
-              })),
-            );
-          }
-          if (!(yield* projectionStore.canStartQueuedRun(threadId))) return false;
-          yield* startNextQueuedRun(threadId);
-          return true;
-        }),
-      ).pipe(
-        Effect.catch((cause) =>
-          Effect.logWarning("Failed to resume queued V2 run after recovery", {
-            threadId,
-            cause,
-          }).pipe(Effect.as(false)),
-        ),
-      );
+      const resumedThread = yield* threadDispatch
+        .withLock(
+          threadId,
+          Effect.gen(function* () {
+            const projection = yield* readCommandProjection(threadId);
+            const uncertainHarnessRuns = queuedHarnessRecoveryRuns(projection.runs);
+            if (uncertainHarnessRuns.length > 0) {
+              // A crash makes provider dispatch ambiguous. Retain the original
+              // user-approved intent, but never restart it automatically.
+              const now = yield* DateTime.now;
+              yield* writeSystemEvents(
+                uncertainHarnessRuns.map((run) => ({
+                  type: "run.updated" as const,
+                  threadId,
+                  runId: run.id,
+                  providerInstanceId: run.providerInstanceId,
+                  occurredAt: now,
+                  payload: { ...run, queueHeld: true },
+                })),
+              );
+            }
+            if (!(yield* projectionStore.canStartQueuedRun(threadId))) return false;
+            yield* startNextQueuedRun(threadId);
+            return true;
+          }),
+        )
+        .pipe(
+          Effect.catch((cause) =>
+            Effect.logWarning("Failed to resume queued V2 run after recovery", {
+              threadId,
+              cause,
+            }).pipe(Effect.as(false)),
+          ),
+        );
       if (resumedThread) {
         resumed += 1;
       }
