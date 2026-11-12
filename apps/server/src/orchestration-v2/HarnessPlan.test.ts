@@ -144,6 +144,63 @@ layer("persistent harness plans", (it) => {
       assert.equal(a.revision, 2);
     }),
   );
+  it.effect("stores per-step native provider choices and protects active assignments", () =>
+    Effect.gen(function* () {
+      const scope = {
+        projectId: "harness-project-routing",
+        threadId: "harness-thread-routing",
+        trustedCheckoutPath: "/work/project-routing",
+      };
+      yield* createHarnessPlan({
+        ...scope,
+        planId: "plan:routing",
+        steps: [
+          { ...draft("implement"), provider: "claudeAgent", model: "sonnet-5.5" },
+          { ...draft("review", ["implement"]), provider: "cursor" },
+        ],
+      });
+      const original = yield* readHarnessPlan(scope);
+      assert.equal(original?.steps[0]?.provider, "claudeAgent");
+      assert.equal(original?.steps[0]?.model, "sonnet-5.5");
+      assert.equal(original?.steps[1]?.provider, "cursor");
+
+      const edited = yield* mutateHarnessPlan({
+        ...scope,
+        expectedRevision: 1,
+        change: {
+          type: "edit",
+          steps: [
+            { ...draft("implement"), provider: "opencode", model: "example/custom-model" },
+            { ...draft("review", ["implement"]), provider: "codex" },
+          ],
+        },
+      });
+      assert.equal(edited.steps[0]?.provider, "opencode");
+      assert.equal(edited.steps[0]?.model, "example/custom-model");
+      assert.equal(edited.steps[1]?.provider, "codex");
+
+      yield* mutateHarnessPlan({
+        ...scope,
+        expectedRevision: 2,
+        change: { type: "transition", stepId: "implement", next: "running" },
+      });
+      const blocked = yield* Effect.result(
+        mutateHarnessPlan({
+          ...scope,
+          expectedRevision: 3,
+          change: {
+            type: "edit",
+            steps: [
+              { ...draft("implement"), provider: "claudeAgent", model: "sonnet-5.5" },
+              { ...draft("review", ["implement"]), provider: "codex" },
+            ],
+          },
+        }),
+      );
+      assert.equal(blocked._tag, "Failure");
+      assert.equal((yield* readHarnessPlan(scope))?.steps[0]?.provider, "opencode");
+    }),
+  );
   it.effect("blocks plan writes across different threads in one canonical checkout", () =>
     Effect.gen(function* () {
       const a = {
