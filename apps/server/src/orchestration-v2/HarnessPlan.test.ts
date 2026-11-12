@@ -99,7 +99,7 @@ it("maps only verified terminal native run states to plan settlement", () => {
   assert.equal(terminalHarnessStepStatus("completed"), "completed");
   assert.equal(terminalHarnessStepStatus("failed"), "failed");
   assert.equal(terminalHarnessStepStatus("cancelled"), "cancelled");
-  assert.equal(terminalHarnessStepStatus("interrupted"), "cancelled");
+  assert.equal(terminalHarnessStepStatus("interrupted"), null);
   for (const active of ["starting", "queued", "running", "waiting", "preparing"]) {
     assert.equal(terminalHarnessStepStatus(active), null);
   }
