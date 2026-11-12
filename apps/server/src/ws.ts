@@ -2525,9 +2525,12 @@ export const layerWsRpc = (
                 message: "Plan thread does not belong to the selected project.",
               });
             }
-            if (projection.runs.some((run) =>
-              run.status === "running" || run.status === "starting" || run.status === "queued"
-            )) {
+            if (
+              projection.runs.some(
+                (run) =>
+                  run.status === "running" || run.status === "starting" || run.status === "queued",
+              )
+            ) {
               return yield* new HarnessPlanError({
                 message: "The thread already has an active provider run; stop or finish it first.",
               });
