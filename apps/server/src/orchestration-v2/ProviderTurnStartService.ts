@@ -144,6 +144,7 @@ export const layer: Layer.Layer<
   | ContextHandoffService.ContextHandoffServiceV2
   | IdAllocator.IdAllocatorV2
   | FileSystem.FileSystem
+  | SqlClient.SqlClient
   | Path.Path
   | ServerConfig.ServerConfig
   | ServerSettings.ServerSettingsService
@@ -170,7 +171,8 @@ export const layer: Layer.Layer<
     const projects = yield* ProjectService.ProjectService;
     const providerAuth = yield* ProviderAuthService.ProviderAuthService;
     const harnessSettings = yield* ServerSettings.ServerSettingsService;
-    const harnessSql = yield* Effect.serviceOption(SqlClient.SqlClient);
+    // Provider turns always need the durable SQLite ledger; no unlocked fallback.
+    const harnessSql = yield* SqlClient.SqlClient;
     const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
     const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
     const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
@@ -710,19 +712,17 @@ export const layer: Layer.Layer<
       const nativeCheckout = yield* fileSystem
         .realPath(checkpointScope.cwd)
         .pipe(Effect.orElseSucceed(() => null));
-      if (nativeCheckout === null || Option.isNone(harnessSql)) {
-        if (run.sourcePlanRef !== undefined && String(run.userMessageId).startsWith("harness:")) {
-          yield* settleStartFailure({
-            signal: "harness-checkout-unverified",
-            title: "Could not verify native checkout lease",
-            error: new Error("Missing host checkout realpath or durable lease ledger."),
-            message: "Plan agent start requires a verified checkout and durable SQLite lease.",
-          });
-          return;
-        }
+      if (nativeCheckout === null) {
+        yield* settleStartFailure({
+          signal: "harness-checkout-unverified",
+          title: "Could not verify native checkout lease",
+          error: new Error("Host checkout realpath cannot be verified."),
+          message: "Native provider start requires a verified checkout realpath.",
+        });
+        return;
       } else {
         const existingLeases = yield* listActiveCheckoutLeases().pipe(
-          Effect.provideService(SqlClient.SqlClient, harnessSql.value),
+          Effect.provideService(SqlClient.SqlClient, harnessSql),
           Effect.result,
         );
         if (existingLeases._tag === "Failure") {
@@ -743,7 +743,7 @@ export const layer: Layer.Layer<
                 projectId: projection.thread.projectId,
                 threadId: projection.thread.id,
               }).pipe(
-                Effect.provideService(SqlClient.SqlClient, harnessSql.value),
+                Effect.provideService(SqlClient.SqlClient, harnessSql),
                 Effect.catchCause(() => Effect.succeed(null)),
               );
         const planStep =
@@ -789,9 +789,9 @@ export const layer: Layer.Layer<
             planId: "native-run:" + run.id,
             stepId: "provider-root",
           };
-          const acquired = yield* harnessSql.value
+          const acquired = yield* harnessSql
             .withTransaction(acquireCheckoutLease(lease))
-            .pipe(Effect.provideService(SqlClient.SqlClient, harnessSql.value), Effect.result);
+            .pipe(Effect.provideService(SqlClient.SqlClient, harnessSql), Effect.result);
           if (acquired._tag === "Failure") {
             yield* settleStartFailure({
               signal: "harness-checkout-race",
