@@ -4,6 +4,7 @@ import { layerMemory } from "../persistence/Sqlite.ts";
 import {
   attachHarnessDispatch,
   checkpointHarnessPlan,
+  matchingActiveHarnessRun,
   readyHarnessSteps,
   renderHarnessStepPrompt,
   transitionHarnessStep,
@@ -91,6 +92,29 @@ it("checkpoints a plan revision with bounded eligible next steps and no executio
   });
   assert.deepStrictEqual(finished.completedStepIds, ["implement"]);
   assert.deepStrictEqual(finished.nextActions, ["Step verify"]);
+});
+
+it("stops only the exact active run for the same durable plan and thread", () => {
+  const run = {
+    id: "run:approved",
+    userMessageId: "harness:msg",
+    sourcePlanRef: { planId: "plan:approved", threadId: "thread:approved" },
+    status: "running",
+  };
+  const input = {
+    planId: "plan:approved",
+    threadId: "thread:approved",
+    dispatchMessageId: "harness:msg",
+  };
+  assert.deepStrictEqual(matchingActiveHarnessRun([run], input), run);
+  assert.equal(matchingActiveHarnessRun([run], { ...input, planId: "plan:other" }), undefined);
+  assert.equal(matchingActiveHarnessRun([run], { ...input, threadId: "thread:other" }), undefined);
+  assert.equal(
+    matchingActiveHarnessRun([run], { ...input, dispatchMessageId: "harness:other" }),
+    undefined,
+  );
+  assert.equal(matchingActiveHarnessRun([{ ...run, status: "completed" }], input), undefined);
+  assert.equal(matchingActiveHarnessRun([{ ...run, sourcePlanRef: undefined }], input), undefined);
 });
 
 it("records a native dispatch identity only when the step is ready", () => {
