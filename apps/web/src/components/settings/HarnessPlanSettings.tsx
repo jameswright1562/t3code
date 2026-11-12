@@ -201,10 +201,10 @@ export function HarnessPlanSettings() {
     <SettingsSection id="harness-plans" title="Multi-step plans">
       <div className="flex flex-col gap-3 text-sm">
         <p className="text-muted-foreground">
-          Create and edit a durable plan for a thread. Start each native agent step explicitly
-          using the saved provider/model assignment. Native steps hold checkout leases until
-          verified run finalization; an interrupted dispatch requires manual review. No next step
-          starts automatically.
+          Create and edit a durable plan for a thread. Start each native agent step explicitly using
+          the saved provider/model assignment. Native steps hold checkout leases until verified run
+          finalization; an interrupted dispatch requires manual review. No next step starts
+          automatically.
         </p>
         {projectId === null ? (
           <p>Select a project in Settings to manage its plans.</p>
