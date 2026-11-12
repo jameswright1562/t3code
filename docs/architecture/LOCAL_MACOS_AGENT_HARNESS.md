@@ -8,13 +8,47 @@
 
 > This is a specification and implementation plan, not a claim that every feature below is already implemented. The original fork main was last updated in May 2026. This integration branch is based on upstream commit d756fed (Nov 2026), preserving the old branch and porting the memory work. The May fork's custom OpenCode options must be reconciled before finishing. Keep the fork's earlier OpenCode work intact during that reconciliation.
 
-## Current delivery status — 11 November 2026
+## Continuation checkpoint — 12 November 2026
+
+**Active PR:** [#8](https://github.com/jameswright1562/t3code/pull/8),
+branch `feat/macos-harness-release-gates`. It remains **draft and unmerged**.
+All changes below are on that branch; fork `main` remains unchanged.
+
+- [x] Fixed the Markdown formatting regression in `cc25eb3`. Linux
+  desktop/lint and focused memory/OpenCode validation passed on this commit.
+- [x] Added a provider selector for new plan steps and editable provider/model
+  preferences for pending or failed steps in `288d0c4`. The four selectable
+  routes are Codex, native Claude Code (`claudeAgent`), Cursor and OpenCode
+  (which may use configured custom models). These are **stored preferences**,
+  not a claim of provider execution or custom API auto-configuration.
+- [x] Added regression coverage in `bc38295` for persisted per-step routing,
+  model selection and refusal to alter a running step's assignment.
+- [x] Clarified the plan UI: migration 85 provides **persistent plan-only**
+  checkout leases, but native provider processes and MCP tool writes are not
+  yet attached to them. Manually marking a step as running does not launch it.
+
+**Latest validation:** the focused memory/plan checks and formatting/unused-code
+checks passed on `bc38295`; full desktop build, hosted macOS build and general
+CI must complete before claiming an all-green release candidate. The connected
+Mac was offline during this checkpoint, so no live Keychain/Claude subscription
+or packaged macOS crash-resume test has been performed here.
+
+**Unfinished P0 work:** user-initiated provider execution with checkout leases,
+cancel/pause and child budgets; pre-handoff and pre-compaction checkpoints plus
+human-approved side-effect-safe resume; scoped Keychain/OAuth MCP connections;
+full upstream merge and migration reconciliation; controlled Claude quota A/B;
+packaged macOS E2E/security smoke and protected-branch review. Keep manual-only
+execution and zero automatic triggers.
+
+---
+
+## Historical delivery status — 11 November 2026
 
 **Canonical working PR:** [#8 — macOS harness release gates](https://github.com/jameswright1562/t3code/pull/8) ·
 branch `feat/macos-harness-release-gates` · verified implementation commit `448d82d` ·
 **draft, unmerged, not production ready**. PR #3 was merged previously. This
-section is the current tracker; historical sections below describe earlier
-states and must not be read as the latest checklist.
+section records the 11 November state; the continuation checkpoint above
+supersedes it, and later historical sections retain earlier design snapshots.
 
 ### Implemented and tested in fork-specific CI
 
