@@ -194,6 +194,30 @@ export function attachHarnessDispatch(
   );
 }
 
+/** Only the exact native run created by the approved step may be stopped. */
+export function matchingActiveHarnessRun<
+  T extends {
+    readonly userMessageId: string;
+    readonly sourcePlanRef?: { readonly threadId: string; readonly planId: string } | undefined;
+    readonly status: string;
+  },
+>(
+  runs: readonly T[],
+  input: {
+    readonly threadId: string;
+    readonly planId: string;
+    readonly dispatchMessageId: string;
+  },
+): T | undefined {
+  return runs.find(
+    (run) =>
+      run.userMessageId === input.dispatchMessageId &&
+      run.sourcePlanRef?.threadId === input.threadId &&
+      run.sourcePlanRef.planId === input.planId &&
+      (run.status === "running" || run.status === "starting" || run.status === "queued"),
+  );
+}
+
 /** Small, deterministic prompt: no planning/model calls are spent on the control plane. */
 export function renderHarnessStepPrompt(step: HarnessStep): string {
   return [
