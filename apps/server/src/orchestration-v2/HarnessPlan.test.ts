@@ -194,6 +194,42 @@ layer("persistent harness plans", (it) => {
       assert.deepStrictEqual((yield* readHarnessPlan(scope))?.steps, completed.steps);
     }),
   );
+  it.effect("persists editable DAG edges but refuses cycles and stale writes", () =>
+    Effect.gen(function* () {
+      const scope = {
+        projectId: "harness-project-dag",
+        threadId: "harness-thread-dag",
+        trustedCheckoutPath: "/work/project-dag",
+      };
+      yield* createHarnessPlan({
+        ...scope,
+        planId: "plan:dag",
+        steps: [draft("prepare"), draft("test", ["prepare"]), draft("review", ["test"])],
+      });
+      const parallelReview = yield* mutateHarnessPlan({
+        ...scope,
+        expectedRevision: 1,
+        change: {
+          type: "edit",
+          steps: [draft("prepare"), draft("test", ["prepare"]), draft("review", ["prepare"])],
+        },
+      });
+      assert.equal(parallelReview.revision, 2);
+      assert.deepStrictEqual(parallelReview.steps[2]?.dependsOn, ["prepare"]);
+      const cycle = yield* Effect.result(
+        mutateHarnessPlan({
+          ...scope,
+          expectedRevision: 2,
+          change: {
+            type: "edit",
+            steps: [draft("prepare", ["review"]), draft("test", ["prepare"]), draft("review", ["prepare"])],
+          },
+        }),
+      );
+      assert.equal(cycle._tag, "Failure");
+      assert.deepStrictEqual((yield* readHarnessPlan(scope))?.steps, parallelReview.steps);
+    }),
+  );
   it.effect("cannot erase completed steps or create overlapping writers", () =>
     Effect.gen(function* () {
       const scope = {
