@@ -2752,10 +2752,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const threadIds = yield* projectionStore.getRecoveryThreadIds("queued-runs");
     let resumed = 0;
     for (const threadId of threadIds) {
-      const resumedThread = yield* Effect.gen(function* () {
-        return yield* threadDispatch.withLock(
-          threadId,
-          Effect.gen(function* () {
+      const resumedThread = yield* threadDispatch.withLock(
+        threadId,
+        Effect.gen(function* () {
             const projection = yield* readCommandProjection(threadId);
             const uncertainHarnessRuns = queuedHarnessRecoveryRuns(projection.runs);
             if (uncertainHarnessRuns.length > 0) {
@@ -2777,8 +2776,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             yield* startNextQueuedRun(threadId);
             return true;
           }),
-        );
-      }).pipe(
+      ).pipe(
         Effect.catch((cause) =>
           Effect.logWarning("Failed to resume queued V2 run after recovery", {
             threadId,
