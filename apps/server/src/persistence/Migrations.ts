@@ -299,10 +299,12 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
     toMigrationInclusive === undefined || toMigrationInclusive >= FIRST_V2_MIGRATION_ID;
   const previewMigrations = includesV2 ? yield* reconcileV2PreviewMigration() : [];
   if (includesV2) {
+    // Validate the entire journal before touching even a recognized upstream
+    // collision. Unknown divergent histories must not be partially repaired.
+    yield* assertV2MigrationsCanRun(toMigrationInclusive);
     if (toMigrationInclusive === undefined || toMigrationInclusive >= 81) {
       yield* reconcileKnownUpstreamMigrations(toMigrationInclusive);
     }
-    yield* assertV2MigrationsCanRun(toMigrationInclusive);
   }
   const executedMigrations = [
     ...previewMigrations,
