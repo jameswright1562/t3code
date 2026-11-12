@@ -88,6 +88,10 @@ import Migration0082 from "./Migrations/082_AgentMemorySearch.ts";
 import Migration0083 from "./Migrations/083_UpstreamProjectionMessageSearchText.ts";
 import Migration0084 from "./Migrations/084_HarnessPlans.ts";
 import Migration0085 from "./Migrations/085_HarnessCheckoutLeases.ts";
+import Migration0086 from "./Migrations/086_UpstreamTurnItemConversationIndex.ts";
+import Migration0087 from "./Migrations/087_UpstreamCommandReadIndexes.ts";
+import Migration0088 from "./Migrations/088_UpstreamLastExecutedRunIndex.ts";
+import Migration0089 from "./Migrations/089_UpstreamTurnItemCounts.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -176,6 +180,10 @@ const migrationEntries = [
   [83, "UpstreamProjectionMessageSearchText", Migration0083],
   [84, "HarnessPlans", Migration0084],
   [85, "HarnessCheckoutLeases", Migration0085],
+  [86, "UpstreamTurnItemConversationIndex", Migration0086],
+  [87, "UpstreamCommandReadIndexes", Migration0087],
+  [88, "UpstreamLastExecutedRunIndex", Migration0088],
+  [89, "UpstreamTurnItemCounts", Migration0089],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
@@ -193,22 +201,49 @@ const FIRST_V2_MIGRATION_ID = 55;
 
 // Migrators skip ids up to the highest recorded; reject collisions that would skip V2 schema.
 /**
- * Upstream and fork both claimed migration 81. Install missing fork memory
- * tables for an upstream-upgraded DB without rewriting its migration journal.
+ * Preserve two immutable, already-deployed migration histories. Upstream
+ * occupies 81–85 with a different schema from this fork. Never rewrite an
+ * existing migration journal, and never silently skip either history.
+ * Install the fork's missing 81–85 migrations transactionally when an upstream
+ * row owns the same ID, then apply upstream 82–85 under fork IDs 86–89.
  */
-const reconcileKnownUpstream81 = Effect.fn("reconcileKnownUpstream81")(function* () {
-  const sql = yield* SqlClient.SqlClient;
-  const ledger = yield* sql`SELECT 1 FROM sqlite_master
-    WHERE type = 'table' AND name = 'effect_sql_migrations'`;
-  if (ledger.length === 0) return;
-  const entries = yield* sql<{ readonly name: string }>`
-    SELECT name FROM effect_sql_migrations WHERE migration_id = 81
-  `;
-  if (entries[0]?.name !== "ProjectionMessageSearchText") return;
-  // CREATE TABLE/INDEX IF NOT EXISTS is idempotent. Fail startup if schema
-  // repair fails rather than silently opening without protected memory scope.
-  yield* sql.withTransaction(Migration0081);
-});
+const knownUpstreamMigrationNames = new Map<number, string>([
+  [81, "ProjectionMessageSearchText"],
+  [82, "TurnItemConversationIndex"],
+  [83, "CommandReadIndexes"],
+  [84, "LastExecutedRunIndex"],
+  [85, "TurnItemCounts"],
+]);
+
+const isKnownUpstreamMigration = (id: number, name: string) =>
+  knownUpstreamMigrationNames.get(id) === name;
+
+const reconcileKnownUpstreamMigrations = Effect.fn("reconcileKnownUpstreamMigrations")(
+  function* (throughId?: number) {
+    const sql = yield* SqlClient.SqlClient;
+    const ledger = yield* sql`
+      SELECT 1 FROM sqlite_master
+      WHERE type = 'table' AND name = 'effect_sql_migrations'
+    `;
+    if (ledger.length === 0) return;
+    const entries = yield* sql<{
+      readonly migration_id: number;
+      readonly name: string;
+    }>`
+      SELECT migration_id, name FROM effect_sql_migrations
+      WHERE migration_id BETWEEN 81 AND 85 ORDER BY migration_id
+    `;
+    for (const row of entries) {
+      if (throughId !== undefined && row.migration_id > throughId) continue;
+      if (!isKnownUpstreamMigration(row.migration_id, row.name)) continue;
+      const forkMigration = migrationEntries.find(([id]) => id === row.migration_id)?.[2];
+      if (forkMigration === undefined) continue;
+      // Idempotent fork migrations 81–85 use guards for existing tables,
+      // indexes and search columns. Failure aborts startup.
+      yield* sql.withTransaction(forkMigration);
+    }
+  },
+);
 
 const assertV2MigrationsCanRun = Effect.fn("assertV2MigrationsCanRun")(function* (
   throughId?: number,
@@ -233,7 +268,7 @@ const assertV2MigrationsCanRun = Effect.fn("assertV2MigrationsCanRun")(function*
       return [];
     const recordedName = recordedNames.get(id);
     if (recordedName === name) return [];
-    if (id === 81 && recordedName === "ProjectionMessageSearchText") return [];
+    if (recordedName !== undefined && isKnownUpstreamMigration(id, recordedName)) return [];
     return [`${id}_${name} (recorded: ${recordedName ?? "nothing"})`];
   });
   if (skipped.length === 0) return;
@@ -257,7 +292,7 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
   const previewMigrations = includesV2 ? yield* reconcileV2PreviewMigration() : [];
   if (includesV2) {
     if (toMigrationInclusive === undefined || toMigrationInclusive >= 81) {
-      yield* reconcileKnownUpstream81();
+      yield* reconcileKnownUpstreamMigrations(toMigrationInclusive);
     }
     yield* assertV2MigrationsCanRun(toMigrationInclusive);
   }
@@ -282,7 +317,7 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
       return [`${row.migration_id}:${row.name} (unknown to this build)`];
     }
     return expected === row.name ||
-      (row.migration_id === 81 && row.name === "ProjectionMessageSearchText")
+      isKnownUpstreamMigration(row.migration_id, row.name)
       ? []
       : [`${row.migration_id}:${row.name} (this build: ${expected})`];
   });
