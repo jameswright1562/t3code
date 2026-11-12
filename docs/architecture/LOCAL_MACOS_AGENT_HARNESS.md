@@ -35,6 +35,17 @@ changes are in draft PR #8; `main` is unchanged.
 - [x] New deterministic tests cover step dispatch intent, stale revision
       refusal, manual settlement denial and run-identity-checked completion.
 
+- [x] A native dispatch marked `harness:` now fails closed if its durable
+      plan step, approved provider or exclusive lease is missing/mismatched.
+      A retried ambiguous native start is refused rather than being recast as
+      an ordinary thread message. Tests cover orphan and contested starts.
+- [x] **Stop agent** requests T3's existing native run interrupt through a
+      new authenticated RPC. The server requires the exact current plan
+      revision, project/thread and message-to-run ownership. The request
+      never releases its checkout lease; an interrupted or uncertain run
+      must still undergo finalization or manual review. Stop does not
+      guarantee an external child process has exited.
+
 **Unfinished safety gates:** automated agent sequencing, comprehensive
 pause/cancel and delegation budgets, pre-handoff/compaction checkpoints,
 provider child-process supervision, human-approved replay with external-effect
