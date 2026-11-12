@@ -65,6 +65,61 @@ export function checkoutPathsOverlap(left: string, right: string): boolean {
   );
 }
 
+/**
+ * A harness-prefixed native message is a durable execution intent, not an
+ * ordinary chat request. Missing/mismatched source plan state must never fall
+ * through to the generic provider writer path. A crash retry is ambiguous,
+ * so only an operator may review and decide what to do next.
+ *
+ * Returns null for ordinary T3 messages. For harness messages a non-null
+ * rejection reason always prevents provider startup.
+ */
+export function harnessNativeLeaseRejection(input: {
+  readonly messageId: string;
+  readonly providerInstanceId: string;
+  readonly projectId: string;
+  readonly threadId: string;
+  readonly planId: string | null;
+  readonly step:
+    | {
+        readonly id: string;
+        readonly provider: string;
+        readonly status: string;
+        readonly dispatchMessageId?: string | undefined;
+      }
+    | undefined;
+  readonly overlapping: readonly HarnessCheckoutLease[];
+  readonly willRetry: boolean;
+}): string | null {
+  if (!input.messageId.startsWith("harness:")) return null;
+  if (input.willRetry) return "Native plan dispatch was already attempted; review before replay.";
+  if (
+    input.planId === null ||
+    input.step === undefined ||
+    input.step.status !== "running" ||
+    input.step.dispatchMessageId !== input.messageId
+  ) {
+    return "Native plan dispatch has no matching durable running step.";
+  }
+  if (input.step.provider !== input.providerInstanceId) {
+    return "Native provider differs from the approved plan step.";
+  }
+  if (
+    input.overlapping.length !== 1 ||
+    !input.overlapping.some(
+      (lease) =>
+        lease.projectId === input.projectId &&
+        lease.threadId === input.threadId &&
+        lease.planId === input.planId &&
+        lease.stepId === input.step?.id &&
+        lease.leaseId === input.planId + ":" + input.step?.id,
+    )
+  ) {
+    return "Native plan checkout lease is missing or contested.";
+  }
+  return null;
+}
+
 const rows = Effect.fn("HarnessCheckoutLease.rows")(function* () {
   const sql = yield* SqlClient.SqlClient;
   return yield* sql<{
