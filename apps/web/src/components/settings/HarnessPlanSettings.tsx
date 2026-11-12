@@ -38,6 +38,9 @@ export function HarnessPlanSettings() {
       ? { environmentId, input: { projectId, threadId: threadId.trim() } }
       : null;
   const plan = useEnvironmentQuery(scope === null ? null : serverEnvironment.harnessPlan(scope));
+  const leases = useEnvironmentQuery(
+    scope === null ? null : serverEnvironment.harnessCheckoutLeases(scope),
+  );
   const create = useAtomCommand(serverEnvironment.harnessCreatePlan);
   const change = useAtomCommand(serverEnvironment.harnessMutatePlan);
   const dispatch = useAtomCommand(serverEnvironment.harnessDispatchPlanStep);
@@ -459,6 +462,44 @@ export function HarnessPlanSettings() {
             ) : null}
           </>
         )}
+        {scope ? (
+          <section aria-label="Native checkout lease inspection" className="rounded-md border p-3">
+            <p className="font-medium">Checkout leases and crash review</p>
+            <p className="text-xs text-muted-foreground">
+              Active records survive process restarts. A retained lease may indicate a live agent,
+              interrupted dispatch, or unresolved side effect. Verify native processes and the
+              working tree before attempting further writes.
+            </p>
+            <Button
+              size="xs"
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                leases.refresh();
+                plan.refresh();
+              }}
+            >
+              Refresh lease status
+            </Button>
+            {leases.error ? <p role="alert">{leases.error}</p> : null}
+            {(leases.data?.length ?? 0) === 0 && !leases.isPending && !leases.error ? (
+              <p className="text-xs">No active checkout lease is recorded for this thread.</p>
+            ) : null}
+            <ul className="flex flex-col gap-2">
+              {leases.data?.map((lease) => (
+                <li key={lease.leaseId} className="rounded border p-2 text-xs">
+                  <p>Lease: {lease.leaseId}</p>
+                  <p>Checkout: {lease.checkoutPath}</p>
+                  <p>Plan/step: {lease.planId} / {lease.stepId}</p>
+                  <p>Acquired: {lease.acquiredAt}</p>
+                  <p className="text-muted-foreground">
+                    No force-release is offered: a native child may still be writing here.
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
         {message ? <p role="status">{message}</p> : null}
       </div>
     </SettingsSection>
