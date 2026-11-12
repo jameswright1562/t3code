@@ -5,6 +5,7 @@ import { layerMemory } from "../persistence/Sqlite.ts";
 import {
   acquireCheckoutLease,
   checkoutPathsOverlap,
+  harnessNativeLeaseRejection,
   listActiveCheckoutLeases,
   normalizeCheckoutRealPath,
   releaseCheckoutLease,
@@ -25,6 +26,52 @@ it("normalizes realpaths conservatively and detects parent-child overlap", () =>
   assert.equal(checkoutPathsOverlap("/projects/repo", "/projects/repo2"), false);
   assert.throws(() => normalizeCheckoutRealPath("../../repo"), /absolute checkout/);
   assert.throws(() => normalizeCheckoutRealPath("/projects/../secret"), /Noncanonical/);
+});
+
+it("refuses orphan, retried, mismatched and contested native plan dispatches", () => {
+  const ownedLease = {
+    ...owner("plan:a:step:a"),
+    checkoutPath: "/private/approved",
+    acquiredAt: "2026-11-12T00:00:00Z",
+  };
+  const approved = {
+    messageId: "harness:manual",
+    providerInstanceId: "codex",
+    projectId: "project:a",
+    threadId: "thread:a",
+    planId: "plan:a",
+    step: {
+      id: "step:a",
+      provider: "codex",
+      status: "running",
+      dispatchMessageId: "harness:manual",
+    },
+    overlapping: [ownedLease],
+    willRetry: false,
+  };
+  assert.equal(harnessNativeLeaseRejection(approved), null);
+  assert.equal(harnessNativeLeaseRejection({ ...approved, step: undefined }) !== null, true);
+  assert.equal(harnessNativeLeaseRejection({ ...approved, planId: null }) !== null, true);
+  assert.match(
+    harnessNativeLeaseRejection({ ...approved, willRetry: true }) ?? "",
+    /review before replay/,
+  );
+  assert.match(
+    harnessNativeLeaseRejection({ ...approved, providerInstanceId: "claudeAgent" }) ?? "",
+    /provider differs/,
+  );
+  assert.match(
+    harnessNativeLeaseRejection({ ...approved, overlapping: [] }) ?? "",
+    /missing or contested/,
+  );
+  assert.match(
+    harnessNativeLeaseRejection({ ...approved, overlapping: [ownedLease, ownedLease] }) ?? "",
+    /missing or contested/,
+  );
+  assert.equal(
+    harnessNativeLeaseRejection({ ...approved, messageId: "normal-user-message" }),
+    null,
+  );
 });
 
 const layer = it.layer(layerMemory);
