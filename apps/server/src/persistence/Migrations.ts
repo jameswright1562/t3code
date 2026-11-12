@@ -200,12 +200,8 @@ const makeMigrationLoader = (throughId?: number) =>
 const FIRST_V2_MIGRATION_ID = 55;
 
 // Migrators skip ids up to the highest recorded; reject collisions that would skip V2 schema.
-/**
- * Preserve two immutable, already-deployed migration histories. Upstream
- * occupies 81–85 with a different schema from this fork. Never rewrite an
- * existing migration journal, and never silently skip either history.
- * Install the fork's missing 81–85 migrations transactionally when an upstream
- * row owns the same ID, then apply upstream 82–85 under fork IDs 86–89.
+/** Preserve the deployed upstream 81–85 and fork 81–85 journals unchanged.
+ * Reconcile missing fork schema transactionally and port upstream 82–85 as 86–89.
  */
 const knownUpstreamMigrationNames = new Map<number, string>([
   [81, "ProjectionMessageSearchText"],
