@@ -75,17 +75,14 @@ export function AgentMemorySettings() {
       : null;
   const savedPlanId = typeof savedPlan?.planId === "string" ? savedPlan.planId : null;
   const savedPlanRevision =
-    typeof savedPlan?.planRevision === "number" &&
-    Number.isSafeInteger(savedPlan.planRevision)
+    typeof savedPlan?.planRevision === "number" && Number.isSafeInteger(savedPlan.planRevision)
       ? savedPlan.planRevision
       : null;
   const list = (value: unknown) =>
     Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 
   const currentPlan = useEnvironmentQuery(
-    environmentId !== null &&
-      projectId !== null &&
-      savedPlanId !== null
+    environmentId !== null && projectId !== null && savedPlanId !== null
       ? serverEnvironment.harnessPlan({
           environmentId,
           input: { projectId, threadId: threadId.trim() },
@@ -573,22 +570,20 @@ export function AgentMemorySettings() {
                       Saved plan {savedPlanId} · revision {savedPlanRevision ?? "unknown"}
                     </p>
                     <p>
-                      Completed: {list(savedPlan?.completedStepIds).length} ·
-                      Pending: {list(savedPlan?.pendingStepIds).length} ·
-                      Active at capture: {list(savedPlan?.activeStepIds).length}
+                      Completed: {list(savedPlan?.completedStepIds).length} · Pending:{" "}
+                      {list(savedPlan?.pendingStepIds).length} · Active at capture:{" "}
+                      {list(savedPlan?.activeStepIds).length}
                     </p>
                     {list(savedPlan?.nextActions).length > 0 ? (
-                      <p>
-                        Next eligible action: {list(savedPlan?.nextActions).join(", ")}
-                      </p>
+                      <p>Next eligible action: {list(savedPlan?.nextActions).join(", ")}</p>
                     ) : null}
                     {currentPlan.error ? <p role="alert">{currentPlan.error}</p> : null}
                     {!currentPlan.isPending && !currentPlan.error ? (
                       currentPlan.data?.planId !== savedPlanId ||
                       currentPlan.data?.revision !== savedPlanRevision ? (
                         <p role="alert">
-                          Saved plan and current plan differ or are unavailable. Review before
-                          any manual continuation; do not replay steps automatically.
+                          Saved plan and current plan differ or are unavailable. Review before any
+                          manual continuation; do not replay steps automatically.
                         </p>
                       ) : (
                         <p role="status">Saved plan revision matches current plan.</p>
