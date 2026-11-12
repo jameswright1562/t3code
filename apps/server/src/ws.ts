@@ -4,6 +4,7 @@ import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as AgentHarnessMemory from "./memory/AgentMemory.ts";
 import * as HarnessPlanStore from "./orchestration-v2/HarnessPlanStore.ts";
+import { renderHarnessStepPrompt } from "./orchestration-v2/HarnessPlan.ts";
 import * as AgentHarnessMemoryBackup from "./memory/MemoryBackup.ts";
 import { assessCheckpointGit } from "./memory/CheckpointGitGuard.ts";
 import { HarnessMemoryError, HarnessPlanError } from "@t3tools/contracts";
@@ -47,7 +48,7 @@ import {
   type OrchestrationV2Command,
   type GitActionProgressEvent,
   type GitManagerServiceError,
-  type MessageId,
+  MessageId,
   type AcpRegistryImportSessionInput,
   type AcpRegistryDeleteSessionInput,
   type AcpRegistryDisableProviderInput,
@@ -101,7 +102,8 @@ import {
   EnvironmentAuthorizationError,
   type ProjectId,
   type ProviderDriverKind,
-  type ProviderInstanceId,
+  ProviderInstanceId,
+  PlanId,
   ThreadId,
   type TerminalMetadataStreamEvent,
   type PullRequestRef,
@@ -2506,6 +2508,108 @@ export const layerWsRpc = (
               isHarnessPlanError(error)
                 ? error
                 : new HarnessPlanError({ message: "Plan update is unavailable for this thread." }),
+            ),
+          ),
+        // Explicit user click only: write durable dispatch intent + checkout lease
+        // BEFORE passing the command to T3's normal provider intake. If the
+        // connection drops after that commit, the lease stays for human review;
+        // we must not replay an ambiguous external write on restart.
+        // oxlint-disable-next-line t3code/prefer-effect-fn -- RpcGroup handler has contextual service errors.
+        [WS_METHODS.harnessPlanDispatch]: (input) =>
+          Effect.gen(function* () {
+            const projection = yield* orchestrationEngine.getThreadProjection(
+              ThreadId.make(input.threadId),
+            );
+            if (projection.thread.projectId !== input.projectId) {
+              return yield* new HarnessPlanError({
+                message: "Plan thread does not belong to the selected project.",
+              });
+            }
+            if (projection.thread.activeRunId !== null) {
+              return yield* new HarnessPlanError({
+                message: "The thread already has an active provider run; stop or finish it first.",
+              });
+            }
+            const plan = yield* HarnessPlanStore.readHarnessPlan(input).pipe(
+              Effect.provideService(SqlClient.SqlClient, sql),
+            );
+            if (!plan || plan.revision !== input.expectedRevision) {
+              return yield* new HarnessPlanError({
+                message: "The plan changed. Reload before starting a step.",
+              });
+            }
+            const step = plan.steps.find((candidate) => candidate.id === input.stepId);
+            if (!step || step.status !== "pending") {
+              return yield* new HarnessPlanError({
+                message: "Only pending plan steps can start native agents.",
+              });
+            }
+            const requestedModel = step.model?.trim();
+            const threadSelection = projection.thread.modelSelection;
+            if (!requestedModel && step.provider !== threadSelection.instanceId) {
+              return yield* new HarnessPlanError({
+                message: "Choose a model for this step's provider before starting it.",
+              });
+            }
+            const checkoutPath = yield* resolveTrustedPlanCheckout(input);
+            const messageId = MessageId.make(yield* random.uuidV4());
+            const command: OrchestrationV2Command = {
+              type: "message.dispatch",
+              commandId: CommandId.make(yield* random.uuidV4()),
+              threadId: projection.thread.id,
+              messageId,
+              text: renderHarnessStepPrompt(step),
+              attachments: [],
+              createdBy: "user",
+              creationSource: "web",
+              sourcePlanRef: {
+                threadId: projection.thread.id,
+                planId: PlanId.make(plan.planId),
+              },
+              modelSelection: {
+                instanceId: ProviderInstanceId.make(step.provider),
+                model: requestedModel || threadSelection.model,
+                ...(step.provider === threadSelection.instanceId &&
+                threadSelection.options !== undefined
+                  ? { options: threadSelection.options }
+                  : {}),
+              },
+            };
+            const updated = yield* HarnessPlanStore.mutateHarnessPlan({
+              ...input,
+              trustedCheckoutPath: checkoutPath,
+              change: { type: "dispatch", stepId: step.id, messageId },
+            }).pipe(Effect.provideService(SqlClient.SqlClient, sql));
+            yield* startup
+              .enqueueCommand(
+                ThreadMessageIntake.dispatchCommand(command).pipe(Effect.provide(intakeContext)),
+              )
+              .pipe(
+                Effect.catchCause((cause) =>
+                  Effect.logWarning("Native plan step dispatch was not confirmed", {
+                    threadId: input.threadId,
+                    planId: plan.planId,
+                    stepId: step.id,
+                    cause,
+                  }).pipe(
+                    Effect.andThen(
+                      new HarnessPlanError({
+                        message:
+                          "Provider dispatch was not confirmed. The checkout lease is retained " +
+                          "for manual review; do not retry the step blindly.",
+                      }),
+                    ),
+                  ),
+                ),
+              );
+            return updated;
+          }).pipe(
+            Effect.mapError((error) =>
+              isHarnessPlanError(error)
+                ? error
+                : new HarnessPlanError({
+                    message: "Plan dispatch was refused; check the thread and saved lease.",
+                  }),
             ),
           ),
         [WS_METHODS.harnessMemoryList]: ({ scope, limit }) =>
