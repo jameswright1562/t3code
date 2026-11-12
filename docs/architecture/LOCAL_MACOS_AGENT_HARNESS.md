@@ -97,7 +97,6 @@ automatically; a missing lease or moved checkout fails closed for manual review.
 external tool executions are not yet covered by this gate. The UI still marks
 steps manually and does not dispatch agents or prove a provider has stopped.
 
-
 ### Upstream native merge diagnostic (11 November 2026)
 
 The full three-way Git-tree comparison from common upstream `3a8c250` to
