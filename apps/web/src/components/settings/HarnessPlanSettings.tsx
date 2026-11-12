@@ -40,6 +40,7 @@ export function HarnessPlanSettings() {
   const plan = useEnvironmentQuery(scope === null ? null : serverEnvironment.harnessPlan(scope));
   const create = useAtomCommand(serverEnvironment.harnessCreatePlan);
   const change = useAtomCommand(serverEnvironment.harnessMutatePlan);
+  const dispatch = useAtomCommand(serverEnvironment.harnessDispatchPlanStep);
   const lines = draft
     .split("\n")
     .map((line) => line.trim())
@@ -139,6 +140,35 @@ export function HarnessPlanSettings() {
     }
   }
 
+  async function startNativeStep(stepId: string) {
+    if (!scope || !current || busy) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const result = await dispatch({
+        ...scope,
+        input: { ...scope.input, stepId, expectedRevision: current.revision },
+      });
+      if (result._tag !== "Success") {
+        setMessage(
+          "Agent start was refused or could not be confirmed. Reload the plan and " +
+            "review any retained checkout lease before retrying.",
+        );
+      } else {
+        setMessage("Agent step was dispatched. Further steps require explicit user action.");
+        plan.refresh();
+      }
+    } catch {
+      setMessage(
+        "Native dispatch could not be confirmed. Review the thread and checkout lease; " +
+          "do not blindly retry.",
+      );
+      plan.refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function transition(
     stepId: string,
     next: "pending" | "running" | "completed" | "failed" | "cancelled",
@@ -171,9 +201,10 @@ export function HarnessPlanSettings() {
     <SettingsSection id="harness-plans" title="Multi-step plans">
       <div className="flex flex-col gap-3 text-sm">
         <p className="text-muted-foreground">
-          Create and edit a durable plan for a thread. This board tracks status manually: it does
-          not run coding agents or resume providers. Running steps acquire plan-level checkout
-          leases, but these do not protect native provider sessions.
+          Create and edit a durable plan for a thread. Start each native agent step explicitly
+          using the saved provider/model assignment. Native steps hold checkout leases until
+          verified run finalization; an interrupted dispatch requires manual review. No next step
+          starts automatically.
         </p>
         {projectId === null ? (
           <p>Select a project in Settings to manage its plans.</p>
@@ -267,10 +298,22 @@ export function HarnessPlanSettings() {
                           <>
                             <Button
                               size="xs"
+                              disabled={
+                                busy ||
+                                providerOverrides[step.id] !== undefined ||
+                                modelOverrides[step.id] !== undefined
+                              }
+                              onClick={() => void startNativeStep(step.id)}
+                            >
+                              Start agent
+                            </Button>
+                            <Button
+                              size="xs"
+                              variant="outline"
                               disabled={busy}
                               onClick={() => void transition(step.id, "running")}
                             >
-                              Mark in progress
+                              Track manually
                             </Button>
                             <Button
                               size="xs"
@@ -282,7 +325,13 @@ export function HarnessPlanSettings() {
                             </Button>
                           </>
                         ) : null}
-                        {step.status === "running" ? (
+                        {step.status === "running" && step.dispatchMessageId !== undefined ? (
+                          <p className="text-xs text-muted-foreground">
+                            Native run active or outcome unconfirmed. Stop through the thread UI;
+                            this checkout lease is released only after verified finalization.
+                          </p>
+                        ) : null}
+                        {step.status === "running" && step.dispatchMessageId === undefined ? (
                           <>
                             <Button
                               size="xs"
@@ -309,7 +358,7 @@ export function HarnessPlanSettings() {
                             </Button>
                           </>
                         ) : null}
-                        {step.status === "failed" ? (
+                        {step.status === "failed" || step.status === "cancelled" ? (
                           <Button
                             size="xs"
                             variant="outline"
