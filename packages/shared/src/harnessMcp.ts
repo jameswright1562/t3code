@@ -23,14 +23,19 @@ export function validateHarnessMcpServer(
     ) {
       return "Unsafe stdio executable, directory or argument";
     }
+    // Until a host-owned secret store exists, command arguments must never
+    // carry authentication material or headers that can contain credentials.
+    // Inspect both option names and values: `--header Authorization: Bearer …`
+    // otherwise bypasses a flag-only check.
     if (
-      server.args.some((arg) =>
-        /(?:^|[-_])(?:token|password|secret|api[-_]?key|credential|authorization)(?:$|[=:-])/i.test(
-          arg,
-        ),
+      server.args.some(
+        (arg) =>
+          /(?:^|[^a-z0-9])(?:bearer|authorization|password|passwd|secret|api[-_]?key|access[-_]?token|refresh[-_]?token|credential)(?:$|[^a-z0-9])/i.test(
+            arg,
+          ) || /^(?:--(?:header|headers|http-header|env-file)|-H)(?:=|$)/i.test(arg),
       )
     ) {
-      return "Do not put access tokens or passwords in MCP command arguments";
+      return "Do not put access tokens, credential environment variables or headers in MCP command arguments";
     }
     return null;
   }
